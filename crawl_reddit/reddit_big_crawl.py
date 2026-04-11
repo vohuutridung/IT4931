@@ -48,7 +48,7 @@ REDDIT_OAUTH  = "https://oauth.reddit.com"
 DEFAULT_UA    = "BigDataCrawler/2.0 (by u/your_reddit_username)"
 
 # Rate limits: Reddit allows ~60 req/min for OAuth, ~1 req/2s for anonymous
-RATE_LIMIT_DELAY   = 2.5   # seconds between requests (anonymous)
+RATE_LIMIT_DELAY   = 3.0   # seconds between requests (anonymous)
 OAUTH_RATE_DELAY   = 0.6   # seconds between requests (OAuth)
 MAX_COMMENTS_PER_POST = 50  # cap comments per post to keep output manageable
 BATCH_SAVE_EVERY   = 100   # save progress every N posts
@@ -64,10 +64,10 @@ TOPIC_SUBREDDITS: dict[str, list[str]] = {
         "all", "popular", "worldnews", "todayilearned",
         "explainlikeimfive", "askreddit", "mildlyinteresting",
     ],
-    "finance": [
-        "finance", "investing", "personalfinance", "wallstreetbets",
-        "stocks", "economy", "cryptocurrency", "financialindependence",
-    ],
+    # "finance": [
+    #     "finance", "investing", "personalfinance", "wallstreetbets",
+    #     "stocks", "economy", "cryptocurrency", "financialindependence",
+    # ],
     "technology": [
         "technology", "programming", "MachineLearning", "artificial",
         "compsci", "cybersecurity", "datascience", "devops",
@@ -76,10 +76,10 @@ TOPIC_SUBREDDITS: dict[str, list[str]] = {
         "science", "askscience", "physics", "chemistry",
         "biology", "space", "EarthPorn", "geology",
     ],
-    "health": [
-        "health", "medicine", "mentalhealth", "fitness",
-        "nutrition", "loseit", "running", "bodyweightfitness",
-    ],
+    # "health": [
+    #     "health", "medicine", "mentalhealth", "fitness",
+    #     "nutrition", "loseit", "running", "bodyweightfitness",
+    # ],
     "politics": [
         "politics", "worldnews", "news", "geopolitics",
         "PoliticalDiscussion", "europe", "uknews",
@@ -88,14 +88,14 @@ TOPIC_SUBREDDITS: dict[str, list[str]] = {
         "movies", "television", "Music", "gaming",
         "books", "anime", "comicbooks", "hiphopheads",
     ],
-    "business": [
-        "business", "entrepreneur", "startups", "smallbusiness",
-        "marketing", "ecommerce", "sales",
-    ],
-    "education": [
-        "learnprogramming", "languagelearning", "studytips",
-        "college", "math", "AskAcademia", "GradSchool",
-    ],
+    # "business": [
+    #     "business", "entrepreneur", "startups", "smallbusiness",
+    #     "marketing", "ecommerce", "sales",
+    # ],
+    # "education": [
+    #     "learnprogramming", "languagelearning", "studytips",
+    #     "college", "math", "AskAcademia", "GradSchool",
+    # ],
 }
 
 
