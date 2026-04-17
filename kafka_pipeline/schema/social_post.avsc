@@ -1,0 +1,28 @@
+{
+  "type": "record",
+  "name": "SocialPost",
+  "namespace": "com.pipeline.social",
+  "fields": [
+    { "name": "post_id",      "type": "string" },
+    { "name": "source",       "type": { "type": "enum", "name": "Source",
+                                "symbols": ["facebook", "instagram", "reddit"] } },
+    { "name": "event_time",   "type": "long",  "logicalType": "timestamp-millis" },
+    { "name": "ingest_time",  "type": "long",  "logicalType": "timestamp-millis" },
+    { "name": "author_id",    "type": ["null", "string"], "default": null },
+    { "name": "author_name",  "type": ["null", "string"], "default": null },
+    { "name": "content",      "type": "string" },
+    { "name": "url",          "type": ["null", "string"], "default": null },
+    { "name": "hashtags",     "type": { "type": "array", "items": "string" }, "default": [] },
+    { "name": "engagement", "type": {
+        "type": "record", "name": "Engagement",
+        "fields": [
+          { "name": "likes",    "type": "int", "default": 0 },
+          { "name": "comments", "type": "int", "default": 0 },
+          { "name": "shares",   "type": "int", "default": 0 },
+          { "name": "score",    "type": "int", "default": 0 }
+        ]
+    }},
+    { "name": "extra", "type": ["null", "string"], "default": null,
+      "doc": "JSON string chứa metadata đặc thù: subreddit, page_name, v.v." }
+  ]
+}
