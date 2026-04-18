@@ -94,7 +94,7 @@ Thư viện bên ngoài duy nhất cần là `requests>=2.31.0` và `urllib3>=2.
 Thu thập **2.000 bài** từ một subreddit đơn (không cần đăng nhập):
 
 ```bash
-python reddit_big_crawl.py --subreddit worldnews --posts 2000
+python reddit_big_crawl.py --all-topics --posts-per-topic 1000
 ```
 
 ---

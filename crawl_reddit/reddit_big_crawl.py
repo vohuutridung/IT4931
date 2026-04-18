@@ -1,7 +1,7 @@
 """
 Reddit Big Data Crawler
 =======================
-Crawls ~2000 Reddit posts with full metadata:
+Crawls ~10000 Reddit posts with full metadata:
   - Post details (title, body, url, flair, awards, etc.)
   - Author/user info (name, karma, account age, etc.)
   - Engagement metrics (score, upvote_ratio, comment_count, crossposts)
@@ -12,9 +12,11 @@ Output: reddit_big_data.json  (line-delimited JSONL also available)
 
 Usage:
     python reddit_big_crawl.py --help
-    python reddit_big_crawl.py --subreddit worldnews --posts 2000
-    python reddit_big_crawl.py --subreddits worldnews,news,technology --posts 2000
-    python reddit_big_crawl.py --keyword "artificial intelligence" --posts 2000
+    python reddit_big_crawl.py --all-topics --posts-per-topic 1000
+    python reddit_big_crawl.py --topic sports --posts 1000
+    python reddit_big_crawl.py --subreddit worldnews --posts 10000
+    python reddit_big_crawl.py --subreddits worldnews,news,technology --posts 10000
+    python reddit_big_crawl.py --keyword "artificial intelligence" --posts 10000
 """
 
 import json
@@ -54,7 +56,6 @@ MAX_COMMENTS_PER_POST = 50  # cap comments per post to keep output manageable
 BATCH_SAVE_EVERY   = 100   # save progress every N posts
 
 # ──────────────────────── Topic → Subreddit Mapping ──────────────────────────
-# Add or extend topics freely. Each key is the value passed to --topic.
 TOPIC_SUBREDDITS: dict[str, list[str]] = {
     "sports": [
         "sports", "nba", "nfl", "soccer", "formula1",
@@ -64,10 +65,10 @@ TOPIC_SUBREDDITS: dict[str, list[str]] = {
         "all", "popular", "worldnews", "todayilearned",
         "explainlikeimfive", "askreddit", "mildlyinteresting",
     ],
-    # "finance": [
-    #     "finance", "investing", "personalfinance", "wallstreetbets",
-    #     "stocks", "economy", "cryptocurrency", "financialindependence",
-    # ],
+    "finance": [
+        "finance", "investing", "personalfinance", "wallstreetbets",
+        "stocks", "economy", "cryptocurrency", "financialindependence",
+    ],
     "technology": [
         "technology", "programming", "MachineLearning", "artificial",
         "compsci", "cybersecurity", "datascience", "devops",
@@ -76,10 +77,10 @@ TOPIC_SUBREDDITS: dict[str, list[str]] = {
         "science", "askscience", "physics", "chemistry",
         "biology", "space", "EarthPorn", "geology",
     ],
-    # "health": [
-    #     "health", "medicine", "mentalhealth", "fitness",
-    #     "nutrition", "loseit", "running", "bodyweightfitness",
-    # ],
+    "health": [
+        "health", "medicine", "mentalhealth", "fitness",
+        "nutrition", "loseit", "running", "bodyweightfitness",
+    ],
     "politics": [
         "politics", "worldnews", "news", "geopolitics",
         "PoliticalDiscussion", "europe", "uknews",
@@ -88,14 +89,14 @@ TOPIC_SUBREDDITS: dict[str, list[str]] = {
         "movies", "television", "Music", "gaming",
         "books", "anime", "comicbooks", "hiphopheads",
     ],
-    # "business": [
-    #     "business", "entrepreneur", "startups", "smallbusiness",
-    #     "marketing", "ecommerce", "sales",
-    # ],
-    # "education": [
-    #     "learnprogramming", "languagelearning", "studytips",
-    #     "college", "math", "AskAcademia", "GradSchool",
-    # ],
+    "business": [
+        "business", "entrepreneur", "startups", "smallbusiness",
+        "marketing", "ecommerce", "sales",
+    ],
+    "education": [
+        "learnprogramming", "languagelearning", "studytips",
+        "college", "math", "AskAcademia", "GradSchool",
+    ],
 }
 
 
@@ -127,10 +128,6 @@ def authenticate_oauth(
     username: str,
     password: str,
 ) -> bool:
-    """
-    Authenticate with Reddit OAuth2 (password grant).
-    Raises on failure, returns True on success.
-    """
     auth = requests.auth.HTTPBasicAuth(client_id, client_secret)
     data = {
         "grant_type": "password",
@@ -153,28 +150,23 @@ def authenticate_oauth(
 
 # ───────────────────────── Data Extractors ───────────────────────────────────
 def parse_timestamp(unix_ts) -> Optional[str]:
-    """Convert Unix timestamp to ISO-8601 string."""
     if unix_ts is None:
         return None
     return datetime.fromtimestamp(float(unix_ts), tz=timezone.utc).isoformat()
 
 
 def extract_post(post_data: dict) -> dict:
-    """Extract all relevant fields from a Reddit post's 'data' dict."""
     d = post_data.get("data", post_data)
     return {
-        # ── Identifiers ──────────────────────────────────────────────────────
         "post_id":             d.get("id"),
-        "fullname":            d.get("name"),           # e.g. t3_abc123
+        "fullname":            d.get("name"),
         "subreddit":           d.get("subreddit"),
         "subreddit_id":        d.get("subreddit_id"),
         "subreddit_type":      d.get("subreddit_type"),
         "subreddit_subscribers": d.get("subreddit_subscribers"),
-
-        # ── Content ───────────────────────────────────────────────────────────
         "title":               d.get("title"),
-        "selftext":            d.get("selftext"),       # post body (text posts)
-        "url":                 d.get("url"),            # link posts
+        "selftext":            d.get("selftext"),
+        "url":                 d.get("url"),
         "permalink":           REDDIT_BASE + d.get("permalink", ""),
         "domain":              d.get("domain"),
         "post_type":           "self" if d.get("is_self") else "link",
@@ -190,38 +182,29 @@ def extract_post(post_data: dict) -> dict:
         "locked":              d.get("locked", False),
         "archived":            d.get("archived", False),
         "pinned":              d.get("pinned", False),
-
-        # ── Engagement / Reactions ────────────────────────────────────────────
-        "score":               d.get("score"),          # upvotes - downvotes
+        "score":               d.get("score"),
         "upvotes":             d.get("ups"),
         "downvotes":           d.get("downs"),
-        "upvote_ratio":        d.get("upvote_ratio"),   # e.g. 0.95 = 95%
+        "upvote_ratio":        d.get("upvote_ratio"),
         "comment_count":       d.get("num_comments"),
         "crossposts_count":    d.get("num_crossposts"),
-        "gilded":              d.get("gilded"),         # gold awards
+        "gilded":              d.get("gilded"),
         "total_awards_received": d.get("total_awards_received"),
-        "all_awardings":       d.get("all_awardings"),  # full award list
-
-        # ── Author / User ─────────────────────────────────────────────────────
+        "all_awardings":       d.get("all_awardings"),
         "author":              d.get("author"),
         "author_fullname":     d.get("author_fullname"),
         "author_flair_text":   d.get("author_flair_text"),
         "is_original_content": d.get("is_original_content", False),
-
-        # ── Timestamps ────────────────────────────────────────────────────────
         "created_utc":         parse_timestamp(d.get("created_utc")),
         "created_utc_raw":     d.get("created_utc"),
-
-        # ── Meta ──────────────────────────────────────────────────────────────
         "crawled_at":          datetime.now(tz=timezone.utc).isoformat(),
     }
 
 
 def extract_comment(comment_data: dict, depth: int = 0) -> Optional[dict]:
-    """Recursively extract a comment and its replies."""
     kind = comment_data.get("kind")
     if kind == "more":
-        return None   # skip "load more" placeholders
+        return None
     d = comment_data.get("data", {})
     if not d.get("body") or d.get("body") in ("[deleted]", "[removed]"):
         return None
@@ -260,10 +243,6 @@ def extract_comment(comment_data: dict, depth: int = 0) -> Optional[dict]:
 
 def extract_user(session: requests.Session, username: str,
                  base_url: str, delay: float) -> Optional[dict]:
-    """
-    Fetch public profile data for a Reddit user.
-    Returns None if the user is deleted / suspended / not found.
-    """
     if not username or username in ("[deleted]", "AutoModerator"):
         return None
     url = f"{base_url}/user/{username}/about.json"
@@ -303,21 +282,17 @@ def fetch_post_comments(
     delay: float,
     max_comments: int = MAX_COMMENTS_PER_POST,
 ) -> list:
-    """Fetch top-level + nested comments for a single post."""
     url = f"{base_url}/r/{subreddit}/comments/{post_id}.json?limit={max_comments}&depth=3"
-    for attempt in range(5):  # thử tối đa 5 lần
+    for attempt in range(5):
         try:
             resp = session.get(url, timeout=20)
-            
             if resp.status_code == 429:
-                wait = (attempt + 1) * 30  # chờ 30, 60, 90, 120, 150 giây
-                log.warning("Rate limited on comments — chờ %ds (lần %d/5)", wait, attempt+1)
+                wait = (attempt + 1) * 30
+                log.warning("Rate limited on comments — waiting %ds (attempt %d/5)", wait, attempt + 1)
                 time.sleep(wait)
                 continue
-                
             time.sleep(delay)
             resp.raise_for_status()
-            
             payload = resp.json()
             if not isinstance(payload, list) or len(payload) < 2:
                 return []
@@ -328,12 +303,11 @@ def fetch_post_comments(
                 if parsed:
                     comments.append(parsed)
             return comments
-            
         except Exception as exc:
-            log.warning("Lần %d - Failed comments post %s: %s", attempt+1, post_id, exc)
+            log.warning("Attempt %d - Failed comments post %s: %s", attempt + 1, post_id, exc)
             time.sleep(30 * (attempt + 1))
-    
-    log.error("Bỏ qua comments post %s sau 5 lần thử", post_id)
+
+    log.error("Skipping comments for post %s after 5 attempts", post_id)
     return []
 
 
@@ -343,16 +317,11 @@ def fetch_posts_from_listing(
     params: dict,
     delay: float,
 ) -> tuple[list, Optional[str]]:
-    """
-    Fetch one page of posts from a Reddit listing endpoint.
-    Returns (list_of_raw_post_dicts, after_token).
-    Retries up to 4 times with exponential back-off on 429.
-    """
     for attempt in range(4):
         try:
             resp = session.get(url, params=params, timeout=20)
             if resp.status_code == 429:
-                wait = 30 * (2 ** attempt)   # 30 → 60 → 120 → 240 s
+                wait = 30 * (2 ** attempt)
                 log.warning(
                     "Rate limited on listing (attempt %d/4) — sleeping %ds…",
                     attempt + 1, wait,
@@ -377,7 +346,7 @@ class RedditCrawler:
     def __init__(
         self,
         subreddits: list[str],
-        target_posts: int = 2000,
+        target_posts: int = 10000,
         sort: str = "new",
         time_filter: str = "all",
         fetch_comments: bool = True,
@@ -391,6 +360,7 @@ class RedditCrawler:
         username: str = "",
         password: str = "",
         keyword: str = "",
+        topic: str = "",
     ):
         self.subreddits      = subreddits
         self.target_posts    = target_posts
@@ -403,6 +373,7 @@ class RedditCrawler:
         self.output_file     = output_file
         self.jsonl_file      = jsonl_file
         self.keyword         = keyword
+        self.topic           = topic
 
         self.session = build_session()
         self.use_oauth = False
@@ -421,9 +392,22 @@ class RedditCrawler:
         else:
             self.base_url = REDDIT_BASE
 
-        self.posts: list[dict]       = []
+        self.posts: list[dict]           = []
         self.user_cache: dict[str, dict] = {}
-        self.seen_ids: set[str]      = set()
+        self.seen_ids: set[str]          = set()
+
+    # ── Sort-strategy rotation ─────────────────────────────────────────────────
+    SORT_STRATEGIES: list[tuple[str, str]] = [
+        ("new",           "all"),
+        ("top",           "day"),
+        ("top",           "week"),
+        ("top",           "month"),
+        ("top",           "year"),
+        ("top",           "all"),
+        ("hot",           "all"),
+        ("controversial", "month"),
+        ("controversial", "year"),
+    ]
 
     # ── Progress helpers ──────────────────────────────────────────────────────
     def _save_json(self):
@@ -432,7 +416,6 @@ class RedditCrawler:
         log.info("💾 Saved %d posts → %s", len(self.posts), self.output_file)
 
     def _save_jsonl(self, record: dict):
-        """Append a single record to the JSONL file (streaming / big-data friendly)."""
         with open(self.jsonl_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
@@ -446,22 +429,11 @@ class RedditCrawler:
         self.user_cache[username] = profile
         return profile
 
-    # ── Build listing URL ─────────────────────────────────────────────────────
-    def _listing_url(self, subreddit: str) -> str:
-        """Legacy helper kept for compatibility."""
-        if self.keyword:
-            return f"{self.base_url}/search.json"
-        return f"{self.base_url}/r/{subreddit}/{self.sort}.json"
-
+    # ── Build listing URL / params ────────────────────────────────────────────
     def _listing_url_ex(self, subreddit: str, sort: str) -> str:
-        """Extended URL builder that accepts an explicit sort."""
         if self.keyword:
             return f"{self.base_url}/search.json"
         return f"{self.base_url}/r/{subreddit}/{sort}.json"
-
-    def _listing_params(self, subreddit: str, after: Optional[str] = None) -> dict:
-        """Legacy helper kept for compatibility."""
-        return self._listing_params_ex(subreddit, self.sort, self.time_filter, after)
 
     def _listing_params_ex(
         self,
@@ -470,7 +442,6 @@ class RedditCrawler:
         time_filter: str,
         after: Optional[str] = None,
     ) -> dict:
-        """Build request params with explicit sort & time_filter."""
         params: dict = {"limit": 100, "raw_json": 1}
         if self.keyword:
             params["q"]           = self.keyword
@@ -484,22 +455,6 @@ class RedditCrawler:
             params["after"] = after
         return params
 
-    # ── Sort-strategy rotation (overcomes Reddit's ~1000-post hard cap) ────────
-    # Reddit limits each (subreddit, sort, time_filter) combination to ~1000
-    # posts. By rotating through these strategies we can collect far more unique
-    # posts from a single subreddit before we have to rotate to the next one.
-    SORT_STRATEGIES: list[tuple[str, str]] = [
-        ("new",          "all"),
-        ("top",          "day"),
-        ("top",          "week"),
-        ("top",          "month"),
-        ("top",          "year"),
-        ("top",          "all"),
-        ("hot",          "all"),
-        ("controversial", "month"),
-        ("controversial", "year"),
-    ]
-
     # ── Main crawl loop ───────────────────────────────────────────────────────
     def crawl(self):
         log.info(
@@ -510,21 +465,40 @@ class RedditCrawler:
         # Clear JSONL file at start
         open(self.jsonl_file, "w").close()
 
-        sub_index      = 0      # which subreddit we're crawling
-        strategy_index = 0      # which sort-strategy we're on for this subreddit
+        num_strategies = len(self.SORT_STRATEGIES)
+        num_subreddits = len(self.subreddits)
+
+        sub_index      = 0   # current subreddit index
+        strategy_index = 0   # current strategy index within current subreddit
         after: Optional[str] = None
 
-        # Track stagnation: pages fetched without a single NEW (unseen) post
-        pages_since_new = 0
-        MAX_STALE_PAGES = 3     # rotate strategy after this many fruitless pages
+        pages_since_new  = 0
+        MAX_STALE_PAGES  = 3
+
+        def _advance_strategy():
+            """Move to next sort strategy for the current subreddit. Returns True if subreddit is exhausted."""
+            nonlocal strategy_index, after, pages_since_new
+            strategy_index += 1
+            after = None
+            pages_since_new = 0
+            return strategy_index >= num_strategies  # True → subreddit exhausted
+
+        def _advance_subreddit():
+            """Move to next subreddit, reset strategy. Returns True if all subreddits exhausted."""
+            nonlocal sub_index, strategy_index, after, pages_since_new
+            sub_index      += 1
+            strategy_index  = 0
+            after           = None
+            pages_since_new = 0
+            return sub_index >= num_subreddits  # True → all done
 
         while len(self.posts) < self.target_posts:
-            subreddit = self.subreddits[sub_index % len(self.subreddits)]
+            if sub_index >= num_subreddits:
+                log.error("All subreddits exhausted — stopping early at %d posts.", len(self.posts))
+                break
 
-            # Pick the current sort strategy
-            sort, time_filter = self.SORT_STRATEGIES[
-                strategy_index % len(self.SORT_STRATEGIES)
-            ]
+            subreddit = self.subreddits[sub_index]
+            sort, time_filter = self.SORT_STRATEGIES[strategy_index]
 
             url    = self._listing_url_ex(subreddit, sort)
             params = self._listing_params_ex(subreddit, sort, time_filter, after)
@@ -540,31 +514,19 @@ class RedditCrawler:
                 self.session, url, params, self.delay
             )
 
+            # ── Empty listing → rotate strategy ──────────────────────────────
             if not children:
-                log.warning(
-                    "Empty listing for r/%s [%s/%s] — rotating strategy.",
-                    subreddit, sort, time_filter,
-                )
-                # Try next sort strategy for this subreddit
-                strategy_index += 1
-                after = None
-                pages_since_new = 0
-                # If we've exhausted all strategies for this subreddit, move on
-                if strategy_index % len(self.SORT_STRATEGIES) == 0:
-                    log.warning(
-                        "All strategies exhausted for r/%s — rotating subreddit.",
-                        subreddit,
-                    )
-                    sub_index   += 1
-                    strategy_index = 0
-                    # Hard stop if we've gone through every subreddit with no luck
-                    if sub_index >= len(self.subreddits):
-                        log.error("All subreddits exhausted — stopping early at %d posts.",
-                                  len(self.posts))
+                log.warning("Empty listing for r/%s [%s/%s] — rotating strategy.", subreddit, sort, time_filter)
+                exhausted = _advance_strategy()
+                if exhausted:
+                    log.warning("All strategies exhausted for r/%s — rotating subreddit.", subreddit)
+                    all_done = _advance_subreddit()
+                    if all_done:
+                        log.error("All subreddits exhausted — stopping early at %d posts.", len(self.posts))
                         break
                 continue
 
-            # ── Count how many truly new posts were in this page ──────────────
+            # ── Count truly new posts ─────────────────────────────────────────
             new_this_page = sum(
                 1 for c in children
                 if c.get("data", {}).get("id") not in self.seen_ids
@@ -572,45 +534,34 @@ class RedditCrawler:
 
             if new_this_page == 0:
                 pages_since_new += 1
-                log.info(
-                    "⚠️  No new posts on this page (stale=%d/%d)",
-                    pages_since_new, MAX_STALE_PAGES,
-                )
+                log.info("⚠️  No new posts on this page (stale=%d/%d)", pages_since_new, MAX_STALE_PAGES)
                 if pages_since_new >= MAX_STALE_PAGES:
-                    log.warning(
-                        "Rotating sort strategy for r/%s after %d stale pages.",
-                        subreddit, pages_since_new,
-                    )
-                    strategy_index += 1
-                    after = None
-                    pages_since_new = 0
-                    if strategy_index % len(self.SORT_STRATEGIES) == 0:
-                        log.warning(
-                            "All strategies exhausted for r/%s — moving to next subreddit.",
-                            subreddit,
-                        )
-                        sub_index      += 1
-                        strategy_index  = 0
-                        if sub_index >= len(self.subreddits):
-                            log.error("All subreddits exhausted — stopping early at %d posts.",
-                                      len(self.posts))
+                    log.warning("Rotating sort strategy for r/%s after %d stale pages.", subreddit, pages_since_new)
+                    exhausted = _advance_strategy()
+                    if exhausted:
+                        log.warning("All strategies exhausted for r/%s — moving to next subreddit.", subreddit)
+                        all_done = _advance_subreddit()
+                        if all_done:
+                            log.error("All subreddits exhausted — stopping early at %d posts.", len(self.posts))
                             break
+                # Don't reset after here — keep paginating with current after if stale count not reached
                 continue
             else:
                 pages_since_new = 0
 
+            # ── Process posts ─────────────────────────────────────────────────
             for child in children:
                 if len(self.posts) >= self.target_posts:
                     break
 
-                post_raw  = child.get("data", {})
-                post_id   = post_raw.get("id")
+                post_raw = child.get("data", {})
+                post_id  = post_raw.get("id")
 
                 if not post_id or post_id in self.seen_ids:
                     continue
                 self.seen_ids.add(post_id)
 
-                # ── Minimum comment filter ────────────────────────────────────
+                # Minimum comment filter
                 declared_comments = post_raw.get("num_comments", 0) or 0
                 if declared_comments < self.min_comments:
                     log.debug(
@@ -620,10 +571,12 @@ class RedditCrawler:
                     )
                     continue
 
-                # ── Extract post ──────────────────────────────────────────────
                 post_record = extract_post(child)
 
-                # ── Fetch comments ────────────────────────────────────────────
+                # Attach topic label if provided
+                if self.topic:
+                    post_record["topic"] = self.topic
+
                 if self.fetch_comments:
                     post_record["comments"] = fetch_post_comments(
                         self.session,
@@ -638,16 +591,12 @@ class RedditCrawler:
                     post_record["comments"] = []
                     post_record["comments_fetched"] = 0
 
-                # ── Fetch author profile ──────────────────────────────────────
                 author = post_record.get("author")
                 post_record["author_profile"] = self._get_user(author)
 
-                # ── Save to JSONL immediately (streaming) ─────────────────────
                 self._save_jsonl(post_record)
-
                 self.posts.append(post_record)
 
-                # ── Progress log ──────────────────────────────────────────────
                 if len(self.posts) % 10 == 0:
                     log.info(
                         "✅ %d/%d posts collected | latest: %s",
@@ -659,10 +608,16 @@ class RedditCrawler:
             if len(self.posts) % BATCH_SAVE_EVERY == 0 and self.posts:
                 self._save_json()
 
-            # No more pages for this subreddit → rotate
+            # No more pages for this (subreddit, strategy) → advance strategy
             if not after:
-                sub_index += 1
-                after = None
+                log.info("No more pages for r/%s [%s/%s] — rotating strategy.", subreddit, sort, time_filter)
+                exhausted = _advance_strategy()
+                if exhausted:
+                    log.warning("All strategies exhausted for r/%s — rotating subreddit.", subreddit)
+                    all_done = _advance_subreddit()
+                    if all_done:
+                        log.error("All subreddits exhausted — stopping early at %d posts.", len(self.posts))
+                        break
 
         # Final save
         self._save_json()
@@ -679,13 +634,13 @@ class RedditCrawler:
         print("\n" + "=" * 60)
         print("  🎉  CRAWL COMPLETE")
         print("=" * 60)
-        print(f"  Posts collected    : {len(self.posts):,}")
-        print(f"  Comments fetched   : {total_comments:,}")
-        print(f"  Unique authors     : {unique_authors:,}")
-        print(f"  Avg post score     : {avg_score:.1f}")
+        print(f"  Posts collected     : {len(self.posts):,}")
+        print(f"  Comments fetched    : {total_comments:,}")
+        print(f"  Unique authors      : {unique_authors:,}")
+        print(f"  Avg post score      : {avg_score:.1f}")
         print(f"  User profiles cached: {len(self.user_cache):,}")
-        print(f"  Output (JSON)      : {self.output_file}")
-        print(f"  Output (JSONL)     : {self.jsonl_file}")
+        print(f"  Output (JSON)       : {self.output_file}")
+        print(f"  Output (JSONL)      : {self.jsonl_file}")
         print("=" * 60)
 
 
@@ -694,82 +649,83 @@ def parse_args():
     available_topics = ", ".join(sorted(TOPIC_SUBREDDITS.keys()))
 
     parser = argparse.ArgumentParser(
-        description="Reddit Big Data Crawler — collect ~2000 posts with full metadata",
+        description="Reddit Big Data Crawler — collect posts with full metadata",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 Examples:
-  # Anonymous crawl — worldnews, 2000 posts, newest first
-  python reddit_big_crawl.py --subreddit worldnews --posts 2000
+  # Crawl ALL topics, 1000 posts each (~10000 tổng)
+  python reddit_big_crawl.py --all-topics --posts-per-topic 1000
 
-  # Multiple subreddits
-  python reddit_big_crawl.py --subreddits worldnews,news,technology --posts 2000
+  # Crawl một topic cụ thể
+  python reddit_big_crawl.py --topic sports --posts 1000
 
-  # Crawl by TOPIC (auto-selects relevant subreddits)
-  python reddit_big_crawl.py --topic sports --posts 2000
-  python reddit_big_crawl.py --topic finance --posts 2000 --sort top --time week
-  python reddit_big_crawl.py --topic trending --posts 500 --no-comments
+  # Crawl một subreddit
+  python reddit_big_crawl.py --subreddit worldnews --posts 10000
 
-  # Available topics: {available_topics}
+  # Crawl nhiều subreddit
+  python reddit_big_crawl.py --subreddits worldnews,news,technology --posts 10000
 
-  # Keyword search across all subreddits
-  python reddit_big_crawl.py --keyword "climate change" --posts 2000
+  # Tìm kiếm theo keyword
+  python reddit_big_crawl.py --keyword "artificial intelligence" --posts 10000
 
-  # OAuth (higher rate limit) + top posts of the week
-  python reddit_big_crawl.py --subreddit science --posts 2000 \\
-      --sort top --time week \\
-      --client-id YOUR_ID --client-secret YOUR_SECRET \\
-      --reddit-user YOUR_USER --reddit-pass YOUR_PASS
+  # Không lấy comments và user profiles (nhanh hơn)
+  python reddit_big_crawl.py --all-topics --posts-per-topic 1000 --no-comments --no-users
 
-  # Skip fetching user profiles and comments (fast, lightweight)
-  python reddit_big_crawl.py --subreddit worldnews --posts 2000 \\
-      --no-comments --no-users
+  Available topics: {available_topics}
         """,
     )
 
-    # ── Source selection (mutually exclusive priority: --topic > --subreddits > --subreddit) ──
-    parser.add_argument("--topic",      default="",
-                        choices=list(TOPIC_SUBREDDITS.keys()),
-                        metavar="TOPIC",
-                        help=(
-                            f"Crawl by topic — auto-selects subreddits. "
-                            f"Available: {available_topics}"
-                        ))
+    # ── Chế độ crawl ─────────────────────────────────────────────────────────
+    parser.add_argument(
+        "--all-topics", action="store_true",
+        help="Crawl TẤT CẢ topics, mỗi topic --posts-per-topic bài. Output gộp vào reddit_all_topics.json",
+    )
+    parser.add_argument(
+        "--posts-per-topic", type=int, default=1000,
+        help="Số bài mỗi topic khi dùng --all-topics (default: 1000)",
+    )
+    parser.add_argument(
+        "--topic", default="",
+        choices=list(TOPIC_SUBREDDITS.keys()),
+        metavar="TOPIC",
+        help=f"Crawl theo topic. Available: {available_topics}",
+    )
     parser.add_argument("--subreddit",  default="worldnews",
-                        help="Single subreddit to crawl (default: worldnews)")
+                        help="Subreddit đơn lẻ (default: worldnews)")
     parser.add_argument("--subreddits", default="",
-                        help="Comma-separated list of subreddits (overrides --subreddit)")
+                        help="Danh sách subreddits cách nhau bởi dấu phẩy")
     parser.add_argument("--keyword",    default="",
-                        help="Search keyword (searches across Reddit, ignores --subreddit)")
-    parser.add_argument("--posts",      type=int, default=2000,
-                        help="Target number of posts (default: 2000)")
+                        help="Tìm kiếm theo từ khóa")
+    parser.add_argument("--posts",      type=int, default=10000,
+                        help="Số bài mục tiêu (default: 10000)")
     parser.add_argument("--sort",       default="new",
                         choices=["new", "hot", "top", "controversial", "rising"],
-                        help="Listing sort order (default: new)")
+                        help="Thứ tự sắp xếp (default: new)")
     parser.add_argument("--time",       default="all",
                         choices=["hour", "day", "week", "month", "year", "all"],
-                        help="Time filter for top/controversial (default: all)")
+                        help="Bộ lọc thời gian cho top/controversial (default: all)")
     parser.add_argument("--max-comments", type=int, default=50,
-                        help="Max comments to fetch per post (default: 50)")
+                        help="Số comment tối đa mỗi bài (default: 50)")
     parser.add_argument("--min-comments", type=int, default=15,
-                        help="Only accept posts with at least this many comments (default: 15)")
+                        help="Chỉ lấy bài có ít nhất N comments (default: 15)")
     parser.add_argument("--no-comments", action="store_true",
-                        help="Skip fetching comments (much faster)")
+                        help="Bỏ qua fetch comments (nhanh hơn)")
     parser.add_argument("--no-users",    action="store_true",
-                        help="Skip fetching author profiles")
+                        help="Bỏ qua fetch thông tin tác giả")
     parser.add_argument("--output",     default="reddit_big_data.json",
-                        help="Output JSON file path")
+                        help="Đường dẫn file JSON output")
     parser.add_argument("--jsonl",      default="reddit_big_data.jsonl",
-                        help="Output JSONL file path (streaming, big-data friendly)")
+                        help="Đường dẫn file JSONL output")
 
-    # OAuth (optional — higher rate limits)
+    # OAuth
     parser.add_argument("--client-id",     default=os.getenv("REDDIT_CLIENT_ID", ""),
-                        help="Reddit OAuth client_id (or set REDDIT_CLIENT_ID env var)")
+                        help="Reddit OAuth client_id")
     parser.add_argument("--client-secret", default=os.getenv("REDDIT_CLIENT_SECRET", ""),
                         help="Reddit OAuth client_secret")
     parser.add_argument("--reddit-user",   default=os.getenv("REDDIT_USERNAME", ""),
-                        help="Reddit username for OAuth")
+                        help="Reddit username cho OAuth")
     parser.add_argument("--reddit-pass",   default=os.getenv("REDDIT_PASSWORD", ""),
-                        help="Reddit password for OAuth")
+                        help="Reddit password cho OAuth")
 
     return parser.parse_args()
 
@@ -778,39 +734,110 @@ Examples:
 if __name__ == "__main__":
     args = parse_args()
 
-    # ── Resolve subreddit list (priority: --topic > --subreddits > --subreddit) ──
-    if args.topic:
-        subreddits = TOPIC_SUBREDDITS[args.topic]
-        log.info(
-            "🏷  Topic '%s' → subreddits: %s",
-            args.topic, ", ".join(f"r/{s}" for s in subreddits),
-        )
-        # Auto-name output files after the topic if the user didn't override them
-        if args.output == "reddit_big_data.json":
-            args.output = f"reddit_{args.topic}.json"
-        if args.jsonl == "reddit_big_data.jsonl":
-            args.jsonl = f"reddit_{args.topic}.jsonl"
-    elif args.subreddits:
-        subreddits = [s.strip() for s in args.subreddits.split(",") if s.strip()]
+    # ── Chế độ --all-topics ───────────────────────────────────────────────────
+    if args.all_topics:
+        all_posts    = []
+        total_topics = len(TOPIC_SUBREDDITS)
+
+        print("\n" + "=" * 60)
+        print("  🌐  ALL-TOPICS MODE")
+        print(f"  Topics      : {total_topics}")
+        print(f"  Per topic   : {args.posts_per_topic} posts")
+        print(f"  Total target: ~{total_topics * args.posts_per_topic:,} posts")
+        print("=" * 60 + "\n")
+
+        for i, (topic, subreddits) in enumerate(TOPIC_SUBREDDITS.items(), 1):
+            log.info("=" * 55)
+            log.info(
+                "📌 [%d/%d] Topic: %-15s | Subreddits: %s",
+                i, total_topics, topic,
+                ", ".join(f"r/{s}" for s in subreddits),
+            )
+            log.info("=" * 55)
+
+            topic_output = f"reddit_{topic}.json"
+            topic_jsonl  = f"reddit_{topic}.jsonl"
+
+            crawler = RedditCrawler(
+                subreddits            = subreddits,
+                target_posts          = args.posts_per_topic,
+                sort                  = args.sort,
+                time_filter           = args.time,
+                fetch_comments        = not args.no_comments,
+                fetch_user_profiles   = not args.no_users,
+                max_comments_per_post = args.max_comments,
+                min_comments          = args.min_comments,
+                output_file           = topic_output,
+                jsonl_file            = topic_jsonl,
+                client_id             = args.client_id,
+                client_secret         = args.client_secret,
+                username              = args.reddit_user,
+                password              = args.reddit_pass,
+                topic                 = topic,
+            )
+
+            crawler.crawl()
+            all_posts.extend(crawler.posts)
+
+            log.info(
+                "✅ Topic '%s' done: %d posts collected (total so far: %d)",
+                topic, len(crawler.posts), len(all_posts),
+            )
+
+        # ── Gộp tất cả vào một file ───────────────────────────────────────────
+        merged_json  = "reddit_all_topics.json"
+        merged_jsonl = "reddit_all_topics.jsonl"
+
+        with open(merged_json, "w", encoding="utf-8") as f:
+            json.dump(all_posts, f, ensure_ascii=False, indent=2, default=str)
+
+        with open(merged_jsonl, "w", encoding="utf-8") as f:
+            for post in all_posts:
+                f.write(json.dumps(post, ensure_ascii=False, default=str) + "\n")
+
+        print("\n" + "=" * 60)
+        print("  🎉  ALL-TOPICS CRAWL COMPLETE")
+        print("=" * 60)
+        print(f"  Topics crawled  : {total_topics}")
+        print(f"  Total posts     : {len(all_posts):,}")
+        print(f"  Merged JSON     : {merged_json}")
+        print(f"  Merged JSONL    : {merged_jsonl}")
+        print(f"  Per-topic files : reddit_<topic>.json / .jsonl")
+        print("=" * 60)
+
+    # ── Chế độ thông thường ───────────────────────────────────────────────────
     else:
-        subreddits = [args.subreddit]
+        if args.topic:
+            subreddits = TOPIC_SUBREDDITS[args.topic]
+            log.info(
+                "🏷  Topic '%s' → subreddits: %s",
+                args.topic, ", ".join(f"r/{s}" for s in subreddits),
+            )
+            if args.output == "reddit_big_data.json":
+                args.output = f"reddit_{args.topic}.json"
+            if args.jsonl == "reddit_big_data.jsonl":
+                args.jsonl = f"reddit_{args.topic}.jsonl"
+        elif args.subreddits:
+            subreddits = [s.strip() for s in args.subreddits.split(",") if s.strip()]
+        else:
+            subreddits = [args.subreddit]
 
-    crawler = RedditCrawler(
-        subreddits            = subreddits,
-        target_posts          = args.posts,
-        sort                  = args.sort,
-        time_filter           = args.time,
-        fetch_comments        = not args.no_comments,
-        fetch_user_profiles   = not args.no_users,
-        max_comments_per_post = args.max_comments,
-        min_comments          = args.min_comments,
-        output_file           = args.output,
-        jsonl_file            = args.jsonl,
-        client_id             = args.client_id,
-        client_secret         = args.client_secret,
-        username              = args.reddit_user,
-        password              = args.reddit_pass,
-        keyword               = args.keyword,
-    )
-
-    crawler.crawl()
+        crawler = RedditCrawler(
+            subreddits            = subreddits,
+            target_posts          = args.posts,
+            sort                  = args.sort,
+            time_filter           = args.time,
+            fetch_comments        = not args.no_comments,
+            fetch_user_profiles   = not args.no_users,
+            max_comments_per_post = args.max_comments,
+            min_comments          = args.min_comments,
+            output_file           = args.output,
+            jsonl_file            = args.jsonl,
+            client_id             = args.client_id,
+            client_secret         = args.client_secret,
+            username              = args.reddit_user,
+            password              = args.reddit_pass,
+            keyword               = args.keyword,
+            topic                 = args.topic,
+        )
+        crawler.crawl()
