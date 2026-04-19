@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import Generator
 
-from config.settings import TOPIC_BATCH, TOPIC_REALTIME, PATHS
+from ingestion.config.settings import TOPIC_BATCH, TOPIC_REALTIME, PATHS
 
 logger = logging.getLogger(__name__)
 

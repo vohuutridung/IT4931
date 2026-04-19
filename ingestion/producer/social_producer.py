@@ -13,7 +13,7 @@ from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
 from confluent_kafka.serialization import SerializationContext, MessageField
 
-from config.settings import (
+from ingestion.config.settings import (
     KAFKA_BOOTSTRAP_SERVERS, SCHEMA_REGISTRY_URL,
     PRODUCER_BATCH, PRODUCER_REALTIME,
     TOPIC_BATCH, TOPIC_REALTIME,

@@ -15,9 +15,9 @@ import sys
 import time
 from collections import defaultdict
 
-from producer.readers import reddit_records, instagram_records, facebook_records
-from producer.social_producer import SocialProducer
-from normalizers import reddit, instagram, facebook
+from ingestion.producer.readers import reddit_records, instagram_records, facebook_records
+from ingestion.producer.social_producer import SocialProducer
+from ingestion.normalizers import reddit, instagram, facebook
 
 logging.basicConfig(
     level=logging.INFO,

@@ -11,11 +11,18 @@ services:
     volumes:
       - zk_data:/var/lib/zookeeper/data
       - zk_log:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     container_name: kafka
-    depends_on: [zookeeper]
+    depends_on:
+      zookeeper:
+        condition: service_healthy       # ← chờ ZK healthy trước
     ports:
       - "9092:9092"
     environment:
@@ -26,24 +33,42 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      KAFKA_MESSAGE_MAX_BYTES: 2097152   # 2MB — đủ chứa post FB có comments
+      KAFKA_MESSAGE_MAX_BYTES: 2097152
+      KAFKA_LOG_RETENTION_HOURS: 720
     volumes:
       - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s                  # ← Kafka cần ~20s để khởi động
 
   schema-registry:
     image: confluentinc/cp-schema-registry:7.6.0
     container_name: schema-registry
-    depends_on: [kafka]
+    depends_on:
+      kafka:
+        condition: service_healthy       # ← chờ Kafka healthy trước
     ports:
       - "8081:8081"
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
-    depends_on: [kafka, schema-registry]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
@@ -54,11 +79,13 @@ services:
   kafka-init:
     image: confluentinc/cp-kafka:7.6.0
     container_name: kafka-init
-    depends_on: [kafka]
+    depends_on:
+      kafka:
+        condition: service_healthy       # ← FIX: chờ Kafka healthy, không phải started
     entrypoint: ["/bin/sh", "-c"]
     command: |
       "
-      cub kafka-ready -b kafka:29092 1 60
+      echo 'Kafka is healthy, creating topics...'
 
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
         --topic social-raw-batch \
