@@ -1,39 +1,20 @@
-"""
-SocialProducer
-──────────────
-Nhận topic + post dict đã normalize → serialize Avro → gửi Kafka.
-Routing đã được quyết định ở tầng reader (by filename), producer chỉ gửi.
-"""
-
 import logging
-from pathlib import Path
+import json
 
 from confluent_kafka import Producer
-from confluent_kafka.schema_registry import SchemaRegistryClient
-from confluent_kafka.schema_registry.avro import AvroSerializer
-from confluent_kafka.serialization import SerializationContext, MessageField
 
 from ingestion.config.settings import (
-    KAFKA_BOOTSTRAP_SERVERS, SCHEMA_REGISTRY_URL,
+    KAFKA_BOOTSTRAP_SERVERS,
     PRODUCER_BATCH, PRODUCER_REALTIME,
     TOPIC_BATCH, TOPIC_REALTIME,
 )
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_STR = (Path(__file__).parent.parent / "schema" / "social_post.avsc").read_text()
-
 
 class SocialProducer:
 
     def __init__(self):
-        registry = SchemaRegistryClient({"url": SCHEMA_REGISTRY_URL})
-        self._serializer = AvroSerializer(
-            schema_registry_client=registry,
-            schema_str=SCHEMA_STR,
-            to_dict=lambda post, ctx: post,
-        )
-
         base = {
             "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
         }
@@ -53,19 +34,19 @@ class SocialProducer:
                     TOPIC_BATCH, TOPIC_REALTIME)
 
     def send(self, topic: str, post: dict) -> None:
-        """Gửi 1 post vào topic chỉ định."""
         producer = self._producers[topic]
-        key      = post["post_id"].encode()
-        value    = self._serializer(
-            post, SerializationContext(topic, MessageField.VALUE)
-        )
+
+        key = post["post_id"].encode()
+
+        value = json.dumps(post).encode("utf-8")
+
         producer.produce(
             topic=topic,
             key=key,
             value=value,
             on_delivery=self._on_delivery,
         )
-        producer.poll(0)   # flush delivery callbacks (non-blocking)
+        producer.poll(0)
 
     def flush(self, timeout: float = 60.0) -> None:
         for p in self._producers.values():

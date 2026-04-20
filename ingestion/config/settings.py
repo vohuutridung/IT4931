@@ -34,7 +34,7 @@ PATHS = {
     },
     "reddit": {
         "batch":    REDDIT_DATA_DIR / "posts_before_2026_04_10.jsonl",
-        "realtime": REDDIT_DATA_DIR / "posts_10k.jsonl",  # Use large dataset from reddit_all_topics.json
+        "realtime": REDDIT_DATA_DIR / "posts_after_2026_04_10.jsonl", 
     },
 }
 
