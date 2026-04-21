@@ -13,9 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ── Python deps cho PySpark jobs ──────────────────────────────────────────────
 RUN pip3 install --no-cache-dir --break-system-packages \
-    pyspark==3.5.3 pyarrow==14.0.1 pymongo==4.6.3 2>/dev/null || \
+    pyspark==3.5.3 pyarrow==14.0.1 pymongo==4.6.3 'numpy<2' 2>/dev/null || \
     pip3 install --no-cache-dir \
-    pyspark==3.5.3 pyarrow==14.0.1 pymongo==4.6.3
+    pyspark==3.5.3 pyarrow==14.0.1 pymongo==4.6.3 'numpy<2'
 
 # ── Tải JARs vào thư mục jars của Spark ──────────────────────────────────────
 ARG SPARK_JARS_DIR=/opt/spark/jars
@@ -39,7 +39,9 @@ RUN curl -fsSL -o ${SPARK_JARS_DIR}/spark-avro_2.12-3.5.3.jar \
     curl -fsSL -o ${SPARK_JARS_DIR}/mongodb-driver-sync-4.11.1.jar \
         https://repo1.maven.org/maven2/org/mongodb/mongodb-driver-sync/4.11.1/mongodb-driver-sync-4.11.1.jar && \
     curl -fsSL -o ${SPARK_JARS_DIR}/mongodb-driver-core-4.11.1.jar \
-        https://repo1.maven.org/maven2/org/mongodb/mongodb-driver-core/4.11.1/mongodb-driver-core-4.11.1.jar
+        https://repo1.maven.org/maven2/org/mongodb/mongodb-driver-core/4.11.1/mongodb-driver-core-4.11.1.jar && \
+    curl -fsSL -o ${SPARK_JARS_DIR}/commons-pool2-2.11.1.jar \
+        https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar
 
 # ── App code ──────────────────────────────────────────────────────────────────
 WORKDIR /app
@@ -48,6 +50,12 @@ COPY batch/      batch/
 COPY shared/     shared/
 COPY ingestion/schema/ ingestion/schema/
 RUN touch __init__.py
+
+# ── Fix streaming output and checkpoint directory permissions ──────────────────
+RUN mkdir -p /tmp/streaming-output/{aggregated,raw_posts,viral_posts} && \
+    mkdir -p /tmp/spark-checkpoints/{console,parquet,kafka} && \
+    chmod -R 777 /tmp/streaming-output && \
+    chmod -R 777 /tmp/spark-checkpoints
 
 ENV SPARK_HOME=/opt/spark
 ENV PYSPARK_PYTHON=python3

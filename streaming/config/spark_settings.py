@@ -25,7 +25,6 @@ SPARK_MASTER = os.getenv("SPARK_MASTER", "local[*]")
 
 SPARK_CONFIG = {
     "spark.app.name": "SocialMediaStreaming",
-    "spark.master": SPARK_MASTER,
     
     # Streaming Configuration
     "spark.sql.streaming.schemaInference": "false",
@@ -35,9 +34,9 @@ SPARK_CONFIG = {
     # Kafka Configuration
     "spark.sql.kafka.maxOffsetsPerTrigger": "50000",
     
-    # Memory Configuration
-    "spark.driver.memory": "4g",
-    "spark.executor.memory": "4g",
+    # Memory Configuration (must match spark-submit args)
+    "spark.driver.memory": "2g",
+    "spark.executor.memory": "2g",
     "spark.executor.cores": "2",
     
     # Shuffle Configuration

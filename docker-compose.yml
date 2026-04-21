@@ -273,11 +273,9 @@ services:
       - streaming_checkpoints:/tmp/spark-checkpoints
     command: >
       /opt/spark/bin/spark-submit
-        --master spark://spark-master:7077
-        --deploy-mode client
+        --master local[2]
         --driver-memory 2g
         --executor-memory 2g
-        --executor-cores 1
         /app/streaming/main.py
     restart: on-failure
 
