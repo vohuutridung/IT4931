@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """
 Split Facebook data into:
-- stream_data (before SPLIT_DATE)
-- batch_data (>= SPLIT_DATE)
+- batch_data (< 1775754000)
+- stream_data (>= 1775754000)
 
-AND add full timestamp (YYYY-MM-DDTHH:MM:SS) into each JSON file
+Dựa trên createdAt (UNIX timestamp - seconds, UTC+7)
+Không modify dữ liệu
 """
 
 import os
 import json
-import re
-from datetime import datetime
 
 BASE_DATA_PATH = "/home/khang/Code/data-pipeline/IT4931/data/facebook_data/raw_data"
 OUTPUT_PATH = "/home/khang/Code/data-pipeline/IT4931/data/facebook_data"
@@ -18,54 +17,44 @@ OUTPUT_PATH = "/home/khang/Code/data-pipeline/IT4931/data/facebook_data"
 STREAM_PATH = os.path.join(OUTPUT_PATH, "stream_data")
 BATCH_PATH = os.path.join(OUTPUT_PATH, "batch_data")
 
-SPLIT_DATE = datetime(2026, 4, 10)
+# Mốc: 2026-04-10 00:00:00 UTC+7
+SPLIT_TS = 1775754000
 
 
 # =========================
-# PARSE FULL DATETIME
+# PROCESS FILE
 # =========================
-def parse_datetime(folder_name):
-    try:
-        parts = folder_name.split("_")
-
-        parts = [p for p in parts if p]
-
-        # lấy 6 phần đầu: YYYY MM DD HH MM SS
-        parts = parts[:6]
-
-        return datetime.strptime("_".join(parts), "%Y_%m_%d_%H_%M_%S")
-
-    except Exception as e:
-        print(f"Parse error: {folder_name} -> {e}")
-        return None
-
-
-# =========================
-# PROCESS JSON
-# =========================
-def process_json_file(src_file, dest_file, dt):
+def process_json_file(src_file, dest_file):
     try:
         with open(src_file, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
 
-        # add timestamp
-        data["timestamp"] = dt.strftime("%Y-%m-%dT%H:%M:%S")
+        created_at = data.get("createdAt")
 
-        os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+        if not isinstance(created_at, (int, float)):
+            return None  # failed
+
+        target_base = BATCH_PATH if created_at < SPLIT_TS else STREAM_PATH
+        category = "batch" if created_at < SPLIT_TS else "stream"
+
+        final_dest = os.path.join(
+            target_base,
+            os.path.relpath(dest_file, start=OUTPUT_PATH)
+        )
+
+        os.makedirs(os.path.dirname(final_dest), exist_ok=True)
 
         # tránh overwrite
-        if os.path.exists(dest_file):
-            print(f"Skip (exists): {dest_file}")
-            return False
+        if os.path.exists(final_dest):
+            return None
 
-        with open(dest_file, "w", encoding="utf-8") as f:
+        with open(final_dest, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
 
-        return True
+        return category
 
-    except Exception as e:
-        print(f"Error: {src_file} -> {e}")
-        return False
+    except Exception:
+        return None
 
 
 # =========================
@@ -79,43 +68,29 @@ def main():
     }
 
     print("=" * 60)
-    print("SPLIT + ADD TIMESTAMP")
-    print(f"Split date: {SPLIT_DATE.strftime('%Y-%m-%d')}")
+    print("SPLIT BY createdAt (UTC+7)")
+    print(f"Split timestamp: {SPLIT_TS}")
     print("=" * 60)
 
-    for page in os.scandir(BASE_DATA_PATH):
-        if not page.is_dir():
-            continue
-
-        for folder in os.scandir(page.path):
-            if not folder.is_dir():
+    for root, dirs, files in os.walk(BASE_DATA_PATH):
+        for file in files:
+            if not file.endswith(".json"):
                 continue
 
-            dt = parse_datetime(folder.name)
-            if dt is None:
+            src_file = os.path.join(root, file)
+
+            # giữ nguyên cấu trúc folder
+            relative_path = os.path.relpath(src_file, BASE_DATA_PATH)
+            dest_file = os.path.join(OUTPUT_PATH, relative_path)
+
+            result = process_json_file(src_file, dest_file)
+
+            if result == "stream":
+                stats["stream"] += 1
+            elif result == "batch":
+                stats["batch"] += 1
+            else:
                 stats["failed"] += 1
-                continue
-
-            target_base = BATCH_PATH if dt < SPLIT_DATE else STREAM_PATH
-            category = "batch" if dt < SPLIT_DATE else "stream"
-
-            for file in os.listdir(folder.path):
-                if not file.endswith(".json"):
-                    continue
-
-                src_file = os.path.join(folder.path, file)
-
-                dest_file = os.path.join(
-                    target_base,
-                    page.name,
-                    folder.name,
-                    file
-                )
-
-                success = process_json_file(src_file, dest_file, dt)
-
-                if success:
-                    stats[category] += 1
 
     print("\n" + "=" * 60)
     print("SUMMARY")
