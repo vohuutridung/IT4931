@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 Split Instagram JSONL data into:
-- Before April 10, 2026 (strictly before)
+- Before April 10, 2026
 - From April 10, 2026 onwards
+
+Không thay đổi dữ liệu gốc, chỉ split
 """
 
 import json
@@ -12,21 +14,20 @@ from pathlib import Path
 INPUT_FILE = "/home/khang/Code/data-pipeline/IT4931/data/instagram_data/raw_data/posts.jsonl"
 OUTPUT_DIR = "/home/khang/Code/data-pipeline/IT4931/data/instagram_data"
 
-BEFORE_OUTPUT = f"{OUTPUT_DIR}/posts_before_2026_04_10.jsonl"
-AFTER_OUTPUT = f"{OUTPUT_DIR}/posts_after_2026_04_10.jsonl"
+BEFORE_OUTPUT = f"{OUTPUT_DIR}/batch_data/posts.jsonl"
+AFTER_OUTPUT = f"{OUTPUT_DIR}/stream_data/posts.jsonl"
 
 SPLIT_DATE = datetime(2026, 4, 10).date()
 
 
 # =========================
-# PARSE DATE (ROBUST)
+# PARSE DATE
 # =========================
 def parse_date(date_str):
     try:
-        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        return dt.date()
-    except Exception as e:
-        print(f"  ⚠️ Failed to parse: {date_str} - {e}")
+        date_str = date_str.strip()
+        return datetime.fromisoformat(date_str.replace("Z", "+00:00")).date()
+    except Exception:
         return None
 
 
@@ -34,7 +35,9 @@ def parse_date(date_str):
 # MAIN
 # =========================
 def main():
-    Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+    # tạo folder output đầy đủ
+    Path(BEFORE_OUTPUT).parent.mkdir(parents=True, exist_ok=True)
+    Path(AFTER_OUTPUT).parent.mkdir(parents=True, exist_ok=True)
 
     stats = {
         "before": 0,
@@ -43,15 +46,14 @@ def main():
         "total": 0
     }
 
-    print("=" * 70)
-    print("SPLITTING INSTAGRAM DATA BY DATE")
+    print("=" * 60)
+    print("SPLIT INSTAGRAM DATA")
     print(f"Split date: {SPLIT_DATE}")
-    print(f"Input file: {INPUT_FILE}")
-    print("=" * 70)
+    print("=" * 60)
 
-    with open(BEFORE_OUTPUT, 'w') as f_before, \
-         open(AFTER_OUTPUT, 'w') as f_after, \
-         open(INPUT_FILE, 'r') as f_input:
+    with open(BEFORE_OUTPUT, 'w', encoding='utf-8') as f_before, \
+         open(AFTER_OUTPUT, 'w', encoding='utf-8') as f_after, \
+         open(INPUT_FILE, 'r', encoding='utf-8-sig') as f_input:
 
         for line_num, line in enumerate(f_input, 1):
             try:
@@ -62,7 +64,8 @@ def main():
                 record = json.loads(line)
                 stats["total"] += 1
 
-                timestamp_str = record.get("timestamp")
+                # hỗ trợ nhiều field timestamp
+                timestamp_str = record.get("timestamp") or record.get("taken_at")
                 if not timestamp_str:
                     stats["failed"] += 1
                     continue
@@ -72,7 +75,7 @@ def main():
                     stats["failed"] += 1
                     continue
 
-                # FIX split logic
+                # giữ nguyên dữ liệu
                 if post_date < SPLIT_DATE:
                     f_before.write(line + "\n")
                     stats["before"] += 1
@@ -80,32 +83,29 @@ def main():
                     f_after.write(line + "\n")
                     stats["after"] += 1
 
-                # giảm log
+                # log nhẹ
                 if line_num % 5000 == 0:
                     print(f"Processed {line_num} lines...")
 
-                # tránh mất data khi crash
+                # flush tránh mất data
                 if line_num % 10000 == 0:
                     f_before.flush()
                     f_after.flush()
 
-            except json.JSONDecodeError as e:
-                print(f"  ✗ Line {line_num}: Invalid JSON - {e}")
+            except json.JSONDecodeError:
                 stats["failed"] += 1
 
-            except Exception as e:
-                print(f"  ✗ Line {line_num}: Unexpected error - {e}")
+            except Exception:
                 stats["failed"] += 1
 
-    print("\n" + "=" * 70)
+    print("\n" + "=" * 60)
     print("SUMMARY")
-    print("=" * 70)
-
-    print(f"✓ Before 2026-04-10: {stats['before']}")
-    print(f"✓ After 2026-04-10: {stats['after']}")
-    print(f"📊 Total: {stats['total']}")
-    print(f"✗ Failed: {stats['failed']}")
-    print("=" * 70)
+    print("=" * 60)
+    print(f"Before 2026-04-10: {stats['before']}")
+    print(f"After 2026-04-10: {stats['after']}")
+    print(f"Total: {stats['total']}")
+    print(f"Failed: {stats['failed']}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

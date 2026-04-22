@@ -1,84 +1,70 @@
 #!/usr/bin/env python3
 """
-Script to split Facebook data into two parts:
-- Before April 10, 2026
-- After April 10, 2026
+Split Facebook data into:
+- stream_data (before SPLIT_DATE)
+- batch_data (>= SPLIT_DATE)
+
+AND add full timestamp (YYYY-MM-DDTHH:MM:SS) into each JSON file
 """
 
 import os
-import shutil
-import glob
+import json
 import re
 from datetime import datetime
 
 BASE_DATA_PATH = "/home/khang/Code/data-pipeline/IT4931/data/facebook_data/raw_data"
 OUTPUT_PATH = "/home/khang/Code/data-pipeline/IT4931/data/facebook_data"
 
-BEFORE_DATE_OUTPUT = os.path.join(OUTPUT_PATH, "data_before_2026_04_10")
-AFTER_DATE_OUTPUT = os.path.join(OUTPUT_PATH, "data_after_2026_04_10")
+STREAM_PATH = os.path.join(OUTPUT_PATH, "stream_data")
+BATCH_PATH = os.path.join(OUTPUT_PATH, "batch_data")
 
 SPLIT_DATE = datetime(2026, 4, 10)
 
 
 # =========================
-# PARSE TIMESTAMP (ROBUST)
+# PARSE FULL DATETIME
 # =========================
-def parse_timestamp(timestamp_str):
-    """
-    Extract YYYY_MM_DD safely from folder name
-    """
+def parse_datetime(folder_name):
     try:
-        match = re.search(r"(\d{4}_\d{2}_\d{2})", timestamp_str)
-        if not match:
-            return None
+        parts = folder_name.split("_")
 
-        date_part = match.group(1)
-        return datetime.strptime(date_part, "%Y_%m_%d")
+        parts = [p for p in parts if p]
+
+        # lấy 6 phần đầu: YYYY MM DD HH MM SS
+        parts = parts[:6]
+
+        return datetime.strptime("_".join(parts), "%Y_%m_%d_%H_%M_%S")
 
     except Exception as e:
-        print(f"  ⚠️ Failed to parse: {timestamp_str} - {e}")
+        print(f"Parse error: {folder_name} -> {e}")
         return None
 
 
-def get_timestamp_from_folder(folder_path):
-    return parse_timestamp(os.path.basename(folder_path))
-
-
 # =========================
-# COPY LOGIC (SAFE)
+# PROCESS JSON
 # =========================
-def copy_folder_with_posts(src_folder, dest_base_folder, page_name):
-    """
-    Copy largest JSON file as post.json
-    """
-
-    json_files = glob.glob(os.path.join(src_folder, "*.json"))
-
-    if not json_files:
-        print(f"    ⚠️ No JSON file in {src_folder}")
-        return False
-
-    # chọn file lớn nhất (không phụ thuộc cleanup trước)
-    largest_file = max(json_files, key=os.path.getsize)
-
-    timestamp_str = os.path.basename(src_folder)
-    dest_page_folder = os.path.join(dest_base_folder, page_name)
-    dest_timestamp_folder = os.path.join(dest_page_folder, timestamp_str)
-
-    os.makedirs(dest_timestamp_folder, exist_ok=True)
-
-    dest_post_file = os.path.join(dest_timestamp_folder, "post.json")
-
-    # tránh overwrite nếu đã tồn tại
-    if os.path.exists(dest_post_file):
-        print(f"    ⚠️ Skipped (already exists)")
-        return False
-
+def process_json_file(src_file, dest_file, dt):
     try:
-        shutil.copy2(largest_file, dest_post_file)
+        with open(src_file, "r", encoding="utf-8-sig") as f:
+            data = json.load(f)
+
+        # add timestamp
+        data["timestamp"] = dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+        os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+
+        # tránh overwrite
+        if os.path.exists(dest_file):
+            print(f"Skip (exists): {dest_file}")
+            return False
+
+        with open(dest_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+
         return True
+
     except Exception as e:
-        print(f"    ❌ Copy failed: {e}")
+        print(f"Error: {src_file} -> {e}")
         return False
 
 
@@ -86,83 +72,58 @@ def copy_folder_with_posts(src_folder, dest_base_folder, page_name):
 # MAIN
 # =========================
 def main():
-    os.makedirs(BEFORE_DATE_OUTPUT, exist_ok=True)
-    os.makedirs(AFTER_DATE_OUTPUT, exist_ok=True)
-
     stats = {
-        "before": {"folders": 0, "files": 0},
-        "after": {"folders": 0, "files": 0},
+        "stream": 0,
+        "batch": 0,
         "failed": 0
     }
 
-    print("=" * 70)
-    print("SPLITTING DATA BY DATE")
+    print("=" * 60)
+    print("SPLIT + ADD TIMESTAMP")
     print(f"Split date: {SPLIT_DATE.strftime('%Y-%m-%d')}")
-    print("=" * 70)
+    print("=" * 60)
 
-    # scan pages
-    for page_entry in os.scandir(BASE_DATA_PATH):
-        if not page_entry.is_dir():
+    for page in os.scandir(BASE_DATA_PATH):
+        if not page.is_dir():
             continue
 
-        page_name = page_entry.name
-        page_path = page_entry.path
-
-        print(f"\n📄 Processing page: {page_name}")
-
-        for ts_entry in os.scandir(page_path):
-            if not ts_entry.is_dir():
+        for folder in os.scandir(page.path):
+            if not folder.is_dir():
                 continue
 
-            timestamp_folder = ts_entry.name
-            timestamp_folder_path = ts_entry.path
-
-            dt = get_timestamp_from_folder(timestamp_folder_path)
-
+            dt = parse_datetime(folder.name)
             if dt is None:
                 stats["failed"] += 1
                 continue
 
-            # FIX LOGIC: strictly before vs after
-            if dt < SPLIT_DATE:
-                output_folder = BEFORE_DATE_OUTPUT
-                category = "BEFORE"
-            else:
-                output_folder = AFTER_DATE_OUTPUT
-                category = "AFTER"
+            target_base = BATCH_PATH if dt < SPLIT_DATE else STREAM_PATH
+            category = "batch" if dt < SPLIT_DATE else "stream"
 
-            success = copy_folder_with_posts(
-                timestamp_folder_path,
-                output_folder,
-                page_name
-            )
+            for file in os.listdir(folder.path):
+                if not file.endswith(".json"):
+                    continue
 
-            if success:
-                stats[category.lower()]["folders"] += 1
-                stats[category.lower()]["files"] += 1
-                status = "✓"
-            else:
-                status = "✗"
+                src_file = os.path.join(folder.path, file)
 
-            print(f"  [{status}] {timestamp_folder} ({dt.strftime('%Y-%m-%d')}) → {category}")
+                dest_file = os.path.join(
+                    target_base,
+                    page.name,
+                    folder.name,
+                    file
+                )
 
-    # summary
-    print("\n" + "=" * 70)
+                success = process_json_file(src_file, dest_file, dt)
+
+                if success:
+                    stats[category] += 1
+
+    print("\n" + "=" * 60)
     print("SUMMARY")
-    print("=" * 70)
-
-    print(f"✓ Before 2026-04-10:")
-    print(f"  - Folders: {stats['before']['folders']}")
-    print(f"  - Files: {stats['before']['files']}")
-    print(f"  - Output: {BEFORE_DATE_OUTPUT}")
-
-    print(f"\n✓ After 2026-04-10:")
-    print(f"  - Folders: {stats['after']['folders']}")
-    print(f"  - Files: {stats['after']['files']}")
-    print(f"  - Output: {AFTER_DATE_OUTPUT}")
-
-    print(f"\n✗ Failed to parse: {stats['failed']}")
-    print("=" * 70)
+    print("=" * 60)
+    print(f"Stream files: {stats['stream']}")
+    print(f"Batch files: {stats['batch']}")
+    print(f"Failed: {stats['failed']}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
