@@ -37,10 +37,10 @@ ARROW_SCHEMA = pa.schema([
     pa.field("content",     pa.string()),
     pa.field("url",         pa.string()),
     pa.field("hashtags",    pa.list_(pa.string())),
-    pa.field("likes",       pa.int32()),
-    pa.field("comments",    pa.int32()),
-    pa.field("shares",      pa.int32()),
-    pa.field("score",       pa.int32()),
+    pa.field("likes",       pa.int64()),  # Fix: int64 to prevent overflow
+    pa.field("comments",    pa.int64()),  # Fix: int64 to prevent overflow
+    pa.field("shares",      pa.int64()),  # Fix: int64 to prevent overflow
+    pa.field("score",       pa.int64()),  # Fix: int64 to prevent overflow
     pa.field("extra",       pa.string()),
 ])
 
@@ -88,14 +88,17 @@ def flatten(record: dict) -> dict:
         "comments":    int(eng.get("comments", 0)),
         "shares":      int(eng.get("shares", 0)),
         "score":       int(eng.get("score", 0)),
-        "extra":       record.get("extra") or "",
+        "extra":       json.dumps(record.get("extra") or {}),  # Fix: JSON serialize extra dict
     }
 
 
 # ── Flush → MinIO ───────────────────────────────────────────────
-def flush_to_minio(minio_client, buffer, source, event_date):
+def flush_to_minio(minio_client, buffer, source, event_date_str):
     if not buffer:
         return
+
+    # Parse event_date_str (YYYY-MM-DD-HH) back to datetime
+    event_date = datetime.strptime(event_date_str, "%Y-%m-%d-%H")
 
     cols = defaultdict(list)
     for row in buffer:
@@ -103,7 +106,11 @@ def flush_to_minio(minio_client, buffer, source, event_date):
             cols[k].append(v)
 
     for ts_col in ("event_time", "ingest_time"):
-        cols[ts_col] = pa.array(cols[ts_col], type=pa.timestamp("ms", tz="UTC"))
+        # Fix: Convert int ms to datetime objects before creating Arrow array
+        cols[ts_col] = pa.array(
+            [datetime.fromtimestamp(x / 1000, tz=timezone.utc) for x in cols[ts_col]],
+            type=pa.timestamp("ms", tz="UTC")
+        )
 
     table = pa.table(dict(cols), schema=ARROW_SCHEMA)
 
@@ -116,7 +123,7 @@ def flush_to_minio(minio_client, buffer, source, event_date):
 
     obj_key = (
         f"{MINIO_RAW_PREFIX}/{source}/"
-        f"{event_date.year:04d}/{event_date.month:02d}/{event_date.day:02d}/"
+        f"{event_date.year:04d}/{event_date.month:02d}/{event_date.day:02d}/{event_date.hour:02d}/"
         f"{ts_str}.parquet"
     )
 
@@ -162,13 +169,18 @@ def run():
                     record = json.loads(msg.value().decode("utf-8"))
                     row = flatten(record)
 
+                    # Fix: Skip records with null event_time to prevent crash
+                    if row["event_time"] is None:
+                        logger.warning("Skipping record with null event_time: %s", record.get("post_id"))
+                        continue
+
                     source = row["source"]
                     evt_dt = datetime.fromtimestamp(
                         row["event_time"] / 1000,
                         tz=timezone.utc
                     )
 
-                    buffers[(source, evt_dt.date())].append(row)
+                    buffers[(source, evt_dt.strftime("%Y-%m-%d-%H"))].append(row)
 
                 except Exception as e:
                     logger.warning("Parse error: %s", e)
@@ -182,28 +194,28 @@ def run():
                 elapsed >= CONSUMER_FLUSH_INTERVAL
             ) and total_buf > 0:
 
-                for (src, date), rows in list(buffers.items()):
+                for (src, date_str), rows in list(buffers.items()):
                     flush_to_minio(
                         minio,
                         rows,
                         src,
-                        datetime(date.year, date.month, date.day)
+                        date_str
                     )
                     total_sent += len(rows)
-                    del buffers[(src, date)]
+                    del buffers[(src, date_str)]
 
                 consumer.commit()
                 last_flush = time.monotonic()
                 logger.info("Committed | total_sent=%d", total_sent)
 
     finally:
-        for (src, date), rows in buffers.items():
+        for (src, date_str), rows in buffers.items():
             if rows:
                 flush_to_minio(
                     minio,
                     rows,
                     src,
-                    datetime(date.year, date.month, date.day)
+                    date_str
                 )
 
         consumer.commit()

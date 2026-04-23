@@ -43,6 +43,9 @@ RUN curl -fsSL -o ${SPARK_JARS_DIR}/spark-avro_2.12-3.5.3.jar \
     curl -fsSL -o ${SPARK_JARS_DIR}/commons-pool2-2.11.1.jar \
         https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar
 
+# ── Tạo thư mục Ivy cache ────────────────────────────────────────────────────
+RUN mkdir -p /home/spark/.ivy2/cache && chown -R spark:spark /home/spark/.ivy2
+
 # ── App code ──────────────────────────────────────────────────────────────────
 WORKDIR /app
 COPY streaming/  streaming/

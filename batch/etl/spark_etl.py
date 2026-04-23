@@ -16,7 +16,9 @@ Chạy:
 from typing import Optional
 import argparse
 import logging
-from datetime import datetime
+import os
+import json
+from datetime import datetime, timedelta
 
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as F
@@ -33,6 +35,40 @@ from shared.config import (
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)-8s %(name)s — %(message)s")
 logger = logging.getLogger("spark_etl")
+
+
+# ── Incremental Processing ────────────────────────────────────────────────────
+
+PROCESSED_TRACKER_FILE = "/tmp/etl_processed_dates.json"
+REPROCESS_DAYS = 10  # Re-process data updated within 10 days
+
+
+def load_processed_dates() -> dict:
+    """Load processed (source, date) from tracker file."""
+    if os.path.exists(PROCESSED_TRACKER_FILE):
+        with open(PROCESSED_TRACKER_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+
+def save_processed_dates(processed: dict) -> None:
+    """Save processed dates to tracker file."""
+    with open(PROCESSED_TRACKER_FILE, "w") as f:
+        json.dump(processed, f, indent=2)
+
+
+def should_process(source: str, date: str) -> bool:
+    """Check if (source, date) should be processed based on tracker."""
+    processed = load_processed_dates()
+    key = f"{source}_{date}"
+    
+    if key not in processed:
+        return True  # Never processed
+    
+    processed_time = datetime.fromisoformat(processed[key])
+    cutoff = datetime.now() - timedelta(days=REPROCESS_DAYS)
+    
+    return processed_time < cutoff  # Re-process if older than cutoff
 
 
 # ── 1. SparkSession ───────────────────────────────────────────────────────────
@@ -85,6 +121,11 @@ def read_raw(spark: SparkSession, date: Optional[str], source: Optional[str]) ->
             f"{dt.year:04d}/{dt.month:02d}/{dt.day:02d}/"
         )
 
+        # Incremental: Skip if already processed recently
+        if not should_process(source, date):
+            logger.info("Skipping already processed: %s %s", source, date)
+            return spark.createDataFrame([], schema=None)  # Empty DF
+
     elif source:
         path = f"s3a://{MINIO_BUCKET_RAW}/{MINIO_RAW_PREFIX}/{source}/"
 
@@ -102,9 +143,8 @@ def read_raw(spark: SparkSession, date: Optional[str], source: Optional[str]) ->
             .parquet(path)
     )
 
-    logger.info(">>> COUNT START")
-    cnt = df.count()
-    logger.info(">>> RAW COUNT = %d", cnt)
+    # Optimize: Cache immediately after read
+    df.cache()
 
     return df
 
@@ -112,6 +152,7 @@ def read_raw(spark: SparkSession, date: Optional[str], source: Optional[str]) ->
 # ── 3. ETL Transformations ────────────────────────────────────────────────────
 
 def clean(df: DataFrame) -> DataFrame:
+    # Optimize: Chain transformations efficiently
     df = _drop_duplicates(df)
     df = _filter_empty(df)
     df = _normalize_text(df)
@@ -145,7 +186,7 @@ def _normalize_text(df: DataFrame) -> DataFrame:
         .withColumn("content_clean",
                     F.regexp_replace(F.col("content_clean"), r"\s+", " "))
         .withColumn("content_clean", F.trim(F.col("content_clean")))
-        .withColumn("hashtags", F.transform(F.col("hashtags"), F.lower))
+        .withColumn("hashtags", F.transform(F.coalesce(F.col("hashtags"), F.array()), F.lower))
     )
 
 
@@ -182,10 +223,11 @@ def write_clean_minio(df: DataFrame) -> None:
     out_path = f"s3a://{MINIO_BUCKET_CLEAN}/{MINIO_CLEAN_PREFIX}/"
     logger.info("Writing clean data → %s", out_path)
     (
-        df.coalesce(2)  
+        df.repartition("source", "event_year", "event_month", "event_date")
         .write
         .mode("append")
         .partitionBy("source", "event_year", "event_month", "event_date")
+        .option("checkpointLocation", "/tmp/spark-etl-checkpoint")
         .parquet(out_path)
     )
     logger.info("Clean data written to MinIO.")
@@ -208,6 +250,9 @@ def write_mongodb(df: DataFrame) -> None:
     select_cols = [c for c in mongo_cols if c in available]
     mongo_df    = df.select(*select_cols).withColumnRenamed("content_clean", "content")
 
+    # Fix: Use post_id as _id to avoid duplicates
+    mongo_df = mongo_df.withColumn("_id", F.col("post_id"))
+
     logger.info("Writing to MongoDB %s.%s", MONGO_DB, MONGO_COLLECTION)
     (
         mongo_df.write
@@ -215,7 +260,8 @@ def write_mongodb(df: DataFrame) -> None:
                 .option("database",       MONGO_DB)
                 .option("collection",     MONGO_COLLECTION)
                 .option("upsertDocument", "true")
-                .option("idFieldList",    "post_id")
+                .option("idFieldList",    "_id")
+                .option("checkpointLocation", "/tmp/mongo-etl-checkpoint")
                 .mode("append")
                 .save()
     )
@@ -258,8 +304,8 @@ def main():
     raw_count = raw_df.count()
     logger.info("Raw records: %d", raw_count)
 
-    clean_df = clean(raw_df)
-    clean_df.cache()
+    clean_df = clean(raw_df).cache()
+    clean_count = clean_df.count()
 
     write_clean_minio(clean_df)
 
@@ -267,6 +313,14 @@ def main():
         write_mongodb(clean_df)
 
     print_stats(raw_count, clean_df)
+
+    # Incremental: Mark as processed
+    if args.date and args.source:
+        processed = load_processed_dates()
+        key = f"{args.source}_{args.date}"
+        processed[key] = datetime.now().isoformat()
+        save_processed_dates(processed)
+        logger.info("Marked as processed: %s", key)
 
     raw_df.unpersist()
     clean_df.unpersist()
