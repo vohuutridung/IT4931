@@ -10,6 +10,7 @@ attrs>=23.2
 # ── Object Storage ────────────────────────────────────────────────────────────
 minio==7.2.7
 pyarrow==14.0.1
+numpy<2  # Fix NumPy 2.x incompatibility with PyArrow
 
 # ── Database ──────────────────────────────────────────────────────────────────
 pymongo==4.6.3

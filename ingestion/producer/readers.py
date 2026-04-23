@@ -1,19 +1,11 @@
 """
 Readers — đọc từng loại file/folder, yield (topic, raw_dict).
-
-Vì data đã chia sẵn theo tên file/folder:
-  *_before_2026_04_10  →  TOPIC_BATCH
-  *_after_2026_04_10   →  TOPIC_REALTIME
-  data_before_*        →  TOPIC_BATCH
-  data_after_*         →  TOPIC_REALTIME
-
-Reader chịu trách nhiệm gắn topic — normalizer và producer không cần biết.
 """
 
 import json
 import logging
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Iterator
 
 from ingestion.config.settings import TOPIC_BATCH, TOPIC_REALTIME, PATHS
 
@@ -22,58 +14,96 @@ logger = logging.getLogger(__name__)
 
 # ── Generic JSONL reader ──────────────────────────────────────────────────────
 
-def _read_jsonl(path: Path, topic: str) -> Generator[tuple, None, None]:
+def _read_jsonl(path: Path, topic: str) -> Iterator[tuple[str, dict]]:
     if not path.exists():
         logger.warning("File not found: %s", path)
-        return
+        return iter(())
+
     logger.info("Reading %s → topic=%s", path, topic)
-    with path.open(encoding="utf-8") as f:
-        for lineno, line in enumerate(f, 1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                yield topic, json.loads(line)
-            except json.JSONDecodeError as e:
-                logger.warning("Bad JSON line %d in %s: %s", lineno, path.name, e)
+
+    def _gen():
+        try:
+            f_handle = path.open(encoding="utf-8")
+        except OSError as e:
+            logger.warning("Cannot open file: %s (%s)", path, e)
+            return
+
+        with f_handle:
+            for lineno, line in enumerate(f_handle, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                    if isinstance(raw, dict):
+                        yield topic, raw
+                    else:
+                        logger.debug("Skip non-dict line %d in %s", lineno, path.name)
+                except json.JSONDecodeError as e:
+                    logger.warning("Bad JSON line %d in %s (%s)", lineno, path.name, e)
+
+    return _gen()
 
 
 # ── Facebook folder reader ────────────────────────────────────────────────────
-# Cấu trúc: data_before_2026_04_10/{page}/{timestamp}/post.json
 
-def _read_fb_folder(folder: Path, topic: str) -> Generator[tuple, None, None]:
+def _read_fb_folder(folder: Path, topic: str) -> Iterator[tuple[str, dict]]:
     if not folder.exists():
         logger.warning("Folder not found: %s", folder)
-        return
-    post_files = sorted(folder.rglob("post.json"))
-    logger.info("Reading %d FB post.json files from %s → topic=%s",
-                len(post_files), folder, topic)
-    for pf in post_files:
-        try:
-            # Use utf-8-sig to handle BOM (Byte Order Mark)
-            raw = json.loads(pf.read_text(encoding="utf-8-sig"))
-            # Gắn thêm source_folder để debug
-            raw["_source_file"] = str(pf)
-            yield topic, raw
-        except Exception as e:
-            logger.warning("Skip %s: %s", pf, e)
+        return iter(())
+
+    def _gen():
+        post_files = sorted(folder.rglob("post.json"))
+        logger.info(
+            "Reading %d FB post.json files from %s → topic=%s",
+            len(post_files), folder, topic,
+        )
+
+        for pf in post_files:
+            # race condition: file có thể bị xóa giữa lúc rglob và stat
+            try:
+                if pf.stat().st_size == 0:
+                    logger.debug("Skip empty file: %s", pf)
+                    continue
+            except OSError:
+                logger.debug("Skip inaccessible file: %s", pf)
+                continue
+
+            try:
+                with pf.open(encoding="utf-8-sig") as f:
+                    raw = json.load(f)
+            except json.JSONDecodeError as e:
+                logger.warning("Invalid JSON in file: %s (%s)", pf, e)
+                continue
+            except OSError as e:
+                logger.warning("Cannot read file: %s (%s)", pf, e)
+                continue
+
+            if not isinstance(raw, dict):
+                logger.debug("Skip non-dict file: %s", pf)
+                continue
+
+            # KHÔNG mutate raw
+            yield topic, {**raw, "_source_file": str(pf)}
+
+    return _gen()
 
 
-# ── Public API: 1 generator per source ───────────────────────────────────────
+# ── Public API ────────────────────────────────────────────────────────────────
 
-def reddit_records() -> Generator[tuple, None, None]:
+def reddit_records() -> Generator[tuple[str, dict], None, None]:
     cfg = PATHS["reddit"]
     yield from _read_jsonl(cfg["batch"],    TOPIC_BATCH)
     yield from _read_jsonl(cfg["realtime"], TOPIC_REALTIME)
 
 
-def instagram_records() -> Generator[tuple, None, None]:
+def instagram_records() -> Generator[tuple[str, dict], None, None]:
     cfg = PATHS["instagram"]
     yield from _read_jsonl(cfg["batch"],    TOPIC_BATCH)
     yield from _read_jsonl(cfg["realtime"], TOPIC_REALTIME)
 
 
-def facebook_records() -> Generator[tuple, None, None]:
+def facebook_records() -> Generator[tuple[str, dict], None, None]:
     cfg = PATHS["facebook"]
     yield from _read_fb_folder(cfg["batch"],    TOPIC_BATCH)
     yield from _read_fb_folder(cfg["realtime"], TOPIC_REALTIME)
