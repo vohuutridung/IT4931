@@ -46,7 +46,7 @@ def check_minio_has_data(**ctx) -> bool:
     from minio import Minio
     import os
 
-    ds  = ctx["ds"]
+    ds  = ctx.get("yesterday_ds", ctx["ds"])
     dt  = datetime.strptime(ds, "%Y-%m-%d")
 
     client = Minio(
@@ -80,7 +80,7 @@ def verify_mongo_count(**ctx) -> None:
     from pymongo import MongoClient
     import os
 
-    ds  = ctx["ds"]
+    ds  = ctx.get("yesterday_ds", ctx["ds"])
     dt  = datetime.strptime(ds, "%Y-%m-%d")
     # Ngày tiếp theo để dùng $lt (exclusive)
     ds_next = (dt + timedelta(days=1)).strftime("%Y-%m-%d")

@@ -72,6 +72,14 @@ def make_minio_client() -> Minio:
 
 
 # ── Flatten record ───────────────────────────────────────────────
+def _json_string(value) -> str:
+    if value is None:
+        return "{}"
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
 def flatten(record: dict) -> dict:
     eng = record.get("engagement") or {}
     return {
@@ -88,7 +96,7 @@ def flatten(record: dict) -> dict:
         "comments":    int(eng.get("comments", 0)),
         "shares":      int(eng.get("shares", 0)),
         "score":       int(eng.get("score", 0)),
-        "extra":       json.dumps(record.get("extra") or {}),  # Fix: JSON serialize extra dict
+        "extra":       _json_string(record.get("extra")),
     }
 
 

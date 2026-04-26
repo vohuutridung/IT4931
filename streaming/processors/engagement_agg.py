@@ -13,6 +13,10 @@ from pyspark.sql.functions import (
 
 class EngagementAggregator:
     """Aggregate engagement metrics by time window and source."""
+
+    @staticmethod
+    def _time_col(df: DataFrame) -> str:
+        return "event_timestamp" if "event_timestamp" in df.columns else "event_time"
     
     @staticmethod
     def aggregate_by_source_and_time(
@@ -43,17 +47,17 @@ class EngagementAggregator:
         return (
             df
             .groupBy(
-                window(col("event_time"), window_duration),
+                window(col(EngagementAggregator._time_col(df)), window_duration),
                 col("source")
             )
             .agg(
                 count("*").alias("num_posts"),
-                avg(col("engagement.likes")).alias("avg_likes"),
-                avg(col("engagement.comments")).alias("avg_comments"),
-                avg(col("engagement.shares")).alias("avg_shares"),
-                spark_max(col("engagement.likes")).alias("max_likes"),
-                spark_min(col("engagement.likes")).alias("min_likes"),
-                stddev_pop(col("engagement.likes")).alias("stddev_likes"),
+                avg(col("likes")).alias("avg_likes"),
+                avg(col("comments")).alias("avg_comments"),
+                avg(col("shares")).alias("avg_shares"),
+                spark_max(col("likes")).alias("max_likes"),
+                spark_min(col("likes")).alias("min_likes"),
+                stddev_pop(col("likes")).alias("stddev_likes"),
             )
             .select(
                 col("window.start").alias("time_start"),
@@ -88,8 +92,9 @@ class EngagementAggregator:
         from pyspark.sql.functions import explode, row_number
         from pyspark.sql.window import Window
         
+        time_col = EngagementAggregator._time_col(df)
         window_spec = Window.partitionBy(
-            window(col("event_time"), window_duration)
+            window(col(time_col), window_duration)
         ).orderBy(col("count").desc())
         
         return (
@@ -97,7 +102,7 @@ class EngagementAggregator:
             .withColumn("hashtag", explode(col("hashtags")))
             .filter(col("hashtag").isNotNull())
             .groupBy(
-                window(col("event_time"), window_duration),
+                window(col(time_col), window_duration),
                 col("hashtag")
             )
             .agg(count("*").alias("count"))

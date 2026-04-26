@@ -20,9 +20,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 # ── Tải JARs vào thư mục jars của Spark ──────────────────────────────────────
 ARG SPARK_JARS_DIR=/opt/spark/jars
 
-RUN curl -fsSL -o ${SPARK_JARS_DIR}/spark-avro_2.12-3.5.3.jar \
-        https://repo1.maven.org/maven2/org/apache/spark/spark-avro_2.12/3.5.3/spark-avro_2.12-3.5.3.jar && \
-    curl -fsSL -o ${SPARK_JARS_DIR}/spark-sql-kafka-0-10_2.12-3.5.3.jar \
+RUN curl -fsSL -o ${SPARK_JARS_DIR}/spark-sql-kafka-0-10_2.12-3.5.3.jar \
         https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_2.12/3.5.3/spark-sql-kafka-0-10_2.12-3.5.3.jar && \
     curl -fsSL -o ${SPARK_JARS_DIR}/spark-token-provider-kafka-0-10_2.12-3.5.3.jar \
         https://repo1.maven.org/maven2/org/apache/spark/spark-token-provider-kafka-0-10_2.12/3.5.3/spark-token-provider-kafka-0-10_2.12-3.5.3.jar && \
@@ -51,7 +49,6 @@ WORKDIR /app
 COPY streaming/  streaming/
 COPY batch/      batch/
 COPY shared/     shared/
-COPY ingestion/schema/ ingestion/schema/
 RUN touch __init__.py
 
 # ── Fix streaming output and checkpoint directory permissions ──────────────────

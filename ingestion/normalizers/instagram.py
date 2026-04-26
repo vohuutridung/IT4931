@@ -34,6 +34,7 @@ Changes vs previous version:
 import re
 import html
 import time
+import json
 import logging
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
@@ -307,13 +308,16 @@ def _normalize_comment(
     )
 
     return {
-        "id":         key,
+        "comment_id": key,
         "post_id":    f"instagram_{post_id}",
-        "content":    truncated_content,
-        "author":     author,
+        "parent_id":  parent_id,
+        "author_id":  author["id"],
+        "author":     author["name"],
+        "text":       truncated_content,
+        "likes":      _coalesce_int(cmt.get("likesCount")),
         "created_at": created_at,
-        "like_count": _coalesce_int(cmt.get("likesCount")),
-        "extra":      extra.to_dict(),
+        "depth":      depth,
+        "extra":      json.dumps(extra.to_dict(), ensure_ascii=False),
     }
 
 
@@ -552,6 +556,7 @@ if __name__ == "__main__":
     print(f"\nComments normalized: {len(result['comments'])}")
     print("\nThread structure:")
     for c in result["comments"]:
-        indent = "  " * c["extra"]["depth"]
-        pid    = c["extra"]["parent_id"] or "ROOT"
-        print(f"{indent}[{c['id']}]  parent={pid}  verified={c['author']['is_verified']}  text={c['content'][:45]!r}")
+        extra  = json.loads(c["extra"])
+        indent = "  " * c["depth"]
+        pid    = c["parent_id"] or "ROOT"
+        print(f"{indent}[{c['comment_id']}]  parent={pid}  text={c['text'][:45]!r}")

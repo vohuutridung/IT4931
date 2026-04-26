@@ -46,6 +46,7 @@ coverage.xml
 ################################################################################
 .vscode/
 .idea/
+.codex
 *.swp
 *.swo
 *~
@@ -109,4 +110,3 @@ config.local.yml
 .pytest_cache/
 *.pyc
 .DS_Store
-data/reddit_data/reddit_all_topics.json

@@ -1,6 +1,6 @@
 x-common-env: &common-env
+  ENV: ${ENV:-dev}
   KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-  SCHEMA_REGISTRY_URL: http://schema-registry:8081
   MINIO_ENDPOINT: minio:9000
   MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
   MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
@@ -56,37 +56,17 @@ services:
       retries: 10
       start_period: 30s
 
-  schema-registry:
-    image: confluentinc/cp-schema-registry:7.6.0
-    container_name: schema-registry
-    depends_on:
-      kafka:
-        condition: service_healthy
-    ports:
-      - "8081:8081"
-    environment:
-      SCHEMA_REGISTRY_HOST_NAME: schema-registry
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
     depends_on:
       kafka:
         condition: service_healthy
-      schema-registry:
-        condition: service_healthy
     ports:
       - "8082:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
-      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
 
   kafka-init:
     image: confluentinc/cp-kafka:7.6.0
@@ -102,13 +82,13 @@ services:
         sleep 10
 
         kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
-          --topic social-raw-batch --partitions 3 --replication-factor 1
+          --topic ${ENV:-dev}.social-raw-batch --partitions 3 --replication-factor 1
 
         kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
-          --topic social-raw-realtime --partitions 3 --replication-factor 1
+          --topic ${ENV:-dev}.social-raw-realtime --partitions 3 --replication-factor 1
 
         kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
-          --topic social-processed --partitions 3 --replication-factor 1
+          --topic ${ENV:-dev}.social-processed --partitions 3 --replication-factor 1
 
         echo "=== Topics created ==="
         kafka-topics --bootstrap-server kafka:29092 --list
@@ -179,8 +159,6 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      schema-registry:
-        condition: service_healthy
       minio:
         condition: service_healthy
       mongodb:
@@ -194,7 +172,6 @@ services:
       - ./streaming:/app/streaming
       - ./batch:/app/batch
       - ./shared:/app/shared
-      - ./ingestion/schema:/app/ingestion/schema
       - spark_master_data:/opt/spark/work
       - ./:/opt/spark-apps
     healthcheck:
@@ -222,7 +199,6 @@ services:
       - ./streaming:/app/streaming
       - ./batch:/app/batch
       - ./shared:/app/shared
-      - ./ingestion/schema:/app/ingestion/schema
       - spark_worker_1_data:/opt/spark/work
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
 
@@ -237,8 +213,6 @@ services:
     depends_on:
       kafka-init:
         condition: service_completed_successfully
-      schema-registry:
-        condition: service_healthy
     environment:
       <<: *common-env
       DATA_DIR: /app/data
@@ -268,12 +242,11 @@ services:
     volumes:
       - ./streaming:/app/streaming
       - ./shared:/app/shared
-      - ./ingestion/schema:/app/ingestion/schema
       - streaming_output:/tmp/streaming-output
       - streaming_checkpoints:/tmp/spark-checkpoints
     command: >
       /opt/spark/bin/spark-submit
-        --master local[2]
+        --master spark://spark-master:7077
         --driver-memory 2g
         --executor-memory 2g
         /app/streaming/main.py
@@ -292,8 +265,6 @@ services:
         condition: service_completed_successfully
       minio-init:
         condition: service_completed_successfully
-      schema-registry:
-        condition: service_healthy
     environment:
       <<: *common-env
       KAFKA_CONSUMER_GROUP: batch-consumer-group

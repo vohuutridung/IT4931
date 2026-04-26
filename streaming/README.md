@@ -6,7 +6,7 @@ Processes normalized social media posts from Kafka using Apache Spark Structured
 
 This module:
 - Reads real-time and batch data from Kafka topics
-- Deserializes Avro-encoded posts
+- Deserializes JSON-encoded posts
 - Applies transformations (engagement scoring, deduplication, trending analysis)
 - Writes results to multiple sinks (Parquet, console, Kafka)
 
@@ -14,11 +14,11 @@ This module:
 
 ```
 Kafka Topics
-  ├─ social-raw-batch      (historical data)
-  └─ social-raw-realtime   (streaming data)
+  ├─ dev.social-raw-batch      (historical data)
+  └─ dev.social-raw-realtime   (streaming data)
            ↓
 Spark Structured Streaming
-  ├─ Read: Deserialize Avro
+  ├─ Read: Deserialize JSON
   ├─ Transform: 
   │   ├─ Engagement aggregation
   │   ├─ Viral detection
@@ -47,7 +47,6 @@ streaming/
 │   ├── kafka_sink.py         # Kafka output
 │   └── console_sink.py       # Console output (debug)
 └── utils/
-    ├── avro_helper.py        # Avro deserialization
     └── metrics.py            # Monitoring metrics
 ```
 
@@ -58,17 +57,15 @@ streaming/
 pip install -r requirements.txt
 ```
 
-### Spark with Kafka & Avro
+### Spark with Kafka
 ```bash
-# Install Kafka and Avro support (required for Spark Streaming)
-# Option 1: Via spark-submit
+# Install Kafka support (required for Spark Streaming)
 spark-submit --packages \
-  org.apache.spark:spark-avro_2.12:3.5.0,\
   org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
   streaming/main.py
 
-# Option 2: Add to ~/.bashrc or ~/.zshrc
-export SPARK_PACKAGES="org.apache.spark:spark-avro_2.12:3.5.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0"
+# Or add to ~/.bashrc or ~/.zshrc
+export SPARK_PACKAGES="org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0"
 ```
 
 ### Running Services
@@ -89,7 +86,6 @@ Create `.env` file in project root:
 ```bash
 # Kafka
 KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-SCHEMA_REGISTRY_URL=http://localhost:8081
 
 # Output
 OUTPUT_DIR=/tmp/streaming-output
@@ -122,7 +118,7 @@ python -m streaming.main
 
 # Option 2: With spark-submit (recommended)
 spark-submit \
-  --packages org.apache.spark:spark-avro_2.12:3.5.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
   --driver-memory 4g \
   streaming/main.py
 
@@ -130,7 +126,7 @@ spark-submit \
 KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
 WINDOW_DURATION="5 minutes" \
 spark-submit \
-  --packages org.apache.spark:spark-avro_2.12:3.5.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
   streaming/main.py
 ```
 
@@ -145,7 +141,7 @@ spark-submit \
   --executor-memory 4g \
   --executor-cores 2 \
   --num-executors 4 \
-  --packages org.apache.spark:spark-avro_2.12:3.5.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
   streaming/main.py
 ```
 
@@ -177,17 +173,18 @@ ls -la /tmp/streaming-output/
 
 # Read Parquet in Python
 import pandas as pd
-df = pd.read_parquet("/tmp/streaming-output/raw/topic=social-raw-realtime/")
+df = pd.read_parquet("/tmp/streaming-output/clean/source=instagram/")
 print(df.head())
 ```
 
 ## Transformations
 
 ### SocialProcessor
-- **engagement_score**: likes\*2 + comments\*3 + shares\*5
-- **content_metrics**: length, hashtag_count, url_present
-- **deduplication**: Remove duplicate post_ids
-- **engagement_category**: low/medium/high/viral
+- **flatten_engagement**: converts nested engagement to `likes`, `comments`, `shares`, `score`
+- **deduplication**: removes duplicate `post_id`s
+- **text normalization**: creates `content_clean`
+- **derived columns**: `event_date`, `event_year`, `event_month`, `event_hour`, `event_weekday`, `content_len`, `hashtag_count`, `total_engagement`
+- **engagement_tier**: low/medium/high/viral, matching batch ETL
 
 ### EngagementAggregator
 - **by_source_and_time**: Group by source + time window
@@ -195,15 +192,6 @@ print(df.head())
 - **source_comparison**: Engagement comparison across platforms
 
 ## Common Issues
-
-### Issue: Cannot find spark-avro package
-```
-Error: org.apache.spark:spark-avro not found
-```
-Solution:
-```bash
-spark-submit --packages org.apache.spark:spark-avro_2.12:3.5.0,...
-```
 
 ### Issue: Kafka connection refused
 ```
@@ -319,7 +307,6 @@ python -m pytest tests/
 
 - [Spark Structured Streaming Guide](https://spark.apache.org/docs/latest/structured-streaming-programming-guide.html)
 - [Kafka Integration](https://spark.apache.org/docs/latest/structured-streaming-kafka-integration.html)
-- [Avro in Spark](https://github.com/confluentinc/spark-avro)
 
 ## Troubleshooting
 
@@ -341,7 +328,7 @@ tail -f /tmp/spark-logs/
 kafka-topics --list --bootstrap-server localhost:9092
 
 # Describe topic
-kafka-topics --describe --topic social-raw-realtime --bootstrap-server localhost:9092
+kafka-topics --describe --topic dev.social-raw-realtime --bootstrap-server localhost:9092
 ```
 
 ## Future Enhancements

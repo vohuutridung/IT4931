@@ -80,7 +80,7 @@ def create_spark() -> SparkSession:
         .master(SPARK_MASTER)
 
         # MinIO (S3A)
-        .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000")
+        .config("spark.hadoop.fs.s3a.endpoint", S3A_ENDPOINT)
         .config("spark.hadoop.fs.s3a.access.key", MINIO_ACCESS_KEY)
         .config("spark.hadoop.fs.s3a.secret.key", MINIO_SECRET_KEY)
         .config("spark.hadoop.fs.s3a.path.style.access", "true")
@@ -112,7 +112,7 @@ def create_spark() -> SparkSession:
 
 # ── 2. Read raw Parquet ───────────────────────────────────────────────────────
 
-def read_raw(spark: SparkSession, date: Optional[str], source: Optional[str]) -> DataFrame:
+def read_raw(spark: SparkSession, date: Optional[str], source: Optional[str]) -> Optional[DataFrame]:
 
     if date and source:
         dt = datetime.strptime(date, "%Y-%m-%d")
@@ -124,7 +124,14 @@ def read_raw(spark: SparkSession, date: Optional[str], source: Optional[str]) ->
         # Incremental: Skip if already processed recently
         if not should_process(source, date):
             logger.info("Skipping already processed: %s %s", source, date)
-            return spark.createDataFrame([], schema=None)  # Empty DF
+            return None
+
+    elif date:
+        dt = datetime.strptime(date, "%Y-%m-%d")
+        path = (
+            f"s3a://{MINIO_BUCKET_RAW}/{MINIO_RAW_PREFIX}/*/"
+            f"{dt.year:04d}/{dt.month:02d}/{dt.day:02d}/"
+        )
 
     elif source:
         path = f"s3a://{MINIO_BUCKET_RAW}/{MINIO_RAW_PREFIX}/{source}/"
@@ -299,6 +306,10 @@ def main():
 
     spark    = create_spark()
     raw_df   = read_raw(spark, args.date, args.source)
+    if raw_df is None:
+        spark.stop()
+        logger.info("No ETL work needed.")
+        return
 
     raw_df.cache()
     raw_count = raw_df.count()

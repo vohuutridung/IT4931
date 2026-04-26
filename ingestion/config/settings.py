@@ -15,11 +15,10 @@ ENV = os.getenv("ENV", "dev")
 # ── Kafka ────────────────────────────────────────────────
 
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-SCHEMA_REGISTRY_URL     = os.getenv("SCHEMA_REGISTRY_URL",     "http://localhost:8081")
 
-TOPIC_BATCH    = f"{ENV}.social-raw-batch"
-TOPIC_REALTIME = f"{ENV}.social-raw-realtime"
-TOPIC_DLQ      = f"{ENV}.social-raw-dlq"
+TOPIC_BATCH = os.getenv("KAFKA_TOPIC_BATCH", f"{ENV}.social-raw-batch")
+TOPIC_REALTIME = os.getenv("KAFKA_TOPIC_REALTIME", f"{ENV}.social-raw-realtime")
+TOPIC_DLQ = os.getenv("KAFKA_TOPIC_DLQ", f"{ENV}.social-raw-dlq")
 
 # ── Data paths (FIXED) ───────────────────────────────────
 

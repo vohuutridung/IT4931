@@ -3,7 +3,6 @@ Spark Streaming configuration for social media pipeline.
 
 Environment variables:
   - KAFKA_BOOTSTRAP_SERVERS: Kafka broker addresses (default: localhost:9092)
-  - SCHEMA_REGISTRY_URL: Schema Registry URL (default: http://localhost:8081)
   - OUTPUT_DIR: Output directory for Parquet files (default: /tmp/streaming-output)
   - CHECKPOINT_DIR: Checkpoint directory (default: /tmp/spark-checkpoints)
   - SPARK_MASTER: Spark master URL (default: local[*])
@@ -13,12 +12,15 @@ import os
 from pathlib import Path
 
 # ── Kafka Configuration ───────────────────────────────────────────────────────
+ENV = os.getenv("ENV", "dev")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-SCHEMA_REGISTRY_URL = os.getenv("SCHEMA_REGISTRY_URL", "http://localhost:8081")
 
 # Topics
-SOURCE_TOPICS = ["social-raw-batch", "social-raw-realtime"]
-PROCESSED_TOPIC = "social-processed"
+SOURCE_TOPICS = [
+    os.getenv("KAFKA_TOPIC_BATCH", f"{ENV}.social-raw-batch"),
+    os.getenv("KAFKA_TOPIC_REALTIME", f"{ENV}.social-raw-realtime"),
+]
+PROCESSED_TOPIC = os.getenv("KAFKA_TOPIC_PROCESSED", f"{ENV}.social-processed")
 
 # ── Spark Configuration ───────────────────────────────────────────────────────
 SPARK_MASTER = os.getenv("SPARK_MASTER", "local[*]")
@@ -75,7 +77,7 @@ OUTPUT_MODE = "append"  # append, update, complete
 # ── Sink Paths ────────────────────────────────────────────────────────────────
 SINK_PATHS = {
     "aggregated": OUTPUT_DIR / "aggregated",
-    "raw_posts": OUTPUT_DIR / "raw_posts",
+    "clean_posts": OUTPUT_DIR / "clean",
     "viral_posts": OUTPUT_DIR / "viral_posts",
 }
 

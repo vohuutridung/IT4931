@@ -14,13 +14,12 @@ from pathlib import Path
 
 # ── Kafka ─────────────────────────────────────────────────────────────────────
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-SCHEMA_REGISTRY_URL     = os.getenv("SCHEMA_REGISTRY_URL", "http://localhost:8081")
 
 ENV = os.getenv("ENV", "dev")
 DATE_CUTOFF = os.getenv("DATE_CUTOFF", "2026_04_10")
-KAFKA_TOPIC_BATCH    = f"{ENV}.social-raw-batch"
-KAFKA_TOPIC_REALTIME = f"{ENV}.social-raw-realtime"
-KAFKA_TOPIC_PROCESSED = f"{ENV}.social-processed"
+KAFKA_TOPIC_BATCH = os.getenv("KAFKA_TOPIC_BATCH", f"{ENV}.social-raw-batch")
+KAFKA_TOPIC_REALTIME = os.getenv("KAFKA_TOPIC_REALTIME", f"{ENV}.social-raw-realtime")
+KAFKA_TOPIC_PROCESSED = os.getenv("KAFKA_TOPIC_PROCESSED", f"{ENV}.social-processed")
 
 KAFKA_CONSUMER_GROUP = os.getenv("KAFKA_CONSUMER_GROUP", f"{ENV}-batch-consumer-group")
 
