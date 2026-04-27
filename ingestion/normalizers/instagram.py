@@ -33,6 +33,7 @@ Changes vs previous version:
 
 import re
 import html
+import math
 import time
 import json
 import logging
@@ -405,7 +406,6 @@ def normalize(raw: dict) -> dict:
     cmts  = _coalesce_int(raw.get("commentsCount"))
     views = _coalesce_int(raw.get("videoViewCount"))
     # log1p để tránh video có views cực cao lấn át hoàn toàn likes/comments
-    import math
     score = likes + 2 * cmts + int(math.log1p(views) * 10)
 
     return {

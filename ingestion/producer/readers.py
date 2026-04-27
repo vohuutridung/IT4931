@@ -4,6 +4,8 @@ Readers — đọc từng loại file/folder, yield (topic, raw_dict).
 
 import json
 import logging
+import time
+import random
 from pathlib import Path
 from typing import Generator, Iterator
 
@@ -14,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # ── Generic JSONL reader ──────────────────────────────────────────────────────
 
-def _read_jsonl(path: Path, topic: str) -> Iterator[tuple[str, dict]]:
+def _read_jsonl(path: Path, topic: str, delay: float = 0.0) -> Iterator[tuple[str, dict]]:
     if not path.exists():
         logger.warning("File not found: %s", path)
         return iter(())
@@ -37,6 +39,9 @@ def _read_jsonl(path: Path, topic: str) -> Iterator[tuple[str, dict]]:
                     raw = json.loads(line)
                     if isinstance(raw, dict):
                         yield topic, raw
+                        if delay > 0:
+                            # Mô phỏng real-time: random delay từ 0.5 tới 1.5 lần mức base
+                            time.sleep(delay * random.uniform(0.5, 1.5))
                     else:
                         logger.debug("Skip non-dict line %d in %s", lineno, path.name)
                 except json.JSONDecodeError as e:
@@ -47,7 +52,7 @@ def _read_jsonl(path: Path, topic: str) -> Iterator[tuple[str, dict]]:
 
 # ── Facebook folder reader ────────────────────────────────────────────────────
 
-def _read_fb_folder(folder: Path, topic: str) -> Iterator[tuple[str, dict]]:
+def _read_fb_folder(folder: Path, topic: str, delay: float = 0.0) -> Iterator[tuple[str, dict]]:
     if not folder.exists():
         logger.warning("Folder not found: %s", folder)
         return iter(())
@@ -85,6 +90,9 @@ def _read_fb_folder(folder: Path, topic: str) -> Iterator[tuple[str, dict]]:
 
             # KHÔNG mutate raw
             yield topic, {**raw, "_source_file": str(pf)}
+            
+            if delay > 0:
+                time.sleep(delay * random.uniform(0.5, 1.5))
 
     return _gen()
 
@@ -94,16 +102,16 @@ def _read_fb_folder(folder: Path, topic: str) -> Iterator[tuple[str, dict]]:
 def reddit_records() -> Generator[tuple[str, dict], None, None]:
     cfg = PATHS["reddit"]
     yield from _read_jsonl(cfg["batch"],    TOPIC_BATCH)
-    yield from _read_jsonl(cfg["realtime"], TOPIC_REALTIME)
+    yield from _read_jsonl(cfg["realtime"], TOPIC_REALTIME, delay=0.5)
 
 
 def instagram_records() -> Generator[tuple[str, dict], None, None]:
     cfg = PATHS["instagram"]
     yield from _read_jsonl(cfg["batch"],    TOPIC_BATCH)
-    yield from _read_jsonl(cfg["realtime"], TOPIC_REALTIME)
+    yield from _read_jsonl(cfg["realtime"], TOPIC_REALTIME, delay=0.5)
 
 
 def facebook_records() -> Generator[tuple[str, dict], None, None]:
     cfg = PATHS["facebook"]
     yield from _read_fb_folder(cfg["batch"],    TOPIC_BATCH)
-    yield from _read_fb_folder(cfg["realtime"], TOPIC_REALTIME)
+    yield from _read_fb_folder(cfg["realtime"], TOPIC_REALTIME, delay=0.5)

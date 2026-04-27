@@ -48,7 +48,7 @@ def run(sources: list[str], dry_run: bool = False) -> None:
                 try:
                     post = normalizer.normalize(raw)
 
-                    # ✔ FIX 1: handle None
+                    # Facebook normalizer trả None khi thiếu post_id / timestamp
                     if not post:
                         stats[source_name]["skipped"] += 1
                         continue
@@ -71,6 +71,12 @@ def run(sources: list[str], dry_run: bool = False) -> None:
                         producer.send(topic, post)
 
                     stats[source_name][topic] += 1
+
+                except ValueError as e:
+                    # Instagram/Reddit raise ValueError khi thiếu id hoặc timestamp
+                    # → Đây là invalid data, đếm là skipped chứ không phải lỗi hệ thống
+                    logger.warning("[%s] Invalid record (skip): %s", source_name, e)
+                    stats[source_name]["skipped"] += 1
 
                 except Exception:
                     logger.exception("[%s] Error processing record", source_name)

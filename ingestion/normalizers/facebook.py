@@ -408,7 +408,6 @@ def normalize(raw: dict) -> Optional[Dict[str, Any]]:
         logger.warning("Post %s missing valid timestamp", post_id)
         return None
 
-    from datetime import datetime
     ingest_time = int(datetime.now(timezone.utc).timestamp() * 1000)
 
     # ── Author ────────────────────────────────────────────
