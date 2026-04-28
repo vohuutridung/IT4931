@@ -1,0 +1,18 @@
+FROM apache/airflow:2.9.3-python3.8
+
+USER root
+# Cài đặt Java (JRE 17) và các công cụ cần thiết
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       default-jre-headless \
+       wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Cài đặt Apache Spark 3.5.3 vào /opt/spark
+RUN mkdir -p /opt/spark && chown -R airflow: /opt/spark
+
+USER airflow
+# Cài đặt các thư viện Python cần thiết, bao gồm pyspark (sẽ tải kèm Apache Spark)
+RUN pip install --no-cache-dir minio pymongo pyspark==3.5.3
+# Liên kết pyspark vào /opt/spark để tương thích với DAG hiện tại
+RUN cp -r /home/airflow/.local/lib/python3.8/site-packages/pyspark/* /opt/spark/

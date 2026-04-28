@@ -20,6 +20,12 @@ x-airflow-common-env: &airflow-common-env
   # Fix #5: Đường dẫn ETL tracker — được ghi vào volume etl_state
   ETL_TRACKER_FILE: /opt/etl_state/processed_dates.json
 
+  # Airflow Variables via Env (Fast & Reliable)
+  AIRFLOW_VAR_MINIO_ENDPOINT: "minio:9000"
+  AIRFLOW_VAR_MINIO_ACCESS_KEY: "${MINIO_ACCESS_KEY:-minioadmin}"
+  AIRFLOW_VAR_MINIO_SECRET_KEY: "${MINIO_SECRET_KEY:-minioadmin}"
+  AIRFLOW_VAR_MONGO_URI: "mongodb://mongodb:27017"
+
 services:
 
   # ── Infrastructure: Kafka ──────────────────────────────────────────────────
@@ -204,7 +210,7 @@ services:
       - "8083:8081"
     environment:
       - SPARK_NO_DAEMONIZE=true
-      - SPARK_WORKER_CORES=6
+      - SPARK_WORKER_CORES=4
       - SPARK_WORKER_MEMORY=4G
       - SPARK_MASTER=spark://spark-master:7077
     volumes:
@@ -212,6 +218,8 @@ services:
       - ./batch:/app/batch
       - ./shared:/app/shared
       - spark_worker_1_data:/opt/spark/work
+      - streaming_output:/tmp/streaming-output
+      - streaming_checkpoints:/tmp/spark-checkpoints
     command: [ "/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077" ]
 
   # ── Application: Ingestion ────────────────────────────────────────────────
@@ -261,8 +269,8 @@ services:
     command: >
       /opt/spark/bin/spark-submit
         --master spark://spark-master:7077
-        --driver-memory 2g
-        --executor-memory 2g
+        --driver-memory 1g
+        --executor-memory 1g
         /app/streaming/main.py
     restart: on-failure
 
@@ -321,17 +329,11 @@ services:
       - bash
       - -c
       - |
-        airflow db init &&
+        airflow db migrate &&
         airflow users create \
           --username admin --password admin \
           --firstname Admin --lastname User \
           --role Admin --email admin@example.com || true
-
-        # Fix #3: Khởi tạo Airflow Variables cho spark_etl task
-        airflow variables set minio_endpoint   "minio:9000"
-        airflow variables set minio_access_key "${MINIO_ACCESS_KEY:-minioadmin}"
-        airflow variables set minio_secret_key "${MINIO_SECRET_KEY:-minioadmin}"
-        airflow variables set mongo_uri        "mongodb://mongodb:27017"
     restart: "no"
 
   airflow-webserver:

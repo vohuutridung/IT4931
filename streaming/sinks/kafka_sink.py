@@ -41,19 +41,18 @@ def write_to_kafka(
         ...     "/tmp/checkpoints/kafka"
         ... )
     """
-    logger.info(f"Configuring Kafka sink: topic={topic}")
+    logger.info("Configuring Kafka sink: topic=%s", topic)
     
     if value_serializer != "json":
         raise ValueError("Only JSON serialization is supported")
 
-    df_output = df.select(to_json(struct("*")).alias("value"))
-    
-    # Add key if specified
     if key_column and key_column in df.columns:
-        df_output = df_output.select(
+        df_output = df.select(
             col(key_column).cast("string").alias("key"),
-            col("value")
+            to_json(struct("*")).alias("value"),
         )
+    else:
+        df_output = df.select(to_json(struct("*")).alias("value"))
     
     return (
         df_output.writeStream

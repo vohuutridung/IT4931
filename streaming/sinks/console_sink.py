@@ -36,7 +36,7 @@ def write_to_console(
         >>> # Monitor output, then stop
         >>> query.stop()
     """
-    logger.info(f"Setting up console sink (mode={mode}, rows={num_rows})")
+    logger.info("Setting up console sink (mode=%s, rows=%d)", mode, num_rows)
     
     return (
         df.writeStream

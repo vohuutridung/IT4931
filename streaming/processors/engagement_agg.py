@@ -71,7 +71,6 @@ class EngagementAggregator:
                 col("min_likes"),
                 col("stddev_likes"),
             )
-            .orderBy("time_start", "source")
         )
     
     @staticmethod
@@ -115,7 +114,7 @@ class EngagementAggregator:
                 col("count"),
                 col("rank"),
             )
-            .orderBy("time_start", "rank")
+            # Fix: xóa .orderBy() — không hợp lệ trong Structured Streaming
         )
     
     @staticmethod
@@ -141,5 +140,4 @@ class EngagementAggregator:
         return (
             agg_df
             .select("time_start", "time_end", "source", "num_posts", "avg_likes")
-            .orderBy("time_start", col("avg_likes").desc())
         )

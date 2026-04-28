@@ -26,24 +26,26 @@ PROCESSED_TOPIC = os.getenv("KAFKA_TOPIC_PROCESSED", f"{ENV}.social-processed")
 SPARK_MASTER = os.getenv("SPARK_MASTER", "local[*]")
 
 SPARK_CONFIG = {
-    "spark.app.name": "SocialMediaStreaming",
-    
+    # Lưu ý: spark.app.name được set qua .appName() trong create_spark_session()
+    # Không đặt ở đây để tránh nhầm lẫn
+
     # Streaming Configuration
     "spark.sql.streaming.schemaInference": "false",
     "spark.sql.streaming.minBatchesToRetain": "100",
     "spark.sql.streaming.checkpointLocation": "/tmp/spark-checkpoints",
-    
+
     # Kafka Configuration
     "spark.sql.kafka.maxOffsetsPerTrigger": "50000",
-    
+
     # Memory Configuration (must match spark-submit args)
     "spark.driver.memory": "2g",
     "spark.executor.memory": "2g",
-    "spark.executor.cores": "2",
-    
+    "spark.executor.cores": "1",
+    "spark.cores.max": "1",
+
     # Shuffle Configuration
     "spark.sql.shuffle.partitions": "200",
-    
+
     # Serialization
     "spark.serializer": "org.apache.spark.serializer.KryoSerializer",
     "spark.kryoserializer.buffer.max": "512m",
@@ -63,8 +65,8 @@ WATERMARK_DELAY = "5 minutes"   # Late data tolerance
 # ── Producer Tuning (from ingestion) ──────────────────────────────────────────
 PRODUCER_CONFIG = {
     "acks": "all",
-    "linger.ms": 500,
-    "compression.type": "snappy",
+    "linger.ms": 20,           # được cập nhật theo shared.config
+    "compression.type": "lz4",  # l4 thay vì snappy
     "retries": 5,
     "retry.backoff.ms": 300,
     "batch.size": 65536,
