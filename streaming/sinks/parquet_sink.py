@@ -37,7 +37,7 @@ class ParquetSink:
         Returns:
             StreamingQuery object
         """
-        logger.info(f"Setting up Parquet sink to {path}")
+        logger.info("Setting up Parquet sink to %s", path)
         
         query = df.writeStream.format("parquet").outputMode(mode)
         
@@ -115,13 +115,15 @@ class KafkaSink:
         """
         from pyspark.sql.functions import to_json, struct, col
         
-        logger.info(f"Setting up Kafka sink to topic {topic}")
-        
-        # Convert to JSON
-        df_json = df.select(to_json(struct("*")).alias("value"))
+        logger.info("Setting up Kafka sink to topic %s", topic)
         
         if key_col and key_col in df.columns:
-            df_json = df_json.select(col(key_col).alias("key"), col("value"))
+            df_json = df.select(
+                col(key_col).cast("string").alias("key"),
+                to_json(struct("*")).alias("value"),
+            )
+        else:
+            df_json = df.select(to_json(struct("*")).alias("value"))
         
         return (
             df_json.writeStream
@@ -157,7 +159,7 @@ class MultiSink:
         df: DataFrame,
         checkpoint_dir: str,
         truncate: bool = False,
-            num_rows: int = 20,
+        num_rows: int = 20,
     ):
         """Add console sink."""
         query = ConsoleSink.write(df, checkpoint_dir, truncate, num_rows)
@@ -186,4 +188,4 @@ class MultiSink:
         for query in self.queries:
             if query:
                 query.stop()
-        logger.info(f"Stopped {len(self.queries)} queries")
+        logger.info("Stopped %d queries", len(self.queries))

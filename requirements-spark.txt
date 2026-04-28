@@ -1,0 +1,4 @@
+# ── Spark ETL (chỉ cần cho batch/etl/spark_etl.py và streaming) ──────────────
+# Cài riêng khi chạy spark-submit locally hoặc cho Spark image
+# Không cần cho ingestion và batch-consumer (Dockerfile thường)
+pyspark==3.5.3

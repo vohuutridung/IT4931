@@ -42,12 +42,13 @@ class SocialProducer:
             raise ValueError(f"Unknown topic: {topic}")
 
         producer = self._producers[topic]
+        wire_post = self._prepare_for_wire(post)
 
         # ── Serialize ─────────────────────────────────────────────────────────
         try:
-            key = str(post["post_id"]).encode("utf-8")
+            key = str(wire_post["post_id"]).encode("utf-8")
             value = json.dumps(
-                post,
+                wire_post,
                 ensure_ascii=False,
                 default=str,   # tránh crash với datetime, numpy, v.v.
             ).encode("utf-8")
@@ -83,6 +84,30 @@ class SocialProducer:
 
         # trigger delivery callback
         producer.poll(0)
+
+    @staticmethod
+    def _json_string(value):
+        if value is None or isinstance(value, str):
+            return value
+        return json.dumps(value, ensure_ascii=False, default=str)
+
+    @classmethod
+    def _prepare_for_wire(cls, post: dict) -> dict:
+        wire_post = {**post}
+        wire_post["extra"] = cls._json_string(wire_post.get("extra"))
+
+        comments = wire_post.get("comments") or []
+        if isinstance(comments, list):
+            wire_comments = []
+            for comment in comments:
+                if not isinstance(comment, dict):
+                    continue
+                wire_comment = {**comment}
+                wire_comment["extra"] = cls._json_string(wire_comment.get("extra"))
+                wire_comments.append(wire_comment)
+            wire_post["comments"] = wire_comments
+
+        return wire_post
 
     def flush(self, timeout: float = 60.0) -> None:
         deadline = time.monotonic() + timeout

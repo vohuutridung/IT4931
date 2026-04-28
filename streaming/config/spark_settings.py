@@ -3,7 +3,6 @@ Spark Streaming configuration for social media pipeline.
 
 Environment variables:
   - KAFKA_BOOTSTRAP_SERVERS: Kafka broker addresses (default: localhost:9092)
-  - SCHEMA_REGISTRY_URL: Schema Registry URL (default: http://localhost:8081)
   - OUTPUT_DIR: Output directory for Parquet files (default: /tmp/streaming-output)
   - CHECKPOINT_DIR: Checkpoint directory (default: /tmp/spark-checkpoints)
   - SPARK_MASTER: Spark master URL (default: local[*])
@@ -13,35 +12,40 @@ import os
 from pathlib import Path
 
 # ── Kafka Configuration ───────────────────────────────────────────────────────
+ENV = os.getenv("ENV", "dev")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-SCHEMA_REGISTRY_URL = os.getenv("SCHEMA_REGISTRY_URL", "http://localhost:8081")
 
 # Topics
-SOURCE_TOPICS = ["social-raw-batch", "social-raw-realtime"]
-PROCESSED_TOPIC = "social-processed"
+SOURCE_TOPICS = [
+    os.getenv("KAFKA_TOPIC_BATCH", f"{ENV}.social-raw-batch"),
+    os.getenv("KAFKA_TOPIC_REALTIME", f"{ENV}.social-raw-realtime"),
+]
+PROCESSED_TOPIC = os.getenv("KAFKA_TOPIC_PROCESSED", f"{ENV}.social-processed")
 
 # ── Spark Configuration ───────────────────────────────────────────────────────
 SPARK_MASTER = os.getenv("SPARK_MASTER", "local[*]")
 
 SPARK_CONFIG = {
-    "spark.app.name": "SocialMediaStreaming",
-    
+    # Lưu ý: spark.app.name được set qua .appName() trong create_spark_session()
+    # Không đặt ở đây để tránh nhầm lẫn
+
     # Streaming Configuration
     "spark.sql.streaming.schemaInference": "false",
     "spark.sql.streaming.minBatchesToRetain": "100",
     "spark.sql.streaming.checkpointLocation": "/tmp/spark-checkpoints",
-    
+
     # Kafka Configuration
     "spark.sql.kafka.maxOffsetsPerTrigger": "50000",
-    
+
     # Memory Configuration (must match spark-submit args)
     "spark.driver.memory": "2g",
     "spark.executor.memory": "2g",
-    "spark.executor.cores": "2",
-    
+    "spark.executor.cores": "1",
+    "spark.cores.max": "1",
+
     # Shuffle Configuration
     "spark.sql.shuffle.partitions": "200",
-    
+
     # Serialization
     "spark.serializer": "org.apache.spark.serializer.KryoSerializer",
     "spark.kryoserializer.buffer.max": "512m",
@@ -61,8 +65,8 @@ WATERMARK_DELAY = "5 minutes"   # Late data tolerance
 # ── Producer Tuning (from ingestion) ──────────────────────────────────────────
 PRODUCER_CONFIG = {
     "acks": "all",
-    "linger.ms": 500,
-    "compression.type": "snappy",
+    "linger.ms": 20,           # được cập nhật theo shared.config
+    "compression.type": "lz4",  # l4 thay vì snappy
     "retries": 5,
     "retry.backoff.ms": 300,
     "batch.size": 65536,
@@ -75,7 +79,7 @@ OUTPUT_MODE = "append"  # append, update, complete
 # ── Sink Paths ────────────────────────────────────────────────────────────────
 SINK_PATHS = {
     "aggregated": OUTPUT_DIR / "aggregated",
-    "raw_posts": OUTPUT_DIR / "raw_posts",
+    "clean_posts": OUTPUT_DIR / "clean",
     "viral_posts": OUTPUT_DIR / "viral_posts",
 }
 

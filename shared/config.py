@@ -14,13 +14,11 @@ from pathlib import Path
 
 # ── Kafka ─────────────────────────────────────────────────────────────────────
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-SCHEMA_REGISTRY_URL     = os.getenv("SCHEMA_REGISTRY_URL", "http://localhost:8081")
 
 ENV = os.getenv("ENV", "dev")
-DATE_CUTOFF = os.getenv("DATE_CUTOFF", "2026_04_10")
-KAFKA_TOPIC_BATCH    = f"{ENV}.social-raw-batch"
-KAFKA_TOPIC_REALTIME = f"{ENV}.social-raw-realtime"
-KAFKA_TOPIC_PROCESSED = f"{ENV}.social-processed"
+KAFKA_TOPIC_BATCH = os.getenv("KAFKA_TOPIC_BATCH", f"{ENV}.social-raw-batch")
+KAFKA_TOPIC_REALTIME = os.getenv("KAFKA_TOPIC_REALTIME", f"{ENV}.social-raw-realtime")
+KAFKA_TOPIC_PROCESSED = os.getenv("KAFKA_TOPIC_PROCESSED", f"{ENV}.social-processed")
 
 KAFKA_CONSUMER_GROUP = os.getenv("KAFKA_CONSUMER_GROUP", f"{ENV}-batch-consumer-group")
 
@@ -60,38 +58,41 @@ FB_DATA_DIR     = Path(os.getenv("FB_DATA_DIR",     str(_BASE / "facebook_data")
 IG_DATA_DIR     = Path(os.getenv("IG_DATA_DIR",     str(_BASE / "instagram_data"))).resolve()
 REDDIT_DATA_DIR = Path(os.getenv("REDDIT_DATA_DIR", str(_BASE / "reddit_data"))).resolve()
 
+# Fix #1: Đồng nhất cấu trúc thư mục với ingestion/config/settings.py và .gitignore
+# Thư mục thực tế: batch_data/ (historical) và stream_data/ (realtime)
 DATA_PATHS = {
     "facebook": {
-        "batch":    FB_DATA_DIR / f"data_before_{DATE_CUTOFF}",
-        "realtime": FB_DATA_DIR / f"data_after_{DATE_CUTOFF}",
+        "batch":    FB_DATA_DIR / "batch_data",
+        "realtime": FB_DATA_DIR / "stream_data",
     },
     "instagram": {
-        "batch":    IG_DATA_DIR / f"posts_before_{DATE_CUTOFF}.jsonl",
-        "realtime": IG_DATA_DIR / f"posts_after_{DATE_CUTOFF}.jsonl",
+        "batch":    IG_DATA_DIR / "batch_data" / "posts.jsonl",
+        "realtime": IG_DATA_DIR / "stream_data" / "posts.jsonl",
     },
     "reddit": {
-        "batch":    REDDIT_DATA_DIR / f"posts_before_{DATE_CUTOFF}.jsonl",
-        "realtime": REDDIT_DATA_DIR / f"posts_after_{DATE_CUTOFF}.jsonl",
+        "batch":    REDDIT_DATA_DIR / "batch_data" / "posts.jsonl",
+        "realtime": REDDIT_DATA_DIR / "stream_data" / "posts.jsonl",
     },
 }
 
 # ── Producer tuning (ingestion) ───────────────────────────────────────────────
+# Fix #18: Source of truth duy nhất — ingestion/config/settings.py import từ đây
 PRODUCER_BATCH = {
     "acks":             "all",
-    "linger.ms":        500,
-    "compression.type": "snappy",
-    "retries":          5,
-    "retry.backoff.ms": 300,
-    "batch.size":       65536,
+    "linger.ms":        int(os.getenv("BATCH_LINGER_MS", "20")),    # 20ms hợp lý hơn 500ms
+    "compression.type": "lz4",                                     # lz4 nhanh hơn snappy
+    "retries":          int(os.getenv("BATCH_RETRIES", "5")),
+    "retry.backoff.ms": int(os.getenv("BATCH_RETRY_BACKOFF_MS", "300")),
+    "batch.size":       int(os.getenv("BATCH_SIZE", "65536")),
 }
 
 PRODUCER_REALTIME = {
-    "acks":             1,
-    "linger.ms":        10,
-    "compression.type": "snappy",
-    "retries":          3,
-    "retry.backoff.ms": 100,
-    "batch.size":       16384,
+    "acks":             os.getenv("REALTIME_ACKS", "1"),
+    "linger.ms":        int(os.getenv("REALTIME_LINGER_MS", "5")),   # 5ms cho low-latency
+    "compression.type": "lz4",
+    "retries":          int(os.getenv("REALTIME_RETRIES", "3")),
+    "retry.backoff.ms": int(os.getenv("REALTIME_RETRY_BACKOFF_MS", "100")),
+    "batch.size":       int(os.getenv("REALTIME_BATCH_SIZE", "16384")),
 }
 
 

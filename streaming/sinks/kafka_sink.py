@@ -28,7 +28,7 @@ def write_to_kafka(
         topic: Target Kafka topic
         checkpoint_dir: Checkpoint directory for recovery
         key_column: Optional column to use as message key
-        value_serializer: Serialization format ("json" or "avro")
+        value_serializer: Serialization format. Only "json" is supported.
         
     Returns:
         StreamingQuery object
@@ -41,21 +41,18 @@ def write_to_kafka(
         ...     "/tmp/checkpoints/kafka"
         ... )
     """
-    logger.info(f"Configuring Kafka sink: topic={topic}")
+    logger.info("Configuring Kafka sink: topic=%s", topic)
     
-    # Serialize to JSON by default
-    if value_serializer == "json":
-        df_output = df.select(to_json(struct("*")).alias("value"))
-    else:
-        # For Avro, would need additional schema setup
-        df_output = df.select(to_json(struct("*")).alias("value"))
-    
-    # Add key if specified
+    if value_serializer != "json":
+        raise ValueError("Only JSON serialization is supported")
+
     if key_column and key_column in df.columns:
-        df_output = df_output.select(
+        df_output = df.select(
             col(key_column).cast("string").alias("key"),
-            col("value")
+            to_json(struct("*")).alias("value"),
         )
+    else:
+        df_output = df.select(to_json(struct("*")).alias("value"))
     
     return (
         df_output.writeStream

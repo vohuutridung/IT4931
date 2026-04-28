@@ -35,6 +35,7 @@ Changes vs previous version:
 import re
 import time
 import html
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -258,15 +259,16 @@ def _flatten_comments(
                 result.append({
                     "comment_id": cid,
                     "post_id":    f"reddit_{post_id}",
+                    "parent_id":  pid,
                     "author_id":  str(comment.get("author_fullname") or "unknown"),
                     "author":     author,
                     "text":       truncated_body,
-                    "score":      _coalesce_int(comment.get("score")),
+                    "likes":      _coalesce_int(comment.get("score")),
                     "depth":      depth,
                     "created_at": created_at,
 
                     # [FIX] extra đủ schema cross-platform như FB/IG
-                    "extra": {
+                    "extra": json.dumps({
                         "parent_id":    pid,
                         "reply_count":  _coalesce_int(comment.get("reply_count")),
                         "is_truncated": is_truncated,
@@ -275,7 +277,7 @@ def _flatten_comments(
                             "is_submitter":     comment.get("is_submitter", False),
                             "gilded":           comment.get("gilded", 0),
                         },
-                    },
+                    }, ensure_ascii=False),
                 })
 
                 if len(result) >= MAX_COMMENTS:
@@ -564,7 +566,7 @@ if __name__ == "__main__":
     print(f"\nComments normalized: {len(result['comments'])}")
     print("\nThread structure:")
     for c in result["comments"]:
-        extra  = c["extra"]
+        extra  = json.loads(c["extra"])
         indent = "  " * c["depth"]
         print(
             f"{indent}[{c['comment_id']}]"

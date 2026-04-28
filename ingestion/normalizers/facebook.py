@@ -10,6 +10,7 @@ Changes vs previous version:
 
 import re
 import html
+import json
 import logging
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
@@ -304,16 +305,20 @@ def normalize_comment(
 
     # ── Assemble ──────────────────────────────────────────
     result: Dict[str, Any] = {
-        "id":         key,
-        "content":    truncated_content,
-        "author":     author,
-        "created_at": created_at,
-        "like_count": _coalesce_int(
+        "comment_id": key,
+        "post_id":    None,
+        "parent_id":  parent_id,
+        "author_id":  author["id"],
+        "author":     author["name"],
+        "text":       truncated_content,
+        "likes":      _coalesce_int(
             cmt.get("like_count"),
             cmt.get("likes"),
             cmt.get("reactionsCount"),
         ),
-        "extra": extra.to_dict(),
+        "created_at": created_at,
+        "depth":      depth,
+        "extra":      json.dumps(extra.to_dict(), ensure_ascii=False),
     }
 
     if debug:
@@ -379,13 +384,13 @@ def normalize_batch(
 
 def normalize(raw: dict) -> Optional[Dict[str, Any]]:
     """
-    Normalize a raw Facebook post dict into the canonical SocialPost schema.
+    Normalize a raw Facebook post dict into the canonical social post schema.
 
     Args:
         raw: Raw post dict from Facebook scraper.
 
     Returns:
-        Normalized post dict matching SocialPost Avro schema, or None if invalid.
+        Normalized post dict matching the canonical social post schema, or None if invalid.
     """
     if not isinstance(raw, dict):
         logger.warning("normalize expected dict, got %s", type(raw))
@@ -403,7 +408,6 @@ def normalize(raw: dict) -> Optional[Dict[str, Any]]:
         logger.warning("Post %s missing valid timestamp", post_id)
         return None
 
-    from datetime import datetime
     ingest_time = int(datetime.now(timezone.utc).timestamp() * 1000)
 
     # ── Author ────────────────────────────────────────────
@@ -434,6 +438,8 @@ def normalize(raw: dict) -> Optional[Dict[str, Any]]:
     raw_comments = raw.get("comments") or []
     if isinstance(raw_comments, list):
         normalized_comments = normalize_batch(raw_comments, max_comments=MAX_COMMENTS)
+        for comment in normalized_comments:
+            comment["post_id"] = f"facebook_{post_id}"
         engagement["comments_normalized_count"] = len(normalized_comments)
     else:
         normalized_comments = []
@@ -545,8 +551,14 @@ if __name__ == "__main__":
     print(f"\nTotal normalized: {len(results)}")
     print("\nThread structure (DFS order):")
     for r in results:
-        indent = "  " * r["extra"]["depth"]
-        pid    = r["extra"]["parent_id"] or "ROOT"
+        extra  = json.loads(r["extra"])
+        indent = "  " * r["depth"]
+        pid    = r["parent_id"] or "ROOT"
         ts_s   = r["created_at"] / 1_000
         dt_str = datetime.fromtimestamp(ts_s, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        print(f"{indent}[{r['id']}]  parent={pid}  created_at={r['created_at']}  ({dt_str})")
+        print(
+            f"{indent}[{r['comment_id']}]"
+            f"  parent={pid}"
+            f"  replies={extra['reply_count']}"
+            f"  created_at={r['created_at']}  ({dt_str})"
+        )

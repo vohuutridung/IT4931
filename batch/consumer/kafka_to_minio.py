@@ -37,10 +37,12 @@ ARROW_SCHEMA = pa.schema([
     pa.field("content",     pa.string()),
     pa.field("url",         pa.string()),
     pa.field("hashtags",    pa.list_(pa.string())),
-    pa.field("likes",       pa.int64()),  # Fix: int64 to prevent overflow
-    pa.field("comments",    pa.int64()),  # Fix: int64 to prevent overflow
-    pa.field("shares",      pa.int64()),  # Fix: int64 to prevent overflow
-    pa.field("score",       pa.int64()),  # Fix: int64 to prevent overflow
+    pa.field("likes",       pa.int64()),
+    pa.field("comments",    pa.int64()),
+    pa.field("comments_list", pa.string()),
+    pa.field("shares",      pa.int64()),
+    pa.field("score",       pa.int64()),
+    pa.field("video_views", pa.int64()),
     pa.field("extra",       pa.string()),
 ])
 
@@ -72,6 +74,14 @@ def make_minio_client() -> Minio:
 
 
 # ── Flatten record ───────────────────────────────────────────────
+def _json_string(value) -> str:
+    if value is None:
+        return "{}"
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
 def flatten(record: dict) -> dict:
     eng = record.get("engagement") or {}
     return {
@@ -86,9 +96,11 @@ def flatten(record: dict) -> dict:
         "hashtags":    record.get("hashtags") or [],
         "likes":       int(eng.get("likes", 0)),
         "comments":    int(eng.get("comments", 0)),
+        "comments_list": _json_string(record.get("comments") or []),
         "shares":      int(eng.get("shares", 0)),
         "score":       int(eng.get("score", 0)),
-        "extra":       json.dumps(record.get("extra") or {}),  # Fix: JSON serialize extra dict
+        "video_views": int(eng.get("video_views", 0)),  
+        "extra":       _json_string(record.get("extra")),
     }
 
 
@@ -100,15 +112,15 @@ def flush_to_minio(minio_client, buffer, source, event_date_str):
     # Parse event_date_str (YYYY-MM-DD-HH) back to datetime
     event_date = datetime.strptime(event_date_str, "%Y-%m-%d-%H")
 
-    cols = defaultdict(list)
+    cols = {field.name: [] for field in ARROW_SCHEMA}  
     for row in buffer:
-        for k, v in row.items():
-            cols[k].append(v)
+        for field in ARROW_SCHEMA:
+            cols[field.name].append(row.get(field.name))
 
     for ts_col in ("event_time", "ingest_time"):
-        # Fix: Convert int ms to datetime objects before creating Arrow array
         cols[ts_col] = pa.array(
-            [datetime.fromtimestamp(x / 1000, tz=timezone.utc) for x in cols[ts_col]],
+            [datetime.fromtimestamp(x / 1000, tz=timezone.utc) if x is not None else None
+             for x in cols[ts_col]],
             type=pa.timestamp("ms", tz="UTC")
         )
 
@@ -169,7 +181,6 @@ def run():
                     record = json.loads(msg.value().decode("utf-8"))
                     row = flatten(record)
 
-                    # Fix: Skip records with null event_time to prevent crash
                     if row["event_time"] is None:
                         logger.warning("Skipping record with null event_time: %s", record.get("post_id"))
                         continue

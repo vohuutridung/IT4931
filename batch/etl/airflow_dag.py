@@ -1,8 +1,6 @@
 """
 Airflow DAG: social_batch_pipeline
 ────────────────────────────────────
-FIX M2: check_minio_has_data dùng đúng prefix raw/{source}/{year}/{month}/{day}/
-FIX M3: verify_mongo_count so sánh event_date dạng string "YYYY-MM-DD"
 
 Schedule: mỗi ngày lúc 02:00 UTC
 Flow:
@@ -39,27 +37,23 @@ SPARK_PACKAGES = ",".join([
 # ── Helper functions ──────────────────────────────────────────────────────────
 
 def check_minio_has_data(**ctx) -> bool:
-    """
-    FIX M2: Tìm file theo đúng cấu trúc raw/{source}/{year}/{month}/{day}/
-    Cũ: prefix = f"raw/{year}/{month}/{day}/" → không bao giờ tìm thấy vì thiếu {source}
-    """
-    from minio import Minio
-    import os
 
-    ds  = ctx["ds"]
+    from minio import Minio
+    from airflow.models import Variable
+
+    ds  = str(ctx.get("yesterday_ds", ctx["ds"]))
     dt  = datetime.strptime(ds, "%Y-%m-%d")
 
     client = Minio(
-        os.getenv("MINIO_ENDPOINT", "localhost:9000"),
-        access_key=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
-        secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
+        Variable.get("minio_endpoint", "minio:9000"),
+        access_key=Variable.get("minio_access_key", "minioadmin"),
+        secret_key=Variable.get("minio_secret_key", "minioadmin"),
         secure=False,
     )
 
     total_files = 0
     for source in SOURCES:
         prefix = f"raw/{source}/{dt.year:04d}/{dt.month:02d}/{dt.day:02d}/"
-        # Fix: Count without loading all objects into RAM
         count = sum(1 for _ in client.list_objects("social-raw", prefix=prefix, recursive=True))
         total_files += count
         print(f"[MinIO] {source}: {count} files at {prefix}")
@@ -73,31 +67,25 @@ def check_minio_has_data(**ctx) -> bool:
 
 
 def verify_mongo_count(**ctx) -> None:
-    """
-    FIX M3: Spark lưu event_date dạng string "YYYY-MM-DD" (DateType → string trong Mongo).
-    Cũ: query dùng datetime object → không khớp kiểu → count = 0 → false alarm.
-    """
+
     from pymongo import MongoClient
-    import os
+    from airflow.models import Variable
 
-    ds  = ctx["ds"]
+    ds  = str(ctx.get("yesterday_ds", ctx["ds"]))
     dt  = datetime.strptime(ds, "%Y-%m-%d")
-    # Ngày tiếp theo để dùng $lt (exclusive)
-    ds_next = (dt + timedelta(days=1)).strftime("%Y-%m-%d")
+    dt_next = dt + timedelta(days=1)
 
-    client = MongoClient(os.getenv("MONGO_URI", "mongodb://localhost:27017"))
+    client = MongoClient(Variable.get("mongo_uri", "mongodb://mongodb:27017"))
     coll   = client["social_db"]["posts_clean"]
 
-    # So sánh string "YYYY-MM-DD" — khớp với cách Spark MongoDB connector lưu DateType
     count = coll.count_documents({
-        "event_date": {"$gte": ds, "$lt": ds_next}
+        "event_date": {"$gte": dt, "$lt": dt_next}
     })
     client.close()
 
     print(f"MongoDB records for {ds}: {count}")
     if count == 0:
         print(f"WARNING: No records in MongoDB for {ds} — possible delay or no data")
-        # Fix: Warning instead of fail for potential false negative
     elif count < 10:
         print(f"WARNING: Low record count ({count}) for {ds} — verify ETL")
 
@@ -109,8 +97,8 @@ with DAG(
     default_args=DEFAULT_ARGS,
     description="Kafka batch → MinIO → Spark ETL → MongoDB",
     schedule_interval="0 2 * * *",
-    start_date=datetime(2026, 1, 1),  # Fix: Fixed start date for production
-    catchup=True,
+    start_date=datetime(2026, 4, 1),
+    catchup=False,
     max_active_runs=1,
     tags=["social", "batch", "etl"],
 ) as dag:
@@ -124,18 +112,21 @@ with DAG(
         task_id="spark_etl",
         bash_command=(
             f"{SPARK_HOME}/bin/spark-submit "
-            f"--master spark://spark-master:7077 "  # Fix: Use Spark cluster instead of local
+            f"--master spark://spark-master:7077 "
             f"--packages {SPARK_PACKAGES} "
             f"--conf spark.executor.memory=2g "
-            f"--conf spark.driver.memory=2g "
+            f"--conf spark.driver.memory=1g "
+            f"--conf spark.cores.max=2 "
             f"{PIPELINE_DIR}/batch/etl/spark_etl.py "
-            "--date {{ yesterday_ds }}"  # Fix: Process yesterday to handle delayed data
+            "--date {{ yesterday_ds }}"
         ),
         env={
             "MINIO_ENDPOINT":   "{{ var.value.minio_endpoint }}",
             "MINIO_ACCESS_KEY": "{{ var.value.minio_access_key }}",
             "MINIO_SECRET_KEY": "{{ var.value.minio_secret_key }}",
             "MONGO_URI":        "{{ var.value.mongo_uri }}",
+            "S3A_ENDPOINT":     "http://{{ var.value.minio_endpoint }}",
+            "PYTHONPATH":       PIPELINE_DIR,
         },
     )
 
@@ -150,3 +141,46 @@ with DAG(
     )
 
     check_data >> spark_etl >> verify >> notify
+
+
+# ── DAG Khởi tạo lịch sử (Full Load) ──────────────────────────────────────────
+
+with DAG(
+    dag_id="social_batch_init_pipeline",
+    default_args=DEFAULT_ARGS,
+    description="Khởi tạo toàn bộ dữ liệu lịch sử (Chạy thủ công 1 lần)",
+    schedule_interval=None,  # Chỉ chạy thủ công
+    start_date=datetime(2026, 4, 1),
+    catchup=False,
+    max_active_runs=1,
+    tags=["social", "batch", "init", "full-load"],
+) as init_dag:
+
+    # Bỏ tham số --date để spark_etl quét toàn bộ thư mục raw/
+    spark_etl_full_load = BashOperator(
+        task_id="spark_etl_full_load",
+        bash_command=(
+            f"{SPARK_HOME}/bin/spark-submit "
+            f"--master spark://spark-master:7077 "
+            f"--packages {SPARK_PACKAGES} "
+            f"--conf spark.executor.memory=2g "
+            f"--conf spark.driver.memory=1g "
+            f"--conf spark.cores.max=2 "
+            f"{PIPELINE_DIR}/batch/etl/spark_etl.py "
+        ),
+        env={
+            "MINIO_ENDPOINT":   "{{ var.value.minio_endpoint }}",
+            "MINIO_ACCESS_KEY": "{{ var.value.minio_access_key }}",
+            "MINIO_SECRET_KEY": "{{ var.value.minio_secret_key }}",
+            "MONGO_URI":        "{{ var.value.mongo_uri }}",
+            "S3A_ENDPOINT":     "http://{{ var.value.minio_endpoint }}",
+            "PYTHONPATH":       PIPELINE_DIR,
+        },
+    )
+
+    log_init_done = BashOperator(
+        task_id="log_init_done",
+        bash_command='echo "Historical Full Load completed at $(date -u)"',
+    )
+
+    spark_etl_full_load >> log_init_done
