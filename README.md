@@ -502,7 +502,8 @@ SocialProcessor.apply()
 | `url` | string | URL bài viết |
 | `hashtags` | list<string> | Danh sách hashtag |
 | `likes` | int64 | Lượt thích |
-| `comments` | int64 | Số comment |
+| `comments` | int64 | Số lượng comment |
+| `comments_list` | list<struct> | Danh sách comment chi tiết (ID, author, text, likes,...) |
 | `shares` | int64 | Lượt chia sẻ |
 | `score` | int64 | Score/upvote |
 | `video_views` | int64 | Lượt xem video |
