@@ -99,19 +99,25 @@ def _read_fb_folder(folder: Path, topic: str, delay: float = 0.0) -> Iterator[tu
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def reddit_records() -> Generator[tuple[str, dict], None, None]:
+def reddit_records(phase: str = "all") -> Generator[tuple[str, dict], None, None]:
     cfg = PATHS["reddit"]
-    yield from _read_jsonl(cfg["batch"],    TOPIC_BATCH)
-    yield from _read_jsonl(cfg["realtime"], TOPIC_REALTIME, delay=0.5)
+    if phase in ("all", "batch"):
+        yield from _read_jsonl(cfg["batch"],    TOPIC_BATCH)
+    if phase in ("all", "realtime"):
+        yield from _read_jsonl(cfg["realtime"], TOPIC_REALTIME, delay=0.5)
 
 
-def instagram_records() -> Generator[tuple[str, dict], None, None]:
+def instagram_records(phase: str = "all") -> Generator[tuple[str, dict], None, None]:
     cfg = PATHS["instagram"]
-    yield from _read_jsonl(cfg["batch"],    TOPIC_BATCH)
-    yield from _read_jsonl(cfg["realtime"], TOPIC_REALTIME, delay=0.5)
+    if phase in ("all", "batch"):
+        yield from _read_jsonl(cfg["batch"],    TOPIC_BATCH)
+    if phase in ("all", "realtime"):
+        yield from _read_jsonl(cfg["realtime"], TOPIC_REALTIME, delay=0.5)
 
 
-def facebook_records() -> Generator[tuple[str, dict], None, None]:
+def facebook_records(phase: str = "all") -> Generator[tuple[str, dict], None, None]:
     cfg = PATHS["facebook"]
-    yield from _read_fb_folder(cfg["batch"],    TOPIC_BATCH)
-    yield from _read_fb_folder(cfg["realtime"], TOPIC_REALTIME, delay=0.5)
+    if phase in ("all", "batch"):
+        yield from _read_fb_folder(cfg["batch"],    TOPIC_BATCH)
+    if phase in ("all", "realtime"):
+        yield from _read_fb_folder(cfg["realtime"], TOPIC_REALTIME, delay=0.5)

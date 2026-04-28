@@ -7,6 +7,8 @@ import argparse
 import logging
 import time
 from collections import defaultdict
+import concurrent.futures
+import threading
 
 from ingestion.producer.readers import (
     reddit_records,
@@ -39,26 +41,27 @@ def run(sources: list[str], dry_run: bool = False) -> None:
 
     try:
         stats = defaultdict(lambda: defaultdict(int))
+        stats_lock = threading.Lock()
 
-        for source_name in sources:
+        def process_source(source_name: str, phase: str):
             reader_fn, normalizer = SOURCES[source_name]
-            logger.info("=== Processing: %s ===", source_name)
+            logger.info("=== Processing %s: %s ===", phase.upper(), source_name)
 
-            for topic, raw in reader_fn():
+            for topic, raw in reader_fn(phase=phase):
                 try:
                     post = normalizer.normalize(raw)
 
                     # Facebook normalizer trả None khi thiếu post_id / timestamp
                     if not post:
-                        stats[source_name]["skipped"] += 1
+                        with stats_lock:
+                            stats[source_name]["skipped"] += 1
                         continue
 
-                    # ✔ FIX 2: validate
                     if not _validate(post, source_name):
-                        stats[source_name]["skipped"] += 1
+                        with stats_lock:
+                            stats[source_name]["skipped"] += 1
                         continue
 
-                    # ✔ FIX 3: safe send
                     if dry_run:
                         logger.info(
                             "[DRY-RUN] %s → %s | post_id=%s | event=%s",
@@ -70,17 +73,32 @@ def run(sources: list[str], dry_run: bool = False) -> None:
                     else:
                         producer.send(topic, post)
 
-                    stats[source_name][topic] += 1
+                    with stats_lock:
+                        stats[source_name][topic] += 1
 
                 except ValueError as e:
                     # Instagram/Reddit raise ValueError khi thiếu id hoặc timestamp
                     # → Đây là invalid data, đếm là skipped chứ không phải lỗi hệ thống
                     logger.warning("[%s] Invalid record (skip): %s", source_name, e)
-                    stats[source_name]["skipped"] += 1
+                    with stats_lock:
+                        stats[source_name]["skipped"] += 1
 
                 except Exception:
                     logger.exception("[%s] Error processing record", source_name)
-                    stats[source_name]["errors"] += 1
+                    with stats_lock:
+                        stats[source_name]["errors"] += 1
+
+        # Phase 1: Chạy song song dữ liệu Batch (không có delay)
+        logger.info("================ PHASE 1: BATCH ==================")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as executor:
+            futures = [executor.submit(process_source, s, "batch") for s in sources]
+            concurrent.futures.wait(futures)
+
+        # Phase 2: Chạy song song dữ liệu Realtime (có delay)
+        logger.info("================ PHASE 2: REALTIME ===============")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as executor:
+            futures = [executor.submit(process_source, s, "realtime") for s in sources]
+            concurrent.futures.wait(futures)
 
         # ── Summary ────────────────────────────────────────
         logger.info("=" * 60)
@@ -112,7 +130,6 @@ def _validate(post: dict, source: str) -> bool:
         logger.warning("[%s] Missing fields %s", source, missing)
         return False
 
-    # ✔ FIX 4: type check (quan trọng)
     if not isinstance(post["event_time"], int):
         logger.warning("[%s] Invalid event_time type", source)
         return False
