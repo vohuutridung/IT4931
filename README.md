@@ -395,7 +395,7 @@ spark_etl_full_load (BashOperator — spark-submit quét toàn bộ)
     ↓
 log_init_done (BashOperator)
 ```
-> **⚡ Hiệu năng:** Với cấu hình mặc định (1 Core CPU), việc tải toàn bộ 9.000+ files có thể mất 10-20 phút. Tuy nhiên, hệ thống đã được cấu hình chạy **2 Cores**, thời gian xử lý sẽ được rút ngắn xuống đáng kể.
+> **⚡ Hiệu năng:** Với cấu hình mặc định (2 Core CPU), việc tải toàn bộ 9.000+ files có thể mất 3-5 phút.
 **Airflow Variables** (được init tự động bởi `airflow-init` container):
 - `minio_endpoint`, `minio_access_key`, `minio_secret_key`, `mongo_uri`
 
@@ -502,7 +502,8 @@ SocialProcessor.apply()
 | `url` | string | URL bài viết |
 | `hashtags` | list<string> | Danh sách hashtag |
 | `likes` | int64 | Lượt thích |
-| `comments` | int64 | Số comment |
+| `comments` | int64 | Số lượng comment |
+| `comments_list` | list<struct> | Danh sách comment chi tiết (ID, author, text, likes,...) |
 | `shares` | int64 | Lượt chia sẻ |
 | `score` | int64 | Score/upvote |
 | `video_views` | int64 | Lượt xem video |
