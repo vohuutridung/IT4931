@@ -10,9 +10,10 @@ numpy<2  # Fix NumPy 2.x incompatibility with PyArrow
 pymongo==4.6.3
 
 # ── Spark ─────────────────────────────────────────────────────────────────────
-pyspark==3.5.3
+# Pyspark chỉ cần cho Spark jobs (streaming/batch ETL)
+# Đã tách sang requirements-spark.txt để tránh cài vào image ingestion/consumer (~300MB thừa)
+# Dockerfile.spark cài pyspark trực tiếp qua pip3
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 python-dotenv==1.0.1
-pandas==2.1.0
 requests==2.31.0

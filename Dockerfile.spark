@@ -52,10 +52,13 @@ COPY shared/     shared/
 RUN touch __init__.py
 
 # ── Fix streaming output and checkpoint directory permissions ──────────────────
-RUN mkdir -p /tmp/streaming-output/{aggregated,raw_posts,viral_posts} && \
-    mkdir -p /tmp/spark-checkpoints/{console,parquet,kafka} && \
+RUN mkdir -p /tmp/streaming-output/{aggregated,clean,viral_posts} && \
+    mkdir -p /tmp/spark-checkpoints/{console,parquet,aggregated,kafka} && \
     chmod -R 777 /tmp/streaming-output && \
     chmod -R 777 /tmp/spark-checkpoints
+
+# Fix permission cho thư mục work của Spark Worker (nếu bị mount volume mới đè lên)
+RUN mkdir -p /opt/spark/work && chown -R spark:spark /opt/spark/work
 
 ENV SPARK_HOME=/opt/spark
 ENV PYSPARK_PYTHON=python3

@@ -1,37 +1,50 @@
-################################################################################
-# IT4931 Data Pipeline - .gitignore
-# Facebook, Reddit, Instagram Crawling & Kafka Pipeline
-################################################################################
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║         IT4931 — Social Media Data Pipeline  •  .gitignore             ║
+# ║  Stack: Python 3.11 · Apache Spark 3.5 · Kafka · MinIO · Airflow       ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
 
-################################################################################
-# PYTHON & ENVIRONMENT
-################################################################################
-# Byte-compiled / optimized / DLL files
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  PYTHON
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Byte-compiled / optimized
 __pycache__/
-*.py[codz]
+*.py[cod]
 *$py.class
 *.so
+*.pyd
+
+# Distribution / packaging
 .Python
+build/
+dist/
 *.egg-info/
 *.egg
 MANIFEST
-dist/
-build/
+.eggs/
+wheels/
+*.whl
+sdist/
 
 # Virtual environments
+.venv/
 venv/
-.venv
 env/
 ENV/
-*.venv
+env.bak/
+venv.bak/
+.python-version
 
-# Pip logs
+# Pip
 pip-log.txt
 pip-delete-this-directory.txt
 
-################################################################################
-# TESTING & COVERAGE
-################################################################################
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  TESTING & COVERAGE
+# ══════════════════════════════════════════════════════════════════════════════
+
 .pytest_cache/
 .coverage
 .coverage.*
@@ -40,73 +53,188 @@ htmlcov/
 .nox/
 nosetests.xml
 coverage.xml
+*.cover
+*.coveralls.json
+junit*.xml
+test-results/
 
-################################################################################
-# IDE & EDITOR
-################################################################################
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  TYPE CHECKING & LINTING
+# ══════════════════════════════════════════════════════════════════════════════
+
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pytype/
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  IDE & EDITOR
+# ══════════════════════════════════════════════════════════════════════════════
+
+# VSCode
 .vscode/
+*.code-workspace
+
+# JetBrains (PyCharm, IntelliJ)
 .idea/
-.codex
+*.iml
+*.iws
+
+# Vim / Neovim
 *.swp
 *.swo
 *~
-.DS_Store
-.cursorignore
+.vim/
 
-################################################################################
-# DATA FILES & LOGS
-################################################################################
-# Crawled raw data (large, gitignore by default)
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Codex / Cursor / AI tools
+.codex
+.cursorignore
+.cursorindexingignore
+.aider*
+.continue/
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  SECRETS & CONFIGURATION
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Environment files  (giữ lại .env.example để làm template)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Certificates & keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Local overrides
+config.local.yml
+secrets.yml
+credentials.json
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  RAW DATA (thường quá lớn để commit)
+# ══════════════════════════════════════════════════════════════════════════════
+
 data/facebook_data/batch_data/
 data/facebook_data/stream_data/
 data/facebook_data/raw_data/
-
-data/reddit_data/batch_data/
-data/reddit_data/stream_data/
-data/reddit_data/raw_data/
 
 data/instagram_data/batch_data/
 data/instagram_data/stream_data/
 data/instagram_data/raw_data/
 
+data/reddit_data/batch_data/
+data/reddit_data/stream_data/
+data/reddit_data/raw_data/
+
+# Giữ cấu trúc thư mục — dùng .gitkeep nếu cần
+!data/**/.gitkeep
 
 
-# Logs
-*.log
+# ══════════════════════════════════════════════════════════════════════════════
+#  SPARK
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Checkpoint & streaming state
+spark-checkpoints/
+spark_checkpoints/
+checkpoint/
+checkpoints/
+_spark_metadata/
+
+# Spark local output (khi chạy local[*])
+streaming-output/
+streaming_output/
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Ivy cache (JARs download bởi spark-submit --packages)
+.ivy2/
+ivy2/
+
+# Parquet/Delta output
+*.parquet
+*.snappy.parquet
+*.delta
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  AIRFLOW
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Airflow local DB (SQLite — chỉ dùng cho dev)
+airflow.db
+airflow.cfg
+
+# Logs sinh ra bởi Airflow scheduler/worker
 logs/
+airflow/logs/
 
-# Temporary files
-*.tmp
-*.bak
-*.temp
+# Airflow compiled DAG cache
+__pycache__/
 
-################################################################################
-# CONFIGURATION & SECRETS
-################################################################################
-.env
-.env.local
-.env.*.local
-.env.*.local.example
-*.pem
-*.key
-config.local.yml
 
-################################################################################
-# DOCKER
-################################################################################
-.dockerignore
+# ══════════════════════════════════════════════════════════════════════════════
+#  DOCKER
+# ══════════════════════════════════════════════════════════════════════════════
 
-################################################################################
-# NOTEBOOKS
-################################################################################
+# Docker override files (local tuning)
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Không ignore .dockerignore — nó cần được commit
+# !.dockerignore
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  NOTEBOOKS
+# ══════════════════════════════════════════════════════════════════════════════
+
 .ipynb_checkpoints/
 *.ipynb
 
-################################################################################
-# CACHE & MISC
-################################################################################
-.ruff_cache/
-.mypy_cache/
-.pytest_cache/
-*.pyc
-.DS_Store
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  LOGS & TEMP FILES
+# ══════════════════════════════════════════════════════════════════════════════
+
+*.log
+*.log.*
+*.tmp
+*.temp
+*.bak
+*.swp
+*.orig
+
+# ETL state tracker (được mount qua Docker volume — không cần commit)
+processed_dates.json
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  JAVA / MAVEN (dependencies của Spark JARs)
+# ══════════════════════════════════════════════════════════════════════════════
+
+target/
+*.class
+*.jar
+!spark/jars/          # nếu có thư mục jars custom — cần giữ lại

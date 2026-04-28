@@ -9,6 +9,17 @@ x-common-env: &common-env
   MONGO_DB: ${MONGO_DB:-social_db}
   MONGO_COLLECTION: ${MONGO_COLLECTION:-posts_clean}
 
+# Fix #9: Airflow-specific env dùng lại common-env + AIRFLOW__ vars
+x-airflow-common-env: &airflow-common-env
+  <<: *common-env
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  SPARK_HOME: /opt/spark
+  PIPELINE_DIR: /opt/social_pipeline
+  # Fix #5: Đường dẫn ETL tracker — được ghi vào volume etl_state
+  ETL_TRACKER_FILE: /opt/etl_state/processed_dates.json
+
 services:
 
   # ── Infrastructure: Kafka ──────────────────────────────────────────────────
@@ -23,7 +34,7 @@ services:
       - zk_data:/var/lib/zookeeper/data
       - zk_log:/var/lib/zookeeper/log
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      test: [ "CMD", "nc", "-z", "localhost", "2181" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -50,7 +61,7 @@ services:
     volumes:
       - kafka_data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      test: [ "CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092" ]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -109,7 +120,7 @@ services:
       - minio_data:/data
     command: server /data --console-address ":9001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -120,7 +131,7 @@ services:
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: [ "/bin/sh", "-c" ]
     command: |
       "
       mc alias set local http://minio:9000 ${MINIO_ACCESS_KEY:-minioadmin} ${MINIO_SECRET_KEY:-minioadmin}
@@ -143,7 +154,7 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -175,11 +186,11 @@ services:
       - spark_master_data:/opt/spark/work
       - ./:/opt/spark-apps
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8080" ]
       interval: 10s
       timeout: 5s
       retries: 10
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+    command: [ "/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master" ]
 
   spark-worker-1:
     build:
@@ -193,14 +204,15 @@ services:
       - "8083:8081"
     environment:
       - SPARK_NO_DAEMONIZE=true
-      - SPARK_WORKER_CORES=2
-      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=6
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_MASTER=spark://spark-master:7077
     volumes:
       - ./streaming:/app/streaming
       - ./batch:/app/batch
       - ./shared:/app/shared
       - spark_worker_1_data:/opt/spark/work
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    command: [ "/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077" ]
 
   # ── Application: Ingestion ────────────────────────────────────────────────
 
@@ -218,7 +230,7 @@ services:
       DATA_DIR: /app/data
     volumes:
       - ./data:/app/data:ro
-    command: ["python", "-m", "ingestion.main"]
+    command: [ "python", "-m", "ingestion.main" ]
     restart: on-failure
 
   # ── Application: Streaming ────────────────────────────────────────────────
@@ -239,8 +251,10 @@ services:
       SPARK_MASTER: spark://spark-master:7077
       OUTPUT_DIR: /tmp/streaming-output
       CHECKPOINT_DIR: /tmp/spark-checkpoints
+      PYTHONPATH: /app
     volumes:
       - ./streaming:/app/streaming
+      - ./batch:/app/batch
       - ./shared:/app/shared
       - streaming_output:/tmp/streaming-output
       - streaming_checkpoints:/tmp/spark-checkpoints
@@ -268,9 +282,9 @@ services:
     environment:
       <<: *common-env
       KAFKA_CONSUMER_GROUP: batch-consumer-group
-      CONSUMER_FLUSH_SIZE: ${CONSUMER_FLUSH_SIZE:-1000}
+      CONSUMER_FLUSH_SIZE: ${CONSUMER_FLUSH_SIZE:-5000}
       CONSUMER_FLUSH_INTERVAL: ${CONSUMER_FLUSH_INTERVAL:-60}
-    command: ["python", "-m", "batch.consumer.kafka_to_minio"]
+    command: [ "python", "-m", "batch.consumer.kafka_to_minio" ]
     restart: unless-stopped
 
   # ── Application: Airflow (Batch Orchestration) ────────────────────────────
@@ -285,25 +299,24 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
+      test: [ "CMD", "pg_isready", "-U", "airflow" ]
       interval: 10s
       timeout: 5s
       retries: 10
 
   airflow-init:
-    image: apache/airflow:2.9.3
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: airflow-init
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-      MONGO_URI: mongodb://mongodb:27017
+      <<: *airflow-common-env
+    volumes:
+      - airflow_logs:/opt/airflow/logs
+      - etl_state:/opt/etl_state
     command:
       - bash
       - -c
@@ -313,10 +326,18 @@ services:
           --username admin --password admin \
           --firstname Admin --lastname User \
           --role Admin --email admin@example.com || true
+
+        # Fix #3: Khởi tạo Airflow Variables cho spark_etl task
+        airflow variables set minio_endpoint   "minio:9000"
+        airflow variables set minio_access_key "${MINIO_ACCESS_KEY:-minioadmin}"
+        airflow variables set minio_secret_key "${MINIO_SECRET_KEY:-minioadmin}"
+        airflow variables set mongo_uri        "mongodb://mongodb:27017"
     restart: "no"
 
   airflow-webserver:
-    image: apache/airflow:2.9.3
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: airflow-webserver
     depends_on:
       airflow-init:
@@ -326,26 +347,23 @@ services:
     ports:
       - "8085:8080"
     environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      <<: *airflow-common-env # Fix #9
       AIRFLOW__WEBSERVER__WORKERS: 1
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-      MONGO_URI: mongodb://mongodb:27017
     volumes:
       - ./batch/etl:/opt/airflow/dags
       - airflow_logs:/opt/airflow/logs
+      - etl_state:/opt/etl_state
     command: webserver
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
       interval: 15s
       timeout: 10s
       retries: 10
 
   airflow-scheduler:
-    image: apache/airflow:2.9.3
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: airflow-scheduler
     depends_on:
       airflow-init:
@@ -353,19 +371,12 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-      MONGO_URI: mongodb://mongodb:27017
-      SPARK_HOME: /opt/spark
-      PIPELINE_DIR: /opt/social_pipeline
+      <<: *airflow-common-env
     volumes:
       - ./batch/etl:/opt/airflow/dags
       - ./:/opt/social_pipeline:ro
       - airflow_logs:/opt/airflow/logs
+      - etl_state:/opt/etl_state
     command: scheduler
 
 volumes:
@@ -380,3 +391,4 @@ volumes:
   streaming_output:
   streaming_checkpoints:
   airflow_logs:
+  etl_state:
