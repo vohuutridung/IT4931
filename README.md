@@ -4,7 +4,7 @@ Hệ thống **data pipeline** xử lý dữ liệu mạng xã hội (Facebook, 
 
 ---
 
-## 📑 Mục lục
+## Mục lục
 
 - [Tổng quan kiến trúc](#tổng-quan-kiến-trúc)
 - [Cấu trúc thư mục](#cấu-trúc-thư-mục)
@@ -16,7 +16,6 @@ Hệ thống **data pipeline** xử lý dữ liệu mạng xã hội (Facebook, 
 - [Schema dữ liệu](#schema-dữ-liệu)
 - [Vận hành](#vận-hành)
 - [Phát triển](#phát-triển)
-- [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -26,23 +25,23 @@ Hệ thống **data pipeline** xử lý dữ liệu mạng xã hội (Facebook, 
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         DATA SOURCES                                    │
 │          Facebook          Instagram          Reddit                    │
-│       (post.json files)  (posts.jsonl)    (posts.jsonl)                │
+│       (post.json files)  (posts.jsonl)    (posts.jsonl)                 │
 └────────────────┬───────────────┬───────────────┬────────────────────────┘
                  │               │               │
                  ▼               ▼               ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    INGESTION LAYER (Python)                              │
+│                    INGESTION LAYER (Python)                             │
 │  • Normalize → Canonical Schema (schema_version=1)                      │
 │  • Validate (post_id, event_time required)                              │
 │  • Produce → Kafka (batch topic / realtime topic)                       │
-└────────────────┬───────────────────────────────────────────────────────┘
+└────────────────┬────────────────────────────────────────────────────────┘
                  │
                  ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         APACHE KAFKA                                    │
-│   dev.social-raw-batch        dev.social-raw-realtime                  │
+│   dev.social-raw-batch        dev.social-raw-realtime                   │
 │   (3 partitions)              (3 partitions)                            │
-└────────────┬──────────────────────────────┬────────────────────────────┘
+└────────────┬──────────────────────────────┬─────────────────────────────┘
              │                              │
     ┌────────▼────────┐            ┌────────▼────────┐
     │  BATCH LAYER    │            │  SPEED LAYER    │
@@ -651,75 +650,6 @@ reddit_data/batch_data/posts.jsonl
   "is_truncated": false,
   "platform_meta": {}
 }
-```
-
----
-
-## Troubleshooting
-
-### Kafka: Producer queue full
-
-```
-BufferError: Local: Queue full
-```
-**Giải pháp:** Tăng `BATCH_LINGER_MS` hoặc giảm throughput ingestion. Consumer group lag quá lớn thì thêm partition.
-
----
-
-### MinIO: Connection refused
-
-```
-urllib3.exceptions.MaxRetryError: ... connect to minio:9000
-```
-**Giải pháp:** Đợi MinIO healthcheck pass:
-```bash
-docker compose logs minio | tail -20
-docker compose ps minio
-```
-
----
-
-### Spark: Class not found
-
-```
-ClassNotFoundException: org.apache.hadoop.fs.s3a.S3AFileSystem
-```
-**Giải pháp:** JARs chưa được download vào image. Rebuild:
-```bash
-docker compose build spark-master
-```
-
----
-
-### Airflow: Variable not found
-
-```
-KeyError: Variable minio_endpoint does not exist
-```
-**Giải pháp:** `airflow-init` chưa chạy xong hoặc bị lỗi:
-```bash
-docker compose logs airflow-init
-# Chạy lại:
-docker compose run --rm airflow-init
-```
-
----
-
-### Streaming: AnalysisException
-
-```
-AnalysisException: Queries with streaming sources must be executed with writeStream
-```
-**Giải pháp:** Không gọi `count()`, `orderBy()`, hay các action không hỗ trợ trên streaming DataFrame.
-
----
-
-### ETL: Incremental skip không đúng
-
-**Giải pháp:** Xóa tracker file để re-process:
-```bash
-docker compose exec airflow-scheduler \
-  rm /opt/etl_state/processed_dates.json
 ```
 
 ---

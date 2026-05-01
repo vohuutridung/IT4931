@@ -9,7 +9,6 @@ x-common-env: &common-env
   MONGO_DB: ${MONGO_DB:-social_db}
   MONGO_COLLECTION: ${MONGO_COLLECTION:-posts_clean}
 
-# Fix #9: Airflow-specific env dùng lại common-env + AIRFLOW__ vars
 x-airflow-common-env: &airflow-common-env
   <<: *common-env
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -17,7 +16,6 @@ x-airflow-common-env: &airflow-common-env
   AIRFLOW__CORE__LOAD_EXAMPLES: "false"
   SPARK_HOME: /opt/spark
   PIPELINE_DIR: /opt/social_pipeline
-  # Fix #5: Đường dẫn ETL tracker — được ghi vào volume etl_state
   ETL_TRACKER_FILE: /opt/etl_state/processed_dates.json
 
   # Airflow Variables via Env (Fast & Reliable)
