@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 Split Instagram JSONL data into:
-- Before April 10, 2026
-- From April 10, 2026 onwards
+- Before 2026-04-15 00:00:00 UTC+7
+- From 2026-04-15 00:00:00 UTC+7 onwards
 
 Không thay đổi dữ liệu gốc, chỉ split
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 INPUT_FILE = "/home/khang/Code/data-pipeline/IT4931/data/instagram_data/raw_data/posts.jsonl"
@@ -17,16 +17,27 @@ OUTPUT_DIR = "/home/khang/Code/data-pipeline/IT4931/data/instagram_data"
 BEFORE_OUTPUT = f"{OUTPUT_DIR}/batch_data/posts.jsonl"
 AFTER_OUTPUT = f"{OUTPUT_DIR}/stream_data/posts.jsonl"
 
-SPLIT_DATE = datetime(2026, 4, 10).date()
+UTC_PLUS_7 = timezone(timedelta(hours=7))
+SPLIT_DT = datetime(2026, 4, 15, 0, 0, 0, tzinfo=UTC_PLUS_7)
+SPLIT_LABEL = "2026-04-15 00:00:00 UTC+7"
 
 
 # =========================
-# PARSE DATE
+# PARSE DATETIME
 # =========================
-def parse_date(date_str):
+def parse_datetime(value):
     try:
-        date_str = date_str.strip()
-        return datetime.fromisoformat(date_str.replace("Z", "+00:00")).date()
+        if isinstance(value, (int, float)):
+            ts_sec = value / 1000 if value >= 1_000_000_000_000 else value
+            return datetime.fromtimestamp(ts_sec, tz=timezone.utc)
+
+        if isinstance(value, str):
+            dt = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+
+        return None
     except Exception:
         return None
 
@@ -48,7 +59,7 @@ def main():
 
     print("=" * 60)
     print("SPLIT INSTAGRAM DATA")
-    print(f"Split date: {SPLIT_DATE}")
+    print(f"Split time: {SPLIT_LABEL}")
     print("=" * 60)
 
     with open(BEFORE_OUTPUT, 'w', encoding='utf-8') as f_before, \
@@ -70,13 +81,13 @@ def main():
                     stats["failed"] += 1
                     continue
 
-                post_date = parse_date(timestamp_str)
-                if not post_date:
+                post_dt = parse_datetime(timestamp_str)
+                if not post_dt:
                     stats["failed"] += 1
                     continue
 
                 # giữ nguyên dữ liệu
-                if post_date < SPLIT_DATE:
+                if post_dt < SPLIT_DT:
                     f_before.write(line + "\n")
                     stats["before"] += 1
                 else:
@@ -101,8 +112,8 @@ def main():
     print("\n" + "=" * 60)
     print("SUMMARY")
     print("=" * 60)
-    print(f"Before 2026-04-10: {stats['before']}")
-    print(f"After 2026-04-10: {stats['after']}")
+    print(f"Before {SPLIT_LABEL}: {stats['before']}")
+    print(f"From {SPLIT_LABEL}: {stats['after']}")
     print(f"Total: {stats['total']}")
     print(f"Failed: {stats['failed']}")
     print("=" * 60)

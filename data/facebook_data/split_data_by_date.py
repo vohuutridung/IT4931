@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Split Facebook data into:
-- batch_data (< 1775754000)
-- stream_data (>= 1775754000)
+- batch_data (< 1776186000)
+- stream_data (>= 1776186000)
 
 Dựa trên createdAt (UNIX timestamp - seconds, UTC+7)
 Không modify dữ liệu
@@ -17,8 +17,9 @@ OUTPUT_PATH = "/home/khang/Code/data-pipeline/IT4931/data/facebook_data"
 STREAM_PATH = os.path.join(OUTPUT_PATH, "stream_data")
 BATCH_PATH = os.path.join(OUTPUT_PATH, "batch_data")
 
-# Mốc: 2026-04-10 00:00:00 UTC+7
-SPLIT_TS = 1775754000
+# Mốc: 2026-04-15 00:00:00 UTC+7
+SPLIT_TS = 1776186000
+SPLIT_LABEL = "2026-04-15 00:00:00 UTC+7"
 
 
 # =========================
@@ -69,6 +70,7 @@ def main():
 
     print("=" * 60)
     print("SPLIT BY createdAt (UTC+7)")
+    print(f"Split time: {SPLIT_LABEL}")
     print(f"Split timestamp: {SPLIT_TS}")
     print("=" * 60)
 
