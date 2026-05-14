@@ -11,8 +11,8 @@ Không modify dữ liệu
 import os
 import json
 
-BASE_DATA_PATH = "/home/khang/Code/data-pipeline/IT4931/data/facebook_data/raw_data"
-OUTPUT_PATH = "/home/khang/Code/data-pipeline/IT4931/data/facebook_data"
+BASE_DATA_PATH = "data/facebook_data/raw_data"
+OUTPUT_PATH = "data/facebook_data"
 
 STREAM_PATH = os.path.join(OUTPUT_PATH, "stream_data")
 BATCH_PATH = os.path.join(OUTPUT_PATH, "batch_data")

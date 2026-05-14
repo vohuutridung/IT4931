@@ -9,8 +9,8 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-INPUT_FILE = "/home/khang/Code/data-pipeline/IT4931/data/reddit_data/raw_data/posts.jsonl"
-OUTPUT_DIR = "/home/khang/Code/data-pipeline/IT4931/data/reddit_data"
+INPUT_FILE = "data/reddit_data/raw_data/posts.jsonl"
+OUTPUT_DIR = "data/reddit_data"
 
 BEFORE_OUTPUT = f"{OUTPUT_DIR}/batch_data/posts.jsonl"
 AFTER_OUTPUT = f"{OUTPUT_DIR}/stream_data/posts.jsonl"
