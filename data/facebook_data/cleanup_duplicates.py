@@ -48,7 +48,7 @@ def cleanup_folder(folder_path):
 
 
 def main():
-    data_base_path = "/home/khang/Code/data-pipeline/IT4931/data/facebook_data/raw_data"
+    data_base_path = "data/facebook_data/raw_data"
 
     cleaned_count = 0
     skipped_count = 0
