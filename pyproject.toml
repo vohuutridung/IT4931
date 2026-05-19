@@ -1,0 +1,15 @@
+[project]
+name = "social-pipeline"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "confluent-kafka==2.4.0",
+    "minio==7.2.7",
+    "numpy<2",
+    "pyarrow==14.0.1",
+    "pymongo==4.6.3",
+    "python-dotenv==1.0.1",
+    "requests==2.31.0",
+]
