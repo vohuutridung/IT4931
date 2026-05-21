@@ -6,6 +6,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        default-jre-headless \
        wget \
+       curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Cài đặt Apache Spark 3.5.3 vào /opt/spark
@@ -13,6 +14,12 @@ RUN mkdir -p /opt/spark && chown -R airflow: /opt/spark
 
 USER airflow
 # Cài đặt các thư viện Python cần thiết, bao gồm pyspark (sẽ tải kèm Apache Spark)
-RUN pip install --no-cache-dir minio pymongo pyspark==3.5.3
+RUN pip install --no-cache-dir pyspark==3.5.3 boto3==1.34.131 apache-airflow-providers-apache-spark==4.8.0
 # Liên kết pyspark vào /opt/spark để tương thích với DAG hiện tại
 RUN cp -r /home/airflow/.local/lib/python3.8/site-packages/pyspark/* /opt/spark/
+
+RUN mkdir -p /opt/spark/jars && \
+    curl -fsSL -o /opt/spark/jars/hadoop-aws-3.3.4.jar \
+      https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar && \
+    curl -fsSL -o /opt/spark/jars/aws-java-sdk-bundle-1.12.262.jar \
+      https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar

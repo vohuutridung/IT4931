@@ -1,44 +1,45 @@
 x-common-env: &common-env
   ENV: ${ENV:-dev}
   KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-  MINIO_ENDPOINT: minio:9000
-  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-  S3A_ENDPOINT: http://minio:9000
-  MONGO_URI: mongodb://mongodb:27017
-  MONGO_DB: ${MONGO_DB:-social_db}
-  MONGO_COLLECTION: ${MONGO_COLLECTION:-posts_clean}
+  S3_ENDPOINT: http://minio:9000
+  S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+  S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  S3_BUCKET: ${S3_BUCKET:-social-lake}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_PATH_STYLE_ACCESS: "true"
+  STORAGE_RAW_BASE: s3a://${S3_BUCKET:-social-lake}/data/raw
+  STORAGE_BATCH_VIEWS_BASE: s3a://${S3_BUCKET:-social-lake}/data/batch_views
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  CASSANDRA_HOSTS: cassandra
+  CASSANDRA_KEYSPACE: social_lambda
+  ES_HOST: http://elasticsearch:9200
+  ES_BATCH_INDEX: social_batch_views
+  ES_REALTIME_INDEX: social_realtime_views
+  ES_BATCH_ALIAS: batch_current
+  CLICKHOUSE_HOST: http://clickhouse:8123
+  CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-social_warehouse}
+  CLICKHOUSE_USER: ${CLICKHOUSE_USER:-social}
+  CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-social}
 
-x-airflow-common-env: &airflow-common-env
+x-airflow-env: &airflow-env
   <<: *common-env
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
   AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
   AIRFLOW__CORE__LOAD_EXAMPLES: "false"
   SPARK_HOME: /opt/spark
   PIPELINE_DIR: /opt/social_pipeline
-  ETL_TRACKER_FILE: /opt/etl_state/processed_dates.json
-
-  # Airflow Variables via Env (Fast & Reliable)
-  AIRFLOW_VAR_MINIO_ENDPOINT: "minio:9000"
-  AIRFLOW_VAR_MINIO_ACCESS_KEY: "${MINIO_ACCESS_KEY:-minioadmin}"
-  AIRFLOW_VAR_MINIO_SECRET_KEY: "${MINIO_SECRET_KEY:-minioadmin}"
-  AIRFLOW_VAR_MONGO_URI: "mongodb://mongodb:27017"
+  PYTHONPATH: /opt/social_pipeline
 
 services:
-
-  # ── Infrastructure: Kafka ──────────────────────────────────────────────────
-
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
     container_name: zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-    volumes:
-      - zk_data:/var/lib/zookeeper/data
-      - zk_log:/var/lib/zookeeper/log
     healthcheck:
-      test: [ "CMD", "nc", "-z", "localhost", "2181" ]
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -54,34 +55,17 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-    volumes:
-      - kafka_data:/var/lib/kafka/data
     healthcheck:
-      test: [ "CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092" ]
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
       interval: 15s
       timeout: 10s
       retries: 10
       start_period: 30s
-
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: kafka-ui
-    depends_on:
-      kafka:
-        condition: service_healthy
-    ports:
-      - "${KAFKA_UI_HOST_PORT:-8082}:8080"
-    environment:
-      KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
   kafka-init:
     image: confluentinc/cp-kafka:7.6.0
@@ -93,207 +77,145 @@ services:
       - /bin/sh
       - -c
       - |
-        echo "Creating Kafka topics..."
-        sleep 10
-
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
-          --topic ${ENV:-dev}.social-raw-batch --partitions 3 --replication-factor 1
-
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
-          --topic ${ENV:-dev}.social-raw-realtime --partitions 3 --replication-factor 1
-
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
-          --topic ${ENV:-dev}.social-processed --partitions 3 --replication-factor 1
-
-        echo "=== Topics created ==="
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic social.reddit.posts --partitions 3 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic social.facebook.posts --partitions 3 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic social.instagram.posts --partitions 3 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic social.dlq --partitions 1 --replication-factor 1
         kafka-topics --bootstrap-server kafka:29092 --list
     restart: "no"
 
-  # ── Infrastructure: MinIO ─────────────────────────────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "${KAFKA_UI_HOST_PORT:-8080}:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
   minio:
     image: minio/minio:latest
     container_name: minio
     ports:
-      - "${MINIO_HOST_PORT:-9000}:9000"
+      - "${MINIO_API_HOST_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: ["server", "/data", "--console-address", ":9001"]
     volumes:
       - minio_data:/data
-    command: server /data --console-address ":9001"
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
 
   minio-init:
     image: minio/mc:latest
     container_name: minio-init
     depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: [ "/bin/sh", "-c" ]
-    command: |
-      "
-      mc alias set local http://minio:9000 ${MINIO_ACCESS_KEY:-minioadmin} ${MINIO_SECRET_KEY:-minioadmin}
-      mc mb --ignore-existing local/social-raw
-      mc mb --ignore-existing local/social-clean
-      echo '=== MinIO buckets: social-raw, social-clean ==='
-      mc ls local
-      "
-    restart: "no"
-
-  # ── Infrastructure: MongoDB ───────────────────────────────────────────────
-
-  mongodb:
-    image: mongo:7.0
-    container_name: mongodb
-    ports:
-      - "${MONGO_HOST_PORT:-27018}:27017"
+      - minio
     environment:
-      MONGO_INITDB_DATABASE: ${MONGO_DB:-social_db}
-    volumes:
-      - mongo_data:/data/db
-    healthcheck:
-      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  # ── Spark Cluster ──────────────────────────────────────────────────────────
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-social-lake}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do sleep 2; done
+        mc mb --ignore-existing "local/$$S3_BUCKET"
+        mc ls "local/$$S3_BUCKET"
+    restart: "no"
 
   spark-master:
     build:
       context: .
       dockerfile: Dockerfile.spark
-    image: social-spark-master:3.5.3
+    image: social-spark:3.5.3
     container_name: spark-master
-    depends_on:
-      kafka:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
     ports:
-      - "${SPARK_MASTER_UI_HOST_PORT:-8080}:8080"
+      - "${SPARK_MASTER_UI_HOST_PORT:-8081}:8080"
       - "${SPARK_MASTER_HOST_PORT:-7077}:7077"
     environment:
-      - SPARK_NO_DAEMONIZE=true
-    volumes:
-      - ./streaming:/app/streaming
-      - ./batch:/app/batch
-      - ./shared:/app/shared
-      - spark_master_data:/opt/spark/work
-      - ./:/opt/spark-apps
+      <<: *common-env
+      SPARK_NO_DAEMONIZE: "true"
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8080" ]
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
       interval: 10s
       timeout: 5s
       retries: 10
-    command: [ "/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master" ]
 
-  spark-worker-1:
-    build:
-      context: .
-      dockerfile: Dockerfile.spark
-    image: social-spark-worker:3.5.3
-    container_name: spark-worker-1
+  spark-worker:
+    image: social-spark:3.5.3
+    container_name: spark-worker
     depends_on:
       - spark-master
     ports:
       - "${SPARK_WORKER_UI_HOST_PORT:-8083}:8081"
     environment:
-      - SPARK_NO_DAEMONIZE=true
-      - SPARK_WORKER_CORES=4
-      - SPARK_WORKER_MEMORY=4G
-      - SPARK_MASTER=spark://spark-master:7077
-    volumes:
-      - ./streaming:/app/streaming
-      - ./batch:/app/batch
-      - ./shared:/app/shared
-      - spark_worker_1_data:/opt/spark/work
-      - streaming_output:/tmp/streaming-output
-      - streaming_checkpoints:/tmp/spark-checkpoints
-    command: [ "/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077" ]
-
-  # ── Application: Ingestion ────────────────────────────────────────────────
-
-  ingestion:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: social-python:latest
-    container_name: ingestion
-    depends_on:
-      kafka-init:
-        condition: service_completed_successfully
-    environment:
       <<: *common-env
-      DATA_DIR: /app/data
-    volumes:
-      - ./data:/app/data:ro
-    command: [ "python", "-m", "ingestion.main" ]
-    restart: on-failure
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_WORKER_CORES: 4
+      SPARK_WORKER_MEMORY: 4G
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
 
-  # ── Application: Streaming ────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
 
-  streaming:
-    build:
-      context: .
-      dockerfile: Dockerfile.spark
-    image: social-spark-streaming:3.5.3
-    container_name: streaming
-    depends_on:
-      spark-master:
-        condition: service_healthy
-      kafka-init:
-        condition: service_completed_successfully
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra
+    ports:
+      - "${CASSANDRA_HOST_PORT:-9042}:9042"
     environment:
-      <<: *common-env
-      SPARK_MASTER: spark://spark-master:7077
-      OUTPUT_DIR: /tmp/streaming-output
-      CHECKPOINT_DIR: /tmp/spark-checkpoints
-      PYTHONPATH: /app
+      CASSANDRA_CLUSTER_NAME: social-lambda
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
     volumes:
-      - ./streaming:/app/streaming
-      - ./batch:/app/batch
-      - ./shared:/app/shared
-      - streaming_output:/tmp/streaming-output
-      - streaming_checkpoints:/tmp/spark-checkpoints
-    command: >
-      /opt/spark/bin/spark-submit
-        --master spark://spark-master:7077
-        --driver-memory 1g
-        --executor-memory 1g
-        /app/streaming/main.py
-    restart: on-failure
+      - cassandra_data:/var/lib/cassandra
 
-  # ── Application: Batch Consumer (Kafka → MinIO) ───────────────────────────
-
-  batch-consumer:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: social-python:latest
-    container_name: batch-consumer
-    depends_on:
-      kafka-init:
-        condition: service_completed_successfully
-      minio-init:
-        condition: service_completed_successfully
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+    container_name: elasticsearch
+    ports:
+      - "${ES_HOST_PORT:-9200}:9200"
     environment:
-      <<: *common-env
-      KAFKA_CONSUMER_GROUP: batch-consumer-group
-      CONSUMER_FLUSH_SIZE: ${CONSUMER_FLUSH_SIZE:-5000}
-      CONSUMER_FLUSH_INTERVAL: ${CONSUMER_FLUSH_INTERVAL:-60}
-    command: [ "python", "-m", "batch.consumer.kafka_to_minio" ]
-    restart: unless-stopped
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
 
-  # ── Application: Airflow (Batch Orchestration) ────────────────────────────
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.2
+    container_name: kibana
+    depends_on:
+      - elasticsearch
+    ports:
+      - "${KIBANA_HOST_PORT:-5601}:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: clickhouse
+    ports:
+      - "${CLICKHOUSE_HTTP_HOST_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_HOST_PORT:-9002}:9000"
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-social_warehouse}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-social}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-social}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
 
   postgres:
     image: postgres:15
@@ -305,7 +227,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD", "pg_isready", "-U", "airflow" ]
+      test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -319,19 +241,16 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      <<: *airflow-common-env
+      <<: *airflow-env
     volumes:
       - airflow_logs:/opt/airflow/logs
-      - etl_state:/opt/etl_state
     command:
       - bash
       - -c
       - |
         airflow db migrate &&
-        airflow users create \
-          --username admin --password admin \
-          --firstname Admin --lastname User \
-          --role Admin --email admin@example.com || true
+        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true
+        airflow connections add spark_default --conn-type spark --conn-host 'local[2]' || true
     restart: "no"
 
   airflow-webserver:
@@ -342,23 +261,15 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
     ports:
-      - "${AIRFLOW_WEBSERVER_HOST_PORT:-8085}:8080"
+      - "${AIRFLOW_WEBSERVER_HOST_PORT:-8082}:8080"
     environment:
-      <<: *airflow-common-env # Fix #9
-      AIRFLOW__WEBSERVER__WORKERS: 1
+      <<: *airflow-env
     volumes:
-      - ./batch/etl:/opt/airflow/dags
+      - ./orchestration/dags:/opt/airflow/dags
+      - ./:/opt/social_pipeline:ro
       - airflow_logs:/opt/airflow/logs
-      - etl_state:/opt/etl_state
     command: webserver
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
-      interval: 15s
-      timeout: 10s
-      retries: 10
 
   airflow-scheduler:
     build:
@@ -368,27 +279,135 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
     environment:
-      <<: *airflow-common-env
+      <<: *airflow-env
     volumes:
-      - ./batch/etl:/opt/airflow/dags
+      - ./orchestration/dags:/opt/airflow/dags
       - ./:/opt/social_pipeline:ro
       - airflow_logs:/opt/airflow/logs
-      - etl_state:/opt/etl_state
     command: scheduler
 
+  object-store-writer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: social-python:latest
+    container_name: object-store-writer
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *common-env
+      KAFKA_CONSUMER_GROUP: batch-consumer
+      CONSUMER_FLUSH_SIZE: ${CONSUMER_FLUSH_SIZE:-500}
+      CONSUMER_FLUSH_INTERVAL: ${CONSUMER_FLUSH_INTERVAL:-30}
+    command: ["python", "-m", "batch.object_store_writer"]
+    restart: unless-stopped
+
+  speed:
+    image: social-spark:3.5.3
+    container_name: speed
+    depends_on:
+      spark-master:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      cassandra:
+        condition: service_started
+      elasticsearch:
+        condition: service_started
+    environment:
+      <<: *common-env
+      SPARK_MASTER: spark://spark-master:7077
+      PYTHONPATH: /app
+    command:
+      - /opt/spark/bin/spark-submit
+      - --master
+      - spark://spark-master:7077
+      - /app/speed/streaming_job.py
+    restart: on-failure
+
+  serving-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: social-python:latest
+    container_name: serving-init
+    depends_on:
+      - elasticsearch
+    environment:
+      <<: *common-env
+    command: ["python", "-m", "serving.es_indexer", "--ensure"]
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: social-api:latest
+    container_name: api
+    depends_on:
+      - serving-init
+      - redis
+    ports:
+      - "${API_HOST_PORT:-8000}:8000"
+    environment:
+      <<: *common-env
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  dashboard:
+    image: nginx:alpine
+    container_name: dashboard
+    depends_on:
+      - api
+    ports:
+      - "${DASHBOARD_HOST_PORT:-8084}:80"
+    volumes:
+      - ./dashboard:/usr/share/nginx/html:ro
+
+  ml-anomaly:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: social-ml:latest
+    container_name: ml-anomaly
+    depends_on:
+      - api
+      - cassandra
+    environment:
+      <<: *common-env
+    command: ["python", "-m", "ml.anomaly_detector"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "${PROMETHEUS_HOST_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "${GRAFANA_HOST_PORT:-3000}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+
 volumes:
-  zk_data:
-  zk_log:
-  kafka_data:
   minio_data:
-  mongo_data:
+  clickhouse_data:
+  cassandra_data:
+  es_data:
   postgres_data:
-  spark_master_data:
-  spark_worker_1_data:
-  streaming_output:
-  streaming_checkpoints:
   airflow_logs:
-  etl_state:
+  grafana_data:
+
+networks:
+  default:
+    name: lambda-net
+    driver: bridge

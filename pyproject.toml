@@ -6,10 +6,22 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "confluent-kafka==2.4.0",
-    "minio==7.2.7",
     "numpy<2",
     "pyarrow==14.0.1",
-    "pymongo==4.6.3",
     "python-dotenv==1.0.1",
-    "requests==2.31.0",
+    "fastapi==0.111.0",
+    "boto3==1.34.131",
+    "uvicorn[standard]==0.29.0",
+    "prometheus-client==0.20.0",
+    "redis==5.0.4",
+    "langdetect==1.0.9",
+    "cassandra-driver==3.29.2",
+    "scikit-learn==1.5.0",
+    "pytest==8.2.2",
+    "pytest-cov==5.0.0",
+    "locust==2.29.1",
+    "requests==2.32.3",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

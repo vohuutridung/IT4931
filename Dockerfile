@@ -15,7 +15,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ── App code ──────────────────────────────────────────────────────────────────
 COPY ingestion/  ingestion/
 COPY batch/      batch/
-COPY shared/     shared/
+COPY config/     config/
+COPY serving/    serving/
+COPY api/        api/
+COPY ml/         ml/
+COPY speed/      speed/
+COPY warehouse/  warehouse/
 
 # Tạo __init__.py cho package root nếu cần import tuyệt đối
 RUN touch __init__.py

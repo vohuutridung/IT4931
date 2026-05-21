@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Social Lambda Dashboard</title>
+    <style>
+      body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1f2933; background: #f6f7f9; }
+      header { padding: 20px 28px; background: #ffffff; border-bottom: 1px solid #d9dee7; }
+      h1 { margin: 0; font-size: 22px; font-weight: 650; }
+      main { padding: 24px 28px; display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+      section { background: #ffffff; border: 1px solid #d9dee7; border-radius: 6px; padding: 16px; }
+      h2 { margin: 0 0 12px; font-size: 15px; }
+      pre { white-space: pre-wrap; word-break: break-word; background: #f0f3f7; padding: 12px; border-radius: 4px; min-height: 120px; }
+      button, select { height: 34px; border: 1px solid #aeb7c4; border-radius: 4px; background: #ffffff; padding: 0 10px; }
+      .controls { display: flex; gap: 8px; margin-bottom: 12px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Social Lambda Dashboard</h1>
+    </header>
+    <main>
+      <section>
+        <div class="controls">
+          <select id="platform">
+            <option value="">All</option>
+            <option>reddit</option>
+            <option>facebook</option>
+            <option>instagram</option>
+          </select>
+          <button onclick="loadAll()">Refresh</button>
+        </div>
+        <h2>Realtime Stats</h2>
+        <pre id="stats">Loading...</pre>
+      </section>
+      <section>
+        <h2>Top Hashtags</h2>
+        <pre id="hashtags">Loading...</pre>
+      </section>
+      <section>
+        <h2>Recent Posts</h2>
+        <pre id="posts">Loading...</pre>
+      </section>
+    </main>
+    <script>
+      const api = location.origin.replace(/:8084$/, ':8000');
+      async function get(path) {
+        const res = await fetch(api + path);
+        return JSON.stringify(await res.json(), null, 2);
+      }
+      async function loadAll() {
+        const platform = document.getElementById('platform').value;
+        const query = platform ? `?platform=${platform}` : '';
+        document.getElementById('stats').textContent = await get('/api/v1/stats/realtime' + query);
+        document.getElementById('hashtags').textContent = await get('/api/v1/hashtags/top' + (platform ? `?platform=${platform}` : ''));
+        document.getElementById('posts').textContent = await get('/api/v1/posts' + query);
+      }
+      loadAll();
+    </script>
+  </body>
+</html>

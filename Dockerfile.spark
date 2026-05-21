@@ -13,9 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ── Python deps cho PySpark jobs ──────────────────────────────────────────────
 RUN pip3 install --no-cache-dir --break-system-packages \
-    pyspark==3.5.3 pyarrow==14.0.1 pymongo==4.6.3 'numpy<2' 2>/dev/null || \
+    pyspark==3.5.3 pyarrow==14.0.1 requests==2.32.3 boto3==1.34.131 redis==5.0.4 langdetect==1.0.9 cassandra-driver==3.29.2 'numpy<2' 2>/dev/null || \
     pip3 install --no-cache-dir \
-    pyspark==3.5.3 pyarrow==14.0.1 pymongo==4.6.3 'numpy<2'
+    pyspark==3.5.3 pyarrow==14.0.1 requests==2.32.3 boto3==1.34.131 redis==5.0.4 langdetect==1.0.9 cassandra-driver==3.29.2 'numpy<2'
 
 # ── Tải JARs vào thư mục jars của Spark ──────────────────────────────────────
 ARG SPARK_JARS_DIR=/opt/spark/jars
@@ -26,18 +26,14 @@ RUN curl -fsSL -o ${SPARK_JARS_DIR}/spark-sql-kafka-0-10_2.12-3.5.3.jar \
         https://repo1.maven.org/maven2/org/apache/spark/spark-token-provider-kafka-0-10_2.12/3.5.3/spark-token-provider-kafka-0-10_2.12-3.5.3.jar && \
     curl -fsSL -o ${SPARK_JARS_DIR}/kafka-clients-3.4.1.jar \
         https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/3.4.1/kafka-clients-3.4.1.jar && \
+    curl -fsSL -o ${SPARK_JARS_DIR}/hadoop-client-api-3.3.4.jar \
+        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-api/3.3.4/hadoop-client-api-3.3.4.jar && \
+    curl -fsSL -o ${SPARK_JARS_DIR}/hadoop-client-runtime-3.3.4.jar \
+        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-runtime/3.3.4/hadoop-client-runtime-3.3.4.jar && \
     curl -fsSL -o ${SPARK_JARS_DIR}/hadoop-aws-3.3.4.jar \
         https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar && \
     curl -fsSL -o ${SPARK_JARS_DIR}/aws-java-sdk-bundle-1.12.262.jar \
         https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar && \
-    curl -fsSL -o ${SPARK_JARS_DIR}/mongo-spark-connector_2.12-10.3.0.jar \
-        https://repo1.maven.org/maven2/org/mongodb/spark/mongo-spark-connector_2.12/10.3.0/mongo-spark-connector_2.12-10.3.0.jar && \
-    curl -fsSL -o ${SPARK_JARS_DIR}/bson-4.11.1.jar \
-        https://repo1.maven.org/maven2/org/mongodb/bson/4.11.1/bson-4.11.1.jar && \
-    curl -fsSL -o ${SPARK_JARS_DIR}/mongodb-driver-sync-4.11.1.jar \
-        https://repo1.maven.org/maven2/org/mongodb/mongodb-driver-sync/4.11.1/mongodb-driver-sync-4.11.1.jar && \
-    curl -fsSL -o ${SPARK_JARS_DIR}/mongodb-driver-core-4.11.1.jar \
-        https://repo1.maven.org/maven2/org/mongodb/mongodb-driver-core/4.11.1/mongodb-driver-core-4.11.1.jar && \
     curl -fsSL -o ${SPARK_JARS_DIR}/commons-pool2-2.11.1.jar \
         https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar
 
@@ -46,16 +42,17 @@ RUN mkdir -p /home/spark/.ivy2/cache && chown -R spark:spark /home/spark/.ivy2
 
 # ── App code ──────────────────────────────────────────────────────────────────
 WORKDIR /app
-COPY streaming/  streaming/
+COPY speed/      speed/
 COPY batch/      batch/
-COPY shared/     shared/
+COPY config/     config/
+COPY serving/    serving/
+COPY scripts/    scripts/
+COPY warehouse/  warehouse/
 RUN touch __init__.py
 
-# ── Fix streaming output and checkpoint directory permissions ──────────────────
-RUN mkdir -p /tmp/streaming-output/{aggregated,clean,viral_posts} && \
-    mkdir -p /tmp/spark-checkpoints/{console,parquet,aggregated,kafka} && \
-    chmod -R 777 /tmp/streaming-output && \
-    chmod -R 777 /tmp/spark-checkpoints
+# ── Runtime writable directories ─────────────────────────────────────────────
+RUN mkdir -p /tmp/social-speed/checkpoints /tmp/social-speed/bad_records && \
+    chmod -R 777 /tmp/social-speed
 
 # Fix permission cho thư mục work của Spark Worker (nếu bị mount volume mới đè lên)
 RUN mkdir -p /opt/spark/work && chown -R spark:spark /opt/spark/work
