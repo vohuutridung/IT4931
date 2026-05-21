@@ -117,6 +117,7 @@ def _safe_truncate(text: str, max_len: int = MAX_CONTENT_LEN) -> tuple:
     """
     if len(text) <= max_len:
         return text, False
+    logger.warning("Truncating text from length %d to %d (max_len: %d)", len(text), max_len, max_len)
     return text[:max_len].rsplit(" ", 1)[0], True
 
 

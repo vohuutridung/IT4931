@@ -139,6 +139,7 @@ def _safe_truncate(text: str, max_len: int) -> Tuple[str, bool]:
     """Cắt tại word boundary. Trả về (text, is_truncated)."""
     if len(text) <= max_len:
         return text, False
+    logger.warning("Truncating text from length %d to %d (max_len: %d)", len(text), max_len, max_len)
     return text[:max_len].rsplit(" ", 1)[0], True
 
 

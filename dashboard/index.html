@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Social Lambda Dashboard</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f6f8;
+        --panel: #ffffff;
+        --panel-soft: #f9fafb;
+        --border: #d8dee8;
+        --border-strong: #aab4c2;
+        --text: #17202a;
+        --muted: #667085;
+        --blue: #2563eb;
+        --green: #0f8a5f;
+        --red: #c24132;
+        --amber: #b7791f;
+        --ink: #27364a;
+        --shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 64px;
+        padding: 12px 24px;
+        background: rgba(255, 255, 255, 0.96);
+        border-bottom: 1px solid var(--border);
+        backdrop-filter: blur(8px);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.2;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      .status-line {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--amber);
+      }
+
+      .dot.ok { background: var(--green); }
+      .dot.err { background: var(--red); }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      select,
+      button {
+        height: 36px;
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--text);
+        padding: 0 12px;
+        font: inherit;
+        font-size: 14px;
+      }
+
+      button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 88px;
+        background: var(--ink);
+        border-color: var(--ink);
+        color: #fff;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: 0.72;
+      }
+
+      main {
+        width: min(1440px, 100%);
+        margin: 0 auto;
+        padding: 20px 24px 28px;
+      }
+
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .kpi,
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+      }
+
+      .kpi {
+        min-height: 104px;
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .kpi-label,
+      .panel-title,
+      th {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .kpi-value {
+        font-size: 30px;
+        line-height: 1;
+        font-weight: 760;
+        letter-spacing: 0;
+      }
+
+      .kpi-note {
+        color: var(--muted);
+        font-size: 13px;
+        min-height: 18px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.85fr);
+        gap: 16px;
+        align-items: start;
+      }
+
+      .stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .panel {
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 48px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .panel-body {
+        padding: 16px;
+      }
+
+      .chart-wrap {
+        position: relative;
+        height: 300px;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .bars {
+        display: grid;
+        gap: 10px;
+      }
+
+      .bar-row {
+        display: grid;
+        grid-template-columns: minmax(90px, 150px) minmax(0, 1fr) 54px;
+        align-items: center;
+        gap: 10px;
+        min-height: 28px;
+        font-size: 14px;
+      }
+
+      .bar-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--text);
+      }
+
+      .bar-track {
+        height: 10px;
+        border-radius: 999px;
+        background: #e8edf4;
+        overflow: hidden;
+      }
+
+      .bar-fill {
+        height: 100%;
+        min-width: 2px;
+        border-radius: inherit;
+        background: var(--blue);
+      }
+
+      .bar-value {
+        text-align: right;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+
+      th,
+      td {
+        padding: 11px 12px;
+        border-bottom: 1px solid #e7ebf0;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      td {
+        font-size: 14px;
+        line-height: 1.35;
+      }
+
+      tbody tr:hover {
+        background: var(--panel-soft);
+      }
+
+      .content-cell {
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
+
+      .metric {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #eef2f7;
+        color: #344054;
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .empty {
+        min-height: 140px;
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        text-align: center;
+        padding: 24px;
+      }
+
+      .error {
+        color: var(--red);
+      }
+
+      @media (max-width: 980px) {
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .kpis {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 640px) {
+        header,
+        main {
+          padding-left: 14px;
+          padding-right: 14px;
+        }
+
+        .kpis {
+          grid-template-columns: 1fr;
+        }
+
+        .toolbar {
+          width: 100%;
+        }
+
+        select,
+        button {
+          flex: 1 1 130px;
+        }
+
+        .chart-wrap {
+          height: 240px;
+        }
+
+        .bar-row {
+          grid-template-columns: minmax(74px, 112px) minmax(0, 1fr) 44px;
+        }
+
+        th:nth-child(4),
+        td:nth-child(4) {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Social Lambda Dashboard</h1>
+        <div class="status-line">
+          <span id="statusDot" class="dot"></span>
+          <span id="statusText">Loading</span>
+        </div>
+      </div>
+      <div class="toolbar">
+        <select id="platform" aria-label="Platform">
+          <option value="">All platforms</option>
+          <option value="reddit">Reddit</option>
+          <option value="facebook">Facebook</option>
+          <option value="instagram">Instagram</option>
+        </select>
+        <select id="limit" aria-label="Post limit">
+          <option value="25">25 posts</option>
+          <option value="50">50 posts</option>
+          <option value="100" selected>100 posts</option>
+        </select>
+        <button id="refreshBtn" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="kpis" aria-label="Summary">
+        <div class="kpi">
+          <div class="kpi-label">Realtime Windows</div>
+          <div id="kpiWindows" class="kpi-value">0</div>
+          <div id="kpiWindowsNote" class="kpi-note">No active windows</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Realtime Posts</div>
+          <div id="kpiRealtimePosts" class="kpi-value">0</div>
+          <div class="kpi-note">From Redis aggregates</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Avg Sentiment</div>
+          <div id="kpiSentiment" class="kpi-value">0.00</div>
+          <div id="kpiSentimentNote" class="kpi-note">Neutral</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Recent Posts</div>
+          <div id="kpiPosts" class="kpi-value">0</div>
+          <div id="kpiPostsNote" class="kpi-note">Loaded from serving layer</div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="stack">
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">Sentiment Trend</div>
+              <div id="trendMeta" class="status-line">Hourly batch view</div>
+            </div>
+            <div class="panel-body">
+              <div class="chart-wrap">
+                <canvas id="sentimentChart" width="960" height="320"></canvas>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">Recent Posts</div>
+              <div id="postsMeta" class="status-line">0 rows</div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width: 112px;">Platform</th>
+                    <th>Content</th>
+                    <th style="width: 118px;">Sentiment</th>
+                    <th style="width: 132px;">Engagement</th>
+                    <th style="width: 170px;">Time</th>
+                  </tr>
+                </thead>
+                <tbody id="postsBody"></tbody>
+              </table>
+              <div id="postsEmpty" class="empty">No posts loaded</div>
+            </div>
+          </section>
+        </div>
+
+        <div class="stack">
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">Top Hashtags</div>
+              <div id="hashtagsMeta" class="status-line">0 tags</div>
+            </div>
+            <div class="panel-body">
+              <div id="hashtagBars" class="bars"></div>
+              <div id="hashtagsEmpty" class="empty">No hashtag data</div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">Realtime Windows</div>
+              <div id="windowsMeta" class="status-line">Redis</div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Window</th>
+                    <th style="width: 88px;">Posts</th>
+                    <th style="width: 96px;">Sentiment</th>
+                  </tr>
+                </thead>
+                <tbody id="windowsBody"></tbody>
+              </table>
+              <div id="windowsEmpty" class="empty">No realtime windows</div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const api = location.origin.replace(/:8084$/, ':8000');
+      const els = {
+        platform: document.getElementById('platform'),
+        limit: document.getElementById('limit'),
+        refreshBtn: document.getElementById('refreshBtn'),
+        statusDot: document.getElementById('statusDot'),
+        statusText: document.getElementById('statusText'),
+        kpiWindows: document.getElementById('kpiWindows'),
+        kpiWindowsNote: document.getElementById('kpiWindowsNote'),
+        kpiRealtimePosts: document.getElementById('kpiRealtimePosts'),
+        kpiSentiment: document.getElementById('kpiSentiment'),
+        kpiSentimentNote: document.getElementById('kpiSentimentNote'),
+        kpiPosts: document.getElementById('kpiPosts'),
+        kpiPostsNote: document.getElementById('kpiPostsNote'),
+        sentimentChart: document.getElementById('sentimentChart'),
+        trendMeta: document.getElementById('trendMeta'),
+        hashtagBars: document.getElementById('hashtagBars'),
+        hashtagsEmpty: document.getElementById('hashtagsEmpty'),
+        hashtagsMeta: document.getElementById('hashtagsMeta'),
+        postsBody: document.getElementById('postsBody'),
+        postsEmpty: document.getElementById('postsEmpty'),
+        postsMeta: document.getElementById('postsMeta'),
+        windowsBody: document.getElementById('windowsBody'),
+        windowsEmpty: document.getElementById('windowsEmpty'),
+        windowsMeta: document.getElementById('windowsMeta')
+      };
+
+      function qs(params) {
+        const search = new URLSearchParams();
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') search.set(key, value);
+        });
+        const text = search.toString();
+        return text ? `?${text}` : '';
+      }
+
+      async function getJson(path) {
+        const response = await fetch(api + path, { headers: { accept: 'application/json' } });
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+        return response.json();
+      }
+
+      function number(value) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+      }
+
+      function fmtInt(value) {
+        return new Intl.NumberFormat().format(Math.round(number(value)));
+      }
+
+      function fmtSentiment(value) {
+        return number(value).toFixed(2);
+      }
+
+      function fmtDate(value) {
+        if (!value) return '';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        return new Intl.DateTimeFormat(undefined, {
+          month: 'short',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        }).format(date);
+      }
+
+      function sentimentLabel(score) {
+        const value = number(score);
+        if (value > 0.15) return 'Positive';
+        if (value < -0.15) return 'Negative';
+        return 'Neutral';
+      }
+
+      function engagement(post) {
+        return number(post.engagement_score)
+          || number(post.likes) + number(post.comments) * 2 + number(post.shares) * 3
+          || number(post.metrics?.likes) + number(post.metrics?.comments) * 2 + number(post.metrics?.shares) * 3;
+      }
+
+      function normalizeTrend(rows) {
+        return [...(rows || [])]
+          .map((row) => ({
+            time: row.event_hour || row.event_ts || row.indexed_at || row.updated_at || row.key || '',
+            value: number(row.avg_sentiment ?? row.sentiment_score)
+          }))
+          .filter((row) => row.time)
+          .sort((a, b) => String(a.time).localeCompare(String(b.time)))
+          .slice(-48);
+      }
+
+      function normalizeStats(rows) {
+        return [...(rows || [])]
+          .map((row) => ({
+            key: row.key || '',
+            post_count: number(row.post_count),
+            avg_sentiment: number(row.avg_sentiment),
+            top_hashtag: row.top_hashtag || ''
+          }))
+          .sort((a, b) => String(b.key).localeCompare(String(a.key)));
+      }
+
+      function drawSentimentChart(points) {
+        const canvas = els.sentimentChart;
+        const ctx = canvas.getContext('2d');
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(640, Math.floor(rect.width * dpr));
+        canvas.height = Math.max(240, Math.floor(rect.height * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const width = rect.width;
+        const height = rect.height;
+        ctx.clearRect(0, 0, width, height);
+
+        const pad = { left: 44, right: 18, top: 16, bottom: 34 };
+        const plotW = width - pad.left - pad.right;
+        const plotH = height - pad.top - pad.bottom;
+
+        ctx.strokeStyle = '#d8dee8';
+        ctx.lineWidth = 1;
+        ctx.fillStyle = '#667085';
+        ctx.font = '12px system-ui, sans-serif';
+
+        [-1, -0.5, 0, 0.5, 1].forEach((tick) => {
+          const y = pad.top + (1 - (tick + 1) / 2) * plotH;
+          ctx.beginPath();
+          ctx.moveTo(pad.left, y);
+          ctx.lineTo(width - pad.right, y);
+          ctx.stroke();
+          ctx.fillText(tick.toFixed(1), 8, y + 4);
+        });
+
+        if (!points.length) {
+          ctx.fillStyle = '#667085';
+          ctx.textAlign = 'center';
+          ctx.fillText('No sentiment data', width / 2, height / 2);
+          ctx.textAlign = 'left';
+          return;
+        }
+
+        const values = points.map((p) => Math.max(-1, Math.min(1, p.value)));
+        const xFor = (index) => pad.left + (points.length === 1 ? plotW / 2 : (index / (points.length - 1)) * plotW);
+        const yFor = (value) => pad.top + (1 - (value + 1) / 2) * plotH;
+
+        ctx.beginPath();
+        values.forEach((value, index) => {
+          const x = xFor(index);
+          const y = yFor(value);
+          if (index === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.strokeStyle = '#2563eb';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        values.forEach((value, index) => {
+          ctx.beginPath();
+          ctx.arc(xFor(index), yFor(value), 3.2, 0, Math.PI * 2);
+          ctx.fillStyle = value >= 0 ? '#0f8a5f' : '#c24132';
+          ctx.fill();
+        });
+
+        const first = points[0]?.time;
+        const last = points[points.length - 1]?.time;
+        ctx.fillStyle = '#667085';
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.fillText(fmtDate(first), pad.left, height - 10);
+        ctx.textAlign = 'right';
+        ctx.fillText(fmtDate(last), width - pad.right, height - 10);
+        ctx.textAlign = 'left';
+      }
+
+      function renderHashtags(rows) {
+        const tags = [...(rows || [])]
+          .map((row) => ({
+            hashtag: String(row.hashtag || row.tag || '').replace(/^#/, ''),
+            frequency: number(row.frequency ?? row.score ?? row.count)
+          }))
+          .filter((row) => row.hashtag)
+          .sort((a, b) => b.frequency - a.frequency)
+          .slice(0, 12);
+
+        els.hashtagsMeta.textContent = `${tags.length} tags`;
+        els.hashtagBars.innerHTML = '';
+        els.hashtagsEmpty.style.display = tags.length ? 'none' : 'grid';
+        const max = Math.max(1, ...tags.map((tag) => tag.frequency));
+        tags.forEach((tag) => {
+          const row = document.createElement('div');
+          row.className = 'bar-row';
+          row.innerHTML = `
+            <div class="bar-label">#${escapeHtml(tag.hashtag)}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${Math.max(2, (tag.frequency / max) * 100)}%"></div></div>
+            <div class="bar-value">${fmtInt(tag.frequency)}</div>
+          `;
+          els.hashtagBars.appendChild(row);
+        });
+      }
+
+      function renderPosts(rows) {
+        const posts = [...(rows || [])];
+        els.postsBody.innerHTML = '';
+        els.postsEmpty.style.display = posts.length ? 'none' : 'grid';
+        els.postsMeta.textContent = `${posts.length} rows`;
+        els.kpiPosts.textContent = fmtInt(posts.length);
+        els.kpiPostsNote.textContent = posts.length ? 'Serving layer results' : 'No serving rows';
+
+        posts.slice(0, Number(els.limit.value)).forEach((post) => {
+          const score = number(post.sentiment_score);
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td><span class="badge">${escapeHtml(post.platform || post.source || '')}</span></td>
+            <td><div class="content-cell">${escapeHtml(post.content || post.title || post.post_id || '')}</div></td>
+            <td class="metric">${escapeHtml(post.sentiment_label || sentimentLabel(score))} ${fmtSentiment(score)}</td>
+            <td class="metric">${fmtInt(engagement(post))}</td>
+            <td>${escapeHtml(fmtDate(post.event_ts || post.created_at || post.indexed_at))}</td>
+          `;
+          els.postsBody.appendChild(tr);
+        });
+      }
+
+      function renderWindows(stats) {
+        els.windowsBody.innerHTML = '';
+        els.windowsEmpty.style.display = stats.length ? 'none' : 'grid';
+        els.windowsMeta.textContent = `${stats.length} windows`;
+        els.kpiWindows.textContent = fmtInt(stats.length);
+        els.kpiWindowsNote.textContent = stats[0]?.top_hashtag ? `Top #${stats[0].top_hashtag}` : 'Redis aggregate windows';
+
+        const totalPosts = stats.reduce((sum, row) => sum + row.post_count, 0);
+        const weightedSentiment = stats.reduce((sum, row) => sum + row.avg_sentiment * Math.max(row.post_count, 1), 0);
+        const divisor = stats.reduce((sum, row) => sum + Math.max(row.post_count, 1), 0);
+        const avg = divisor ? weightedSentiment / divisor : 0;
+        els.kpiRealtimePosts.textContent = fmtInt(totalPosts);
+        els.kpiSentiment.textContent = fmtSentiment(avg);
+        els.kpiSentimentNote.textContent = sentimentLabel(avg);
+
+        stats.slice(0, 10).forEach((row) => {
+          const tr = document.createElement('tr');
+          const windowName = row.key.split(':').slice(3).join(':') || row.key;
+          tr.innerHTML = `
+            <td>${escapeHtml(fmtDate(windowName) || windowName)}</td>
+            <td class="metric">${fmtInt(row.post_count)}</td>
+            <td class="metric">${fmtSentiment(row.avg_sentiment)}</td>
+          `;
+          els.windowsBody.appendChild(tr);
+        });
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;');
+      }
+
+      function setStatus(kind, text) {
+        els.statusDot.className = `dot ${kind}`;
+        els.statusText.textContent = text;
+      }
+
+      async function loadAll() {
+        const platform = els.platform.value;
+        const limit = els.limit.value;
+        els.refreshBtn.disabled = true;
+        setStatus('', 'Loading');
+        try {
+          const [health, statsPayload, hashtagsPayload, postsPayload, trendPayload] = await Promise.all([
+            getJson('/health'),
+            getJson('/api/v1/stats/realtime' + qs({ platform })),
+            getJson('/api/v1/hashtags/top' + qs({ platform, top_n: 12 })),
+            getJson('/api/v1/posts' + qs({ platform, limit, start: '2023-01-01T00:00:00Z' })),
+            getJson('/api/v1/sentiment/trend' + qs({ platform }))
+          ]);
+
+          const stats = normalizeStats(statsPayload.stats || []);
+          const trend = normalizeTrend(trendPayload.data || []);
+          renderWindows(stats);
+          renderHashtags(hashtagsPayload.data || []);
+          renderPosts(postsPayload.data || []);
+          drawSentimentChart(trend);
+          els.trendMeta.textContent = `${trend.length} points`;
+          setStatus(health.status === 'ok' ? 'ok' : '', `Updated ${new Date().toLocaleTimeString()}`);
+        } catch (error) {
+          setStatus('err', `API error: ${error.message}`);
+        } finally {
+          els.refreshBtn.disabled = false;
+        }
+      }
+
+      els.refreshBtn.addEventListener('click', loadAll);
+      els.platform.addEventListener('change', loadAll);
+      els.limit.addEventListener('change', loadAll);
+      window.addEventListener('resize', () => loadAll());
+      loadAll();
+      setInterval(loadAll, 30000);
+    </script>
+  </body>
+</html>

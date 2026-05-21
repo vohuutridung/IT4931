@@ -1,659 +1,932 @@
-# 🚀 Social Media Data Pipeline — IT4931
+# Social Media Lambda Pipeline
 
-Hệ thống **data pipeline** xử lý dữ liệu mạng xã hội (Facebook, Instagram, Reddit) theo kiến trúc **Lambda Architecture** — kết hợp batch processing và real-time streaming vào một hệ thống thống nhất.
+Dự án xây dựng pipeline xử lý dữ liệu mạng xã hội theo mô hình Lambda Architecture. Pipeline nhận dữ liệu từ Reddit, Facebook và Instagram, chuẩn hóa về một schema chung, ghi dữ liệu thô vào MinIO, tạo batch views bằng Spark, load dữ liệu phân tích vào ClickHouse warehouse, xử lý realtime bằng Spark Streaming, làm giàu NLP, lưu serving data vào Elasticsearch/Redis/Cassandra và cung cấp API/dashboard để truy vấn.
 
----
+## Mục Tiêu
 
-## Mục lục
+- Chuẩn hóa dữ liệu social media từ nhiều nền tảng về một canonical schema.
+- Publish dữ liệu chuẩn vào Kafka và record lỗi vào DLQ.
+- Lưu raw data dạng Parquet trên MinIO, partition theo `platform` và `date`.
+- Tạo batch views bằng Spark theo hướng idempotent.
+- Xử lý realtime stream, enrich sentiment/keyword/entity/language.
+- Serving qua FastAPI, Elasticsearch, Redis và Cassandra.
+- Theo dõi hệ thống bằng Prometheus/Grafana.
+- Điều phối batch pipeline bằng Airflow.
+- Cung cấp test unit, integration, e2e, load test và script validation theo từng phase SOP.
 
-- [Tổng quan kiến trúc](#tổng-quan-kiến-trúc)
-- [Cấu trúc thư mục](#cấu-trúc-thư-mục)
-- [Yêu cầu hệ thống](#yêu-cầu-hệ-thống)
-- [Cài đặt và khởi chạy](#cài-đặt-và-khởi-chạy)
-- [Cấu hình](#cấu-hình)
-- [Các component](#các-component)
-- [Data Flow](#data-flow)
-- [Schema dữ liệu](#schema-dữ-liệu)
-- [Vận hành](#vận-hành)
-- [Phát triển](#phát-triển)
+## Kiến Trúc Tổng Quan
 
----
+```text
+data/*
+  -> ingestion/simulator.py
+  -> Kafka social.<platform>.posts
+  -> batch/object_store_writer.py
+  -> MinIO s3a://social-lake/data/raw/platform/year=yyyy/month=mm/day=dd
+  -> batch/spark_batch_job.py
+  -> MinIO s3a://social-lake/data/batch_views
+  -> batch/index_batch_views.py
+  -> Elasticsearch social_batch_views
+  -> warehouse/clickhouse_loader.py
+  -> ClickHouse social_warehouse fact/dim tables
 
-## Tổng quan kiến trúc
+Kafka social.<platform>.posts
+  -> speed/streaming_job.py
+  -> speed/nlp_pipeline.py
+  -> Redis rt:*
+  -> Cassandra enrichments
+  -> Elasticsearch social_realtime_views
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         DATA SOURCES                                    │
-│          Facebook          Instagram          Reddit                    │
-│       (post.json files)  (posts.jsonl)    (posts.jsonl)                 │
-└────────────────┬───────────────┬───────────────┬────────────────────────┘
-                 │               │               │
-                 ▼               ▼               ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    INGESTION LAYER (Python)                             │
-│  • Normalize → Canonical Schema (schema_version=1)                      │
-│  • Validate (post_id, event_time required)                              │
-│  • Produce → Kafka (batch topic / realtime topic)                       │
-└────────────────┬────────────────────────────────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         APACHE KAFKA                                    │
-│   dev.social-raw-batch        dev.social-raw-realtime                   │
-│   (3 partitions)              (3 partitions)                            │
-└────────────┬──────────────────────────────┬─────────────────────────────┘
-             │                              │
-    ┌────────▼────────┐            ┌────────▼────────┐
-    │  BATCH LAYER    │            │  SPEED LAYER    │
-    │                 │            │                 │
-    │ Kafka→MinIO     │            │ Spark Streaming │
-    │ Consumer        │            │ (Structured     │
-    │ (Parquet files) │            │  Streaming)     │
-    └────────┬────────┘            └────────┬────────┘
-             │                              │
-    ┌────────▼────────┐            ┌────────▼────────┐
-    │    MinIO        │            │  Parquet Sinks  │
-    │  (social-raw)   │            │  • clean/       │
-    │   s3a://        │            │  • aggregated/  │
-    └────────┬────────┘            └─────────────────┘
-             │
-    ┌────────▼────────┐
-    │  Spark ETL      │  ← Apache Airflow (schedule 02:00 UTC)
-    │  (Batch Job)    │
-    │  • Clean        │
-    │  • Enrich       │
-    │  • Deduplicate  │
-    └────────┬────────┘
-             │
-    ┌────────▼────────┐
-    │   MinIO         │   MongoDB
-    │  (social-clean) │   (posts_clean)
-    └─────────────────┘
+serving/merge_service.py
+  -> api/main.py
+  -> dashboard/index.html
+
+orchestration/dags/batch_pipeline_dag.py
+  -> Airflow hourly/manual batch refresh
+
+ml/anomaly_detector.py
+  -> Cassandra alerts
 ```
 
-### Stack công nghệ
+## Canonical Post Schema
 
-| Layer | Công nghệ | Version |
-|-------|-----------|---------|
-| Message Broker | Apache Kafka | 7.6.0 (Confluent) |
-| Object Storage | MinIO | latest |
-| Batch Processing | Apache Spark | 3.5.3 |
-| Stream Processing | Spark Structured Streaming | 3.5.3 |
-| Orchestration | Apache Airflow | 2.9.3 |
-| Database | MongoDB | 7.0 |
-| Language | Python | 3.8 (Spark/Airflow), 3.10+ (Ingestion) |
-| Container | Docker Compose | - |
+Sau khi normalize, mỗi post hợp lệ có schema chính:
 
----
-
-## Cấu trúc thư mục
-
-```
-IT4931/
-├── shared/
-│   └── config.py               # ★ Config trung tâm — source of truth
-│
-├── ingestion/                  # Layer 1: Thu thập & chuẩn hoá dữ liệu
-│   ├── config/
-│   │   └── settings.py         # Import từ shared/config.py
-│   ├── normalizers/
-│   │   ├── facebook.py         # Chuẩn hoá dữ liệu Facebook
-│   │   ├── instagram.py        # Chuẩn hoá dữ liệu Instagram
-│   │   └── reddit.py           # Chuẩn hoá dữ liệu Reddit
-│   ├── producer/
-│   │   ├── social_producer.py  # Kafka producer (batch + realtime)
-│   │   └── readers.py          # Đọc file JSONL/folder
-│   └── main.py                 # Entrypoint ingestion
-│
-├── batch/
-│   ├── consumer/
-│   │   └── kafka_to_minio.py   # Kafka → MinIO (Parquet)
-│   └── etl/
-│       ├── spark_etl.py        # Spark batch ETL job
-│       └── airflow_dag.py      # Airflow DAG định nghĩa pipeline
-│
-├── streaming/
-│   ├── config/
-│   │   └── spark_settings.py   # Cấu hình Spark Streaming
-│   ├── processors/
-│   │   ├── social_processor.py # Transform pipeline (clean/enrich)
-│   │   └── engagement_agg.py   # Windowed aggregation
-│   ├── sinks/
-│   │   ├── parquet_sink.py     # Ghi Parquet (ParquetSink, KafkaSink)
-│   │   ├── kafka_sink.py       # write_to_kafka()
-│   │   └── console_sink.py     # Debug console sink
-│   └── main.py                 # Entrypoint streaming job
-│
-├── data/                       # Raw data (gitignored)
-│   ├── facebook_data/
-│   │   ├── batch_data/         # Historical posts (post.json per folder)
-│   │   └── stream_data/        # Realtime posts
-│   ├── instagram_data/
-│   │   ├── batch_data/posts.jsonl
-│   │   └── stream_data/posts.jsonl
-│   └── reddit_data/
-│       ├── batch_data/posts.jsonl
-│       └── stream_data/posts.jsonl
-│
-├── Dockerfile                  # Image cho ingestion + batch consumer
-├── Dockerfile.spark            # Image cho Spark jobs
-├── Dockerfile.airflow          # Image custom cho Airflow (cài sẵn Java & PySpark)
-├── docker-compose.yml          # Toàn bộ hạ tầng
-├── requirements.txt            # Deps chung (không có pyspark)
-├── requirements-spark.txt      # Deps cho Spark jobs (pyspark==3.5.3)
-└── .env                        # Biến môi trường local
+```json
+{
+  "post_id": "reddit_abc123",
+  "platform": "reddit",
+  "source_id": "datascience",
+  "author_id": "sha256_hash",
+  "content": "Post title and body",
+  "title": "Post title",
+  "media_urls": [],
+  "hashtags": ["data"],
+  "comments": [
+    {
+      "comment_id": "c1",
+      "post_id": "reddit_abc123",
+      "parent_id": "t3_abc123",
+      "author_id": "t2_comment_author",
+      "author": "commenter",
+      "text": "Great update",
+      "likes": 3,
+      "depth": 0,
+      "created_at": 1700000010000,
+      "extra": "{\"reply_count\": 0}"
+    }
+  ],
+  "created_at": "2023-11-14T22:13:20Z",
+  "ingested_at": "2026-05-20T10:00:00Z",
+  "metrics": {
+    "likes": 7,
+    "comments": 2,
+    "shares": 1,
+    "views": 0
+  }
+}
 ```
 
----
+Ghi chú:
 
-## Yêu cầu hệ thống
+- `author_id` được hash SHA-256 để tránh lưu định danh raw.
+- `platform` là một trong `reddit`, `facebook`, `instagram`.
+- `comments` là danh sách comment đã normalize. Với post không có comment hoặc platform không cung cấp comment tree, field này là `[]`.
+- `metrics.comments` là số lượng comment của post.
+- `metrics` luôn gồm đủ `likes`, `comments`, `shares`, `views`.
+- Record không hợp lệ được publish vào Kafka topic `social.dlq`.
 
-- **Docker** ≥ 24.0 và **Docker Compose** ≥ 2.20
-- **RAM** tối thiểu 8 GB (khuyến nghị 16 GB vì cụm Spark đã được scale lên 4G RAM)
-- **CPU** đa nhân (khuyến nghị tối thiểu 4 Cores để xử lý song song)
-- **Disk** tối thiểu 10 GB
-- **Python** 3.10+ (cho local development)
+## Cấu Trúc Thư Mục
 
----
+```text
+.
+├── api/                  FastAPI endpoints và Prometheus metrics endpoint
+├── batch/                Object store writer, Spark batch job, Elasticsearch batch indexer
+├── config/               Cấu hình tập trung từ environment variables
+├── dashboard/            Static dashboard chạy bằng nginx
+├── data/                 Sample data Reddit/Facebook/Instagram
+├── ingestion/            Simulator và normalizers cho từng platform
+├── ml/                   Anomaly detection service
+├── monitoring/           Prometheus config
+├── orchestration/        Airflow DAGs
+├── scripts/              Validation scripts theo từng phase SOP
+├── serving/              Elasticsearch mapping/indexing và merge query service
+├── speed/                Spark streaming, NLP enrichment, realtime stores
+├── tests/                Unit, integration, e2e và load tests
+├── Dockerfile            Python service image
+├── Dockerfile.airflow    Airflow image
+├── Dockerfile.spark      Spark image
+├── docker-compose.yml    Local full stack
+├── Makefile              Lệnh tiện ích
+└── requirements.txt      Python dependencies
+```
 
-## Cài đặt và khởi chạy
+## Thành Phần Dịch Vụ
 
-### 1. Clone và cấu hình môi trường
+Docker Compose mặc định chỉ khởi động core pipeline để nhẹ máy hơn. Các service
+monitoring/debug/orchestration/warehouse được đưa vào profile riêng.
+
+| Service | Vai trò | URL/Cổng |
+| --- | --- | --- |
+| Kafka | Message broker cho ingestion, batch và speed layer | `localhost:9092` |
+| MinIO | Raw data và batch view storage | http://localhost:9001 |
+| Spark Master | Spark cluster master | http://localhost:8081 |
+| Spark Worker | Spark worker UI | http://localhost:8083 |
+| Redis | Realtime aggregate cache | `localhost:6379` |
+| Elasticsearch | Serving indexes | http://localhost:9200 |
+| FastAPI | Serving API | http://localhost:8000 |
+| Dashboard | Static dashboard | http://localhost:8084 |
+
+Các service theo profile:
+
+| Profile | Service | Vai trò | URL/Cổng |
+| --- | --- | --- | --- |
+| `debug` | Kafka UI | UI xem topic/message Kafka | http://localhost:8080 |
+| `debug` | Kibana | Elasticsearch UI | http://localhost:5601 |
+| `monitoring` | Prometheus | Metrics scraping | http://localhost:9090 |
+| `monitoring` | Grafana | Metrics dashboard UI | http://localhost:3000 |
+| `orchestration` | Airflow | Batch orchestration | http://localhost:8082 |
+| `warehouse` | ClickHouse | OLAP data warehouse | http://localhost:8123 |
+| `enrichment` | Cassandra | Lưu enrichment tùy chọn từ speed layer | `localhost:9042` |
+| `anomaly` | Cassandra + ml-anomaly | Phát hiện bất thường sau serving layer | `localhost:9042` |
+
+Airflow mặc định:
+
+```text
+Username: admin
+Password: admin
+```
+
+## Yêu Cầu Môi Trường
+
+- Docker
+- Docker Compose plugin
+- Tối thiểu khoảng 6 GB RAM trống cho core stack; 8 GB+ nếu bật thêm nhiều profile.
+- Python 3.10+ nếu chạy test/script ngoài container.
+
+Khuyến nghị chạy bằng Docker Compose vì Spark, Kafka, MinIO và Elasticsearch cần nhiều service phụ thuộc.
+
+## Cấu Hình
+
+Tạo file `.env` từ mẫu:
 
 ```bash
-
-git clone <repo-url>
-cd IT4931
-
-# Tạo file .env từ template
 cp .env.example .env
-# Chỉnh sửa các giá trị nếu cần (MinIO credentials, MongoDB URI, v.v.)
 ```
 
-### 2. Khởi động toàn bộ hạ tầng
+Các biến quan trọng:
+
+| Biến | Mặc định | Ý nghĩa |
+| --- | --- | --- |
+| `API_HOST_PORT` | `8000` | Cổng FastAPI trên host |
+| `DASHBOARD_HOST_PORT` | `8084` | Cổng dashboard |
+| `KAFKA_HOST_PORT` | `9092` | Cổng Kafka host listener |
+| `MINIO_API_HOST_PORT` | `9000` | Cổng MinIO S3 API |
+| `MINIO_CONSOLE_HOST_PORT` | `9001` | Cổng MinIO Console |
+| `CLICKHOUSE_HTTP_HOST_PORT` | `8123` | Cổng ClickHouse HTTP API |
+| `CLICKHOUSE_NATIVE_HOST_PORT` | `9002` | Cổng ClickHouse native protocol trên host |
+| `SPARK_MASTER_UI_HOST_PORT` | `8081` | Cổng Spark Master UI |
+| `AIRFLOW_WEBSERVER_HOST_PORT` | `8082` | Cổng Airflow UI |
+| `ES_HOST_PORT` | `9200` | Cổng Elasticsearch |
+| `KIBANA_HOST_PORT` | `5601` | Cổng Kibana |
+| `PROMETHEUS_HOST_PORT` | `9090` | Cổng Prometheus |
+| `GRAFANA_HOST_PORT` | `3000` | Cổng Grafana |
+| `NLP_MODEL_NAME` | `distilbert-base-uncased-finetuned-sst-2-english` | Tên sentiment model |
+| `CONSUMER_FLUSH_SIZE` | `500` | Số record trước khi Object store writer flush |
+| `CONSUMER_FLUSH_INTERVAL` | `30` | Thời gian flush tối đa theo giây |
+
+Trong Docker network, các service dùng host nội bộ như `kafka:29092`, `redis`, `elasticsearch`. Nếu bật profile `enrichment` hoặc `anomaly` thì Cassandra dùng host nội bộ `cassandra`. Từ host machine, dùng `localhost:<port>`.
+
+MinIO mặc định:
+
+```text
+Console:  http://localhost:9001
+S3 API:   http://localhost:9000
+Username: minioadmin
+Password: minioadmin
+Bucket:   social-lake
+```
+
+ClickHouse mặc định:
+
+```text
+HTTP API: http://localhost:8123
+Native:   localhost:9002
+Database: social_warehouse
+User:     social
+Password: social
+```
+
+## Khởi Động Dự Án
+
+### Chạy dự án nhanh từ đầu
+Nếu bạn muốn khởi động ngay lập tức toàn bộ hệ thống (dữ liệu chảy liên tục và cập nhật lên Dashboard), hãy chạy 3 bước sau:
+
+```bash
+# 1. Khởi động toàn bộ hạ tầng lõi và UI (Dashboard, API, Spark, Kafka, Elasticsearch,...)
+docker compose up --build -d
+
+# 2. Khởi động các luồng sinh dữ liệu (Giả lập đẩy data liên tục vào hệ thống)
+make replay-raw
+
+# 3. Chạy batch job để tạo batch views (chạy sau 30-60 giây khi đã có dữ liệu)
+sleep 60 && docker compose exec spark-master \
+  /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  /app/batch/spark_batch_job.py
+
+# (Tùy chọn) Index batch views vào Elasticsearch để query qua API
+docker compose exec spark-master \
+  /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  /app/batch/index_batch_views.py
+```
+
+**Lưu ý:**
+- Bước 1-2: Realtime data chảy qua Redis + Elasticsearch ngay, có thể truy cập `/api/v1/stats/realtime` 
+- Bước 3: Batch views được tạo và indexed, kích hoạt `/api/v1/posts` và `/api/v1/sentiment/trend`
+- Nếu muốn batch chạy tự động theo lịch, hãy bật Airflow orchestration (xem phần Airflow bên dưới)
+
+Sau khi chạy xong, hãy truy cập [http://localhost:8084](http://localhost:8084) để xem Dashboard trực quan hóa realtime + batch data.
+
+### Xóa Dữ Liệu Chạy Lại Từ Đầu (Reset Data)
+Nếu bạn muốn xóa trắng toàn bộ dữ liệu (Kafka, Spark checkpoints, Elasticsearch, Database, MinIO, Redis) để bắt đầu lại một môi trường hoàn toàn mới:
+
+```bash
+# Lệnh này sẽ stop toàn bộ container và xóa các docker volumes gắn kèm
+docker compose down -v
+```
+Sau đó bạn có thể lặp lại 2 lệnh ở phần **Chạy dự án nhanh từ đầu** để khởi động lại một hệ thống sạch.
+
+### Khởi động từng phần (Manual)
+Build và start core stack cơ bản:
 
 ```bash
 docker compose up --build -d
 ```
 
-Thứ tự khởi động (tự động theo `depends_on`):
-
-1. `zookeeper` → `kafka` → `kafka-init` (tạo topics)
-2. `minio` → `minio-init` (tạo buckets)
-3. `mongodb`
-4. `postgres` → `airflow-init` (init DB + Airflow Variables)
-5. `spark-master` → `spark-worker-1`
-6. `ingestion`, `batch-consumer`, `streaming`, `airflow-webserver`, `airflow-scheduler`
-
-### 3. Kiểm tra trạng thái
+Hoặc dùng Makefile:
 
 ```bash
-# Xem tất cả container
+make up
+```
+
+Bật các nhóm phụ trợ khi cần:
+
+```bash
+make monitoring      # Prometheus + Grafana
+make debug           # Kafka UI + Kibana
+make orchestration   # Postgres + Airflow
+make warehouse-stack # ClickHouse
+make enrichment      # Cassandra cho enrichment persistence tùy chọn
+make anomaly         # Cassandra + anomaly detector
+make up-full         # tất cả profile
+```
+
+Kiểm tra trạng thái:
+
+```bash
 docker compose ps
-
-# Xem log ingestion
-docker compose logs -f ingestion
-
-# Xem log streaming
-docker compose logs -f streaming
 ```
 
-### 4. Chạy Batch ETL
+Kiểm tra API:
 
-Cách tốt nhất là sử dụng **Airflow UI (http://localhost:8085)**:
-- Bật (unpause) DAG `social_batch_pipeline` để nó tự động chạy hàng ngày.
-- Bấm nút **Trigger** DAG `social_batch_init_pipeline` để chạy khởi tạo toàn bộ dữ liệu lịch sử.
-
-Hoặc nếu muốn chạy thủ công bằng lệnh (Local Testing):
 ```bash
-# Xử lý ngày hôm qua (tất cả sources)
-spark-submit \
-  --master local[*] \
-  --packages org.apache.hadoop:hadoop-aws:3.3.4,\
-             com.amazonaws:aws-java-sdk-bundle:1.12.262,\
-             org.mongodb.spark:mongo-spark-connector_2.12:10.3.0 \
-  batch/etl/spark_etl.py --date $(date -d yesterday +%Y-%m-%d)
-
-# Chỉ xử lý source cụ thể
-spark-submit ... batch/etl/spark_etl.py \
-  --date 2026-04-27 \
-  --source reddit
+curl http://localhost:8000/health
 ```
 
----
+Kết quả mong đợi:
 
-## Cấu hình
-
-### Biến môi trường (`.env`)
-
-| Biến | Mặc định | Mô tả |
-|------|----------|-------|
-| `ENV` | `dev` | Môi trường (`dev`/`prod`) — ảnh hưởng tên Kafka topic |
-| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka broker address |
-| `KAFKA_CONSUMER_GROUP` | `batch-consumer-group` | Consumer group ID |
-| `MINIO_ENDPOINT` | `localhost:9000` | MinIO endpoint |
-| `MINIO_ACCESS_KEY` | `minioadmin` | MinIO access key |
-| `MINIO_SECRET_KEY` | `minioadmin` | MinIO secret key |
-| `MINIO_USE_SSL` | `false` | Bật HTTPS cho MinIO |
-| `MINIO_BUCKET_RAW` | `social-raw` | Bucket lưu raw Parquet |
-| `MINIO_BUCKET_CLEAN` | `social-clean` | Bucket lưu clean Parquet |
-| `MONGO_URI` | `mongodb://localhost:27017` | MongoDB connection string |
-| `MONGO_DB` | `social_db` | Database name |
-| `MONGO_COLLECTION` | `posts_clean` | Collection name |
-| `SPARK_MASTER` | `local[*]` | Spark master URL |
-| `SPARK_APP_NAME` | `SocialBatchETL` | Tên Spark application |
-| `S3A_ENDPOINT` | `http://localhost:9000` | S3A endpoint cho Spark→MinIO |
-| `FB_DATA_DIR` | `./data/facebook_data` | Thư mục dữ liệu Facebook |
-| `IG_DATA_DIR` | `./data/instagram_data` | Thư mục dữ liệu Instagram |
-| `REDDIT_DATA_DIR` | `./data/reddit_data` | Thư mục dữ liệu Reddit |
-| `CONSUMER_FLUSH_SIZE` | `5000` | Flush buffer sau N records |
-| `CONSUMER_FLUSH_INTERVAL` | `60` | Flush buffer sau N giây |
-| `ETL_TRACKER_FILE` | `/opt/etl_state/processed_dates.json` | File lưu trạng thái ETL |
-
-### Kafka Topics
-
-| Topic | Mục đích | Partitions |
-|-------|----------|-----------|
-| `{ENV}.social-raw-batch` | Dữ liệu batch (historical) | 3 |
-| `{ENV}.social-raw-realtime` | Dữ liệu realtime | 3 |
-| `{ENV}.social-processed` | Dữ liệu đã xử lý (downstream) | 3 |
-
-### MinIO Bucket Structure
-
-```
-social-raw/
-└── raw/
-    └── {source}/
-        └── {year}/{month}/{day}/{hour}/
-            └── {timestamp}.parquet
-
-social-clean/
-└── clean/
-    └── source={source}/
-        └── event_year={year}/event_month={month}/event_date={date}/
-            └── *.parquet
+```json
+{"status":"ok"}
 ```
 
----
+Lưu ý: `http://localhost:8000/` có thể trả `404 Not Found` vì route root `/` chưa được định nghĩa. Dùng `/health`, `/docs` hoặc `/api/v1/...`.
 
-## Các component
+## API Endpoints
 
-### 1. Ingestion Layer (`ingestion/`)
+FastAPI docs:
 
-**Chức năng:** Đọc raw data từ file, normalize về canonical schema, gửi vào Kafka.
+```text
+http://localhost:8000/docs
+```
 
-**Normalizers** — Mỗi platform có normalizer riêng với các tính năng:
-- Parse timestamp (ISO-8601 / unix-s / unix-ms → UTC ms)
-- Làm sạch text (HTML unescape, xóa URL, collapse whitespace)
-- Lọc spam (phone number, drug keywords, bot accounts)
-- Flatten comment tree (DFS, inject `_parent_id` / `_depth`)
-- Deduplication theo comment ID
+Các endpoint chính:
 
-| Platform | File | Post ID field | Timestamp field |
-|----------|------|---------------|-----------------|
-| Facebook | `facebook.py` | `post_id` hoặc `id` | `createdAt` |
-| Instagram | `instagram.py` | `id` | `timestamp` / `timestamp_raw` |
-| Reddit | `reddit.py` | `post_id` | `created_utc_raw` / `created_utc` |
+| Method | Endpoint | Mục đích |
+| --- | --- | --- |
+| `GET` | `/health` | Health check |
+| `GET` | `/api/v1/posts` | Query posts từ batch + realtime serving layer |
+| `GET` | `/api/v1/sentiment/trend` | Query sentiment trend theo giờ/ngày |
+| `GET` | `/api/v1/hashtags/top` | Query top hashtags |
+| `GET` | `/api/v1/stats/realtime` | Query realtime stats từ Redis |
+| `GET` | `/metrics` | Prometheus metrics |
 
-**Producer** — `SocialProducer`:
-- 2 producer riêng biệt: batch (`acks=all`, idempotent) và realtime (`acks=1`, low-latency)
-- Backpressure handling với `BufferError` retry
-- Delivery callback cho mỗi message
-- Compression `lz4` cho cả hai
-- **Mô phỏng Realtime**: Tích hợp độ trễ ngẫu nhiên (`delay`) khi đọc dữ liệu stream để mô phỏng dòng chảy realtime rỉ rả liên tục, phục vụ test Spark Streaming.
+Ví dụ:
 
-**CLI:**
 ```bash
-python -m ingestion.main [--source {facebook,instagram,reddit}] [--dry-run]
+curl "http://localhost:8000/api/v1/stats/realtime"
+curl "http://localhost:8000/api/v1/posts?platform=reddit&limit=10"
+curl "http://localhost:8000/api/v1/hashtags/top?platform=reddit&window_hours=24&top_n=10"
 ```
 
----
+## Chạy Ingestion Simulator
 
-### 2. Batch Consumer (`batch/consumer/kafka_to_minio.py`)
+Replay toàn bộ raw data Reddit. Nếu không truyền `--source`, simulator tự dùng
+`data/<platform>_data/raw_data`:
 
-**Chức năng:** Consume từ `social-raw-batch` → buffer theo `(source, event_date_hour)` → flush Parquet lên MinIO.
-
-**Chi tiết:**
-- **Grouping:** Buffer theo `(source, YYYY-MM-DD-HH)` → mỗi file Parquet = 1 source × 1 giờ
-- **Flush trigger:** Đạt `CONSUMER_FLUSH_SIZE` records HOẶC `CONSUMER_FLUSH_INTERVAL` giây
-- **Schema:** PyArrow schema cố định (16 columns) đảm bảo type consistency
-- **Compression:** Snappy
-- **Offset commit:** Sau khi flush thành công (at-least-once)
-- **Graceful shutdown:** SIGINT/SIGTERM → flush buffer còn lại → commit → close
-
-**MinIO path pattern:**
-```
-raw/{source}/{year}/{month}/{day}/{hour}/{timestamp}.parquet
-```
-
----
-
-### 3. Spark ETL (`batch/etl/spark_etl.py`)
-
-**Chức năng:** Đọc Parquet từ MinIO → clean & enrich → ghi Parquet sạch về MinIO → upsert vào MongoDB.
-
-**Pipeline:**
-```
-Read Raw (MinIO s3a://)
-    ↓
-Deduplicate (Window by post_id, keep latest ingest_time)
-    ↓
-Filter Empty (content length > 5 chars)
-    ↓
-Normalize Text (strip URLs, collapse whitespace)
-    ↓
-Add Derived Columns (event_date, event_year, hashtag_count, total_engagement)
-    ↓
-Add Engagement Tier (viral/high/medium/low)
-    ↓
-Write Clean Parquet (MinIO social-clean, partition by source/year/month/date)
-    ↓
-Upsert MongoDB (post_id as _id, upsertDocument=true)
-```
-
-**Incremental processing:**
-- Tracker file tại `/opt/etl_state/processed_dates.json`
-- Chế độ xử lý 1 lần (Static data mode): Bỏ qua hoàn toàn các partition đã xử lý để tránh quét lại dữ liệu cũ, tối ưu cho 1 bộ dataset tĩnh.
-- Volume Docker `etl_state` đảm bảo persistent qua container restart
-
-**CLI:**
 ```bash
-spark-submit batch/etl/spark_etl.py [--date YYYY-MM-DD] [--source SOURCE] [--skip-mongo]
+python -m ingestion.simulator \
+  --platform reddit \
+  --rate 20 \
+  --kafka-bootstrap localhost:9092
 ```
 
----
+Replay một thư mục hoặc một file cụ thể:
 
-### 4. Airflow DAG (`batch/etl/airflow_dag.py`)
-
-Hệ thống có 2 DAG riêng biệt cho 2 mục đích khác nhau:
-
-#### 1. `social_batch_pipeline` (Incremental Load - Chạy hàng ngày)
-**Schedule:** `0 2 * * *` (02:00 UTC hàng ngày)
-
-**Flow:**
-```
-check_minio_has_data (ShortCircuit)
-    ↓ (skip nếu không có data của ngày hôm qua)
-spark_etl (BashOperator — spark-submit --date)
-    ↓
-verify_mongo_count (PythonOperator)
-    ↓
-log_done (BashOperator)
-```
-**Cấu hình:**
-- `catchup=False` — không backfill tự động
-- `start_date=2026-04-01`
-
-#### 2. `social_batch_init_pipeline` (Historical Full Load - Khởi tạo 1 lần)
-**Schedule:** `None` (Chỉ trigger thủ công qua UI)
-
-**Mục đích:** Khi mới deploy hệ thống, trigger DAG này bằng tay để quét toàn bộ dữ liệu lịch sử từ đầu đến cuối (bỏ qua filter `--date`).
-**Flow:**
-```
-spark_etl_full_load (BashOperator — spark-submit quét toàn bộ)
-    ↓
-log_init_done (BashOperator)
-```
-> **⚡ Hiệu năng:** Với cấu hình mặc định (2 Core CPU), việc tải toàn bộ 9.000+ files có thể mất 3-5 phút.
-**Airflow Variables** (được init tự động bởi `airflow-init` container):
-- `minio_endpoint`, `minio_access_key`, `minio_secret_key`, `mongo_uri`
-
----
-
-### 5. Spark Structured Streaming (`streaming/main.py`)
-
-**Chức năng:** Consume từ cả hai Kafka topics → transform → ghi vào multiple sinks.
-
-**Pipeline:**
-```
-Kafka Source (batch + realtime topics)
-    ↓
-Deserialize JSON (POST_JSON_SCHEMA)
-    ↓
-Apply Watermark (5 minutes late arrival tolerance)
-    ↓
-SocialProcessor.apply()
-│   ├── flatten_engagement (nested → flat columns)
-│   ├── normalize_time_columns (ms → TimestampType)
-│   ├── deduplicate (dropDuplicatesWithinWatermark)
-│   ├── filter_empty (content > 5 chars)
-│   ├── normalize_text (clean URLs, hashtags lowercase)
-│   ├── add_derived_columns (event_date/year/month/hour)
-│   └── add_engagement_tier (viral/high/medium/low)
-    ↓
-┌───────────────────────┐
-│    Output Sinks       │
-├───────────────────────┤
-│ Console (debug)       │ → stdout, append mode
-│ Parquet clean/        │ → /tmp/streaming-output/clean
-│ Parquet aggregated/   │ → /tmp/streaming-output/aggregated
-└───────────────────────┘
+```bash
+python -m ingestion.simulator \
+  --source data/facebook_data/raw_data \
+  --platform facebook \
+  --rate 20 \
+  --kafka-bootstrap localhost:9092
 ```
 
-**Engagement Aggregation** (10-minute tumbling window):
-- `num_posts`, `avg_likes`, `avg_comments`, `avg_shares`
-- `max_likes`, `min_likes`, `stddev_likes`
-- Grouped by `source`
+Replay bằng container API để dùng network nội bộ Docker:
 
-**Sinks:**
+```bash
+docker compose run --rm --no-deps \
+  -v "$PWD:/app" \
+  api \
+  python -m ingestion.simulator \
+    --platform reddit \
+    --rate 20 \
+    --kafka-bootstrap kafka:29092
+```
 
-| Sink | Mode | Checkpoint | Partition |
-|------|------|-----------|-----------|
-| Console | append | `/tmp/spark-checkpoints/console` | - |
-| Parquet (clean) | append | `/tmp/spark-checkpoints/parquet` | source, event_year, event_month, event_date |
-| Parquet (aggregated) | append | `/tmp/spark-checkpoints/aggregated` | source |
+Replay cả ba nền tảng như luồng giả realtime trong Docker Compose:
 
----
+```bash
+make replay-raw
+```
 
-## Data Flow
+Lệnh này bật profile `replay`, chạy ba service `replay-reddit`,
+`replay-facebook`, `replay-instagram`, đọc mặc định từ các thư mục:
 
-### Canonical Post Schema (v1)
+```text
+data/reddit_data/raw_data
+data/facebook_data/raw_data
+data/instagram_data/raw_data
+```
+
+Điều chỉnh tốc độ publish:
+
+```bash
+REPLAY_RATE_PER_SEC=20 make replay-raw
+```
+
+Mặc định replay có dedupe trong mỗi lượt chạy để tránh cùng một `post_id`
+bị publish lặp khi xuất hiện ở nhiều file raw. Có thể tắt khi cần test duplicate:
+
+```bash
+REPLAY_DEDUPE=false make replay-raw
+```
+
+Speed layer mặc định chỉ đọc message mới từ lúc stream chạy. Nếu cần replay lại
+topic cũ vào realtime store trong môi trường dev:
+
+```bash
+STREAM_STARTING_OFFSETS=earliest docker compose up -d speed
+```
+
+Kafka topics được tạo tự động:
+
+```text
+social.reddit.posts
+social.facebook.posts
+social.instagram.posts
+social.dlq
+```
+
+## Batch Layer
+
+Batch layer gồm hai bước chính:
+
+1. `batch/object_store_writer.py`: consume Kafka source topics và ghi raw Parquet vào MinIO.
+2. `batch/spark_batch_job.py`: đọc raw Parquet và tạo batch views.
+
+Batch views hiện có:
+
+```text
+platform_daily_stats
+top_hashtags_weekly
+author_activity
+sentiment_time_series
+top_posts
+```
+
+Chạy batch job thủ công:
+
+```bash
+docker compose exec spark-master \
+  /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  /app/batch/spark_batch_job.py
+```
+
+Index batch views vào Elasticsearch:
+
+```bash
+docker compose exec spark-master \
+  /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  /app/batch/index_batch_views.py
+```
+
+## Data Warehouse Layer
+
+ClickHouse là warehouse OLAP của dự án. MinIO vẫn là data lake/object storage, còn ClickHouse chứa các bảng phân tích dạng fact/dimension để query aggregate nhanh hơn Elasticsearch.
+
+Loader chính:
+
+```text
+warehouse/clickhouse_loader.py
+```
+
+Luồng:
+
+```text
+MinIO batch views
+  -> Spark warehouse loader
+  -> ClickHouse social_warehouse
+```
+
+Các bảng hiện có:
+
+```text
+dim_platform
+fact_platform_daily_stats
+fact_top_hashtags_weekly
+fact_author_activity
+fact_sentiment_time_series
+fact_top_posts
+```
+
+Chạy load warehouse thủ công:
+
+```bash
+docker compose exec spark-master \
+  /opt/spark/bin/spark-submit \
+  --master local[2] \
+  /app/warehouse/clickhouse_loader.py
+```
+
+Query kiểm tra:
+
+```bash
+curl "http://localhost:8123/?user=social&password=social&database=social_warehouse" \
+  --data-binary "SELECT count() FROM fact_platform_daily_stats"
+```
+
+## Speed Layer
+
+Speed layer chạy service `speed` trong Docker Compose:
+
+```text
+speed/streaming_job.py
+  -> đọc Kafka source topics
+  -> validate schema
+  -> enrich NLP qua speed/nlp_pipeline.py
+  -> ghi Redis/Cassandra/Elasticsearch qua speed/realtime_stores.py
+```
+
+NLP enrichment của từng post là một phần của core stream và luôn nằm trong
+service `speed`. Service `ml-anomaly` không nằm trực tiếp trên đường Kafka
+stream; nó là detector phụ trợ đọc realtime stats qua serving layer và ghi alert.
+
+Redis key realtime có dạng:
+
+```text
+rt:stats:<platform>:<window_start>
+```
+
+Cassandra là optional. Nếu bật profile `enrichment` hoặc `anomaly`, enrichment
+được lưu trong keyspace:
+
+```text
+social_lambda.enrichments
+```
+
+Elasticsearch realtime index:
+
+```text
+social_realtime_views
+```
+
+## NLP Enrichment
+
+File chính:
+
+```text
+speed/nlp_pipeline.py
+```
+
+Output enrichment gồm:
 
 ```json
 {
-  "schema_version": 1,
-  "post_id": "string",
-  "source": "facebook|instagram|reddit",
-  "event_time": 1234567890000,    // Unix ms UTC
-  "ingest_time": 1234567890000,   // Unix ms UTC
-  "author_id": "string",
-  "author_name": "string",
-  "content": "string",
-  "url": "string",
-  "hashtags": ["tag1", "tag2"],
-  "engagement": {
-    "likes": 0,
-    "comments": 0,
-    "shares": 0,
-    "score": 0,
-    "video_views": 0,
-    "comments_normalized_count": 0
-  },
-  "comments": [
-    {
-      "comment_id": "string",
-      "post_id": "string",
-      "parent_id": "string|null",
-      "author_id": "string",
-      "author": "string",
-      "text": "string",
-      "likes": 0,
-      "created_at": 1234567890000,
-      "depth": 0,
-      "extra": "{...}"
-    }
-  ],
-  "extra": {...}
+  "post_id": "reddit_abc123",
+  "sentiment_score": 0.75,
+  "sentiment_label": "positive",
+  "keywords": ["analytics", "pipeline"],
+  "entities": [],
+  "language": "en",
+  "processed_at": "2026-05-20T10:00:00Z",
+  "model_version": "distilbert-base-uncased-finetuned-sst-2-english"
 }
 ```
 
-### Parquet Schema (sau Batch Consumer)
+Hiện trạng quan trọng:
 
-| Column | Type | Mô tả |
-|--------|------|-------|
-| `post_id` | string | ID bài viết |
-| `source` | string | Platform (facebook/instagram/reddit) |
-| `event_time` | timestamp(ms, UTC) | Thời điểm đăng |
-| `ingest_time` | timestamp(ms, UTC) | Thời điểm ingest |
-| `author_id` | string | ID tác giả |
-| `author_name` | string | Tên tác giả |
-| `content` | string | Nội dung bài viết |
-| `url` | string | URL bài viết |
-| `hashtags` | list<string> | Danh sách hashtag |
-| `likes` | int64 | Lượt thích |
-| `comments` | int64 | Số lượng comment |
-| `comments_list` | list<struct> | Danh sách comment chi tiết (ID, author, text, likes,...) |
-| `shares` | int64 | Lượt chia sẻ |
-| `score` | int64 | Score/upvote |
-| `video_views` | int64 | Lượt xem video |
-| `extra` | string (JSON) | Metadata platform-specific |
+- Code có logic dùng Transformer sentiment model nếu dependency/model có sẵn.
+- Local image hiện chưa cài đầy đủ `transformers`, `torch`, `spacy`, `en_core_web_sm`.
+- Vì vậy trong môi trường local hiện tại NLP thường chạy fallback deterministic để pipeline không bị chết.
+- Nếu cần bám SOP nghiêm ngặt, cần bổ sung dependency/model và bật chế độ strict để thiếu model thì fail sớm.
 
----
+## Serving Layer
 
-## Vận hành
+Serving layer merge dữ liệu từ:
 
-### Web UIs
+- Elasticsearch batch index: `social_batch_views`
+- Elasticsearch realtime index: `social_realtime_views`
+- Redis realtime stats
 
-| Service | URL / URI | Credentials |
-|---------|-----|-------------|
-| Kafka UI | http://localhost:8082 | - |
-| MinIO Console | http://localhost:9001 | minioadmin / minioadmin |
-| Spark Master | http://localhost:8080 | - |
-| Spark Worker | http://localhost:8083 | - |
-| Airflow | http://localhost:8085 | admin / admin |
-| MongoDB Compass | `mongodb://localhost:27018` | (Sử dụng cổng 27018) |
+File chính:
 
-### Lệnh hữu ích
+```text
+serving/merge_service.py
+serving/es_indexer.py
+api/main.py
+```
+
+## Airflow
+
+Airflow là optional orchestrator chạy batch pipeline theo lịch. Nếu không chạy Airflow, bạn phải chạy batch job thủ công.
+
+**Bật Airflow** (ngoài core stack):
 
 ```bash
-# Xem tất cả containers
-docker compose ps
+make orchestration
+```
 
-# Xem log của service cụ thể
-docker compose logs -f <service>
+Sau đó start lại simulator:
 
-# Restart 1 service
-docker compose restart streaming
+```bash
+make replay-raw
+```
 
-# Scale worker (nếu cần)
-docker compose up -d --scale spark-worker-1=2
+Airflow sẽ tự động trigger DAG `social_lambda_batch_pipeline` theo lịch được cấu hình.
 
-# Kiểm tra Kafka topics
-docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list
+Airflow UI:
 
-# Kiểm tra consumer group lag
-docker exec kafka kafka-consumer-groups \
-  --bootstrap-server localhost:9092 \
-  --group batch-consumer-group \
-  --describe
+```text
+http://localhost:8082
+Username: admin
+Password: admin
+```
 
-# Dừng toàn bộ
+DAG chính:
+
+```text
+orchestration/dags/batch_pipeline_dag.py
+```
+
+Kiểm tra import errors:
+
+```bash
+docker compose exec airflow-scheduler airflow dags list-import-errors
+```
+
+Trigger DAG thủ công:
+
+```bash
+docker compose exec airflow-scheduler \
+  airflow dags trigger social_lambda_batch_pipeline
+```
+
+Xem DAG runs:
+
+```bash
+docker compose exec airflow-scheduler \
+  airflow dags list-runs -d social_lambda_batch_pipeline
+```
+
+## Monitoring
+
+Folder:
+
+```text
+monitoring/prometheus.yml
+```
+
+Prometheus scrape các target:
+
+- Prometheus self metrics: `localhost:9090`
+- FastAPI metrics: `api:8000/metrics`
+- Simulator metrics: `host.docker.internal:9101`
+
+URL:
+
+```text
+Prometheus: http://localhost:9090
+Grafana:    http://localhost:3000
+```
+
+## Validation Theo SOP
+
+Các script validation nằm trong `scripts/`.
+
+### Phase 2: Ingestion, Kafka, DLQ, Metrics
+
+```bash
+docker compose run --rm --no-deps \
+  -v "$PWD:/app" \
+  api \
+  python scripts/validate_phase2.py
+```
+
+Kiểm tra:
+
+- Good record được publish vào `social.reddit.posts`.
+- Bad record được publish vào `social.dlq`.
+- Canonical schema đúng.
+- `author_id` được hash.
+- Metrics simulator đúng.
+
+### Phase 3: Batch View Idempotency
+
+```bash
+docker compose exec spark-master \
+  /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  /app/scripts/validate_phase3_idempotency.py
+```
+
+Kiểm tra:
+
+- Đọc tất cả batch views hiện có.
+- Chạy lại batch job cho ngày `2023-11-14`.
+- So sánh output trước/sau.
+- Pass nếu kết quả không đổi.
+
+### Phase 4: Speed Layer, Redis, Cassandra
+
+```bash
+docker compose run --rm --no-deps \
+  -v "$PWD:/app" \
+  api \
+  python scripts/validate_phase4.py
+```
+
+Kiểm tra:
+
+- Publish realtime record vào Kafka.
+- Speed layer xử lý record.
+- Redis có realtime stats.
+- Cassandra có enrichment row với `sentiment_score`.
+
+### Phase 5: Serving Layer, Elasticsearch, Kibana
+
+```bash
+docker compose run --rm --no-deps \
+  -v "$PWD:/app" \
+  api \
+  python scripts/validate_phase5.py
+```
+
+Kiểm tra:
+
+- `social_batch_views` không rỗng.
+- Realtime document được index vào `social_realtime_views`.
+- Merge query trả historical và realtime result.
+- Kibana còn phản hồi.
+
+## Tests
+
+Folder `tests/` gồm:
+
+```text
+tests/unit/          Unit tests cho module riêng lẻ
+tests/integration/   Integration tests cần service ngoài
+tests/e2e/           End-to-end contract tests
+tests/load/          Locust load tests
+```
+
+Chạy unit tests ngoài host:
+
+```bash
+pytest tests/unit
+```
+
+Chạy unit tests trong container:
+
+```bash
+docker compose run --rm --no-deps \
+  -v "$PWD:/app" \
+  api \
+  python -m pytest tests/unit
+```
+
+Chạy e2e khi full stack đang chạy:
+
+```bash
+docker compose run --rm --no-deps \
+  -e RUN_E2E=1 \
+  -e API_URL=http://api:8000 \
+  -v "$PWD:/app" \
+  api \
+  python -m pytest tests/e2e/test_pipeline_contract.py
+```
+
+Load test bằng Locust:
+
+```bash
+locust -f tests/load/locustfile.py --host http://localhost:8000
+```
+
+## Lệnh Thường Dùng
+
+Start stack:
+
+```bash
+docker compose up --build -d
+```
+
+Stop stack nhưng giữ volumes (giữ lại dữ liệu):
+
+```bash
 docker compose down
+```
 
-# Dừng và xóa volumes (NGUY HIỂM — mất data)
+
+
+Xem logs API:
+
+```bash
+docker compose logs --tail=100 api
+```
+
+Xem logs speed layer:
+
+```bash
+docker compose logs --tail=100 speed
+```
+
+Xem logs Object store writer:
+
+```bash
+docker compose logs --tail=100 object-store-writer
+```
+
+Xem Kafka topics:
+
+```bash
+docker compose exec kafka \
+  kafka-topics --bootstrap-server kafka:29092 --list
+```
+
+Xem message trong topic Reddit:
+
+```bash
+docker compose exec kafka \
+  kafka-console-consumer \
+    --bootstrap-server kafka:29092 \
+    --topic social.reddit.posts \
+    --from-beginning \
+    --max-messages 5
+```
+
+## Troubleshooting
+
+### `http://localhost:8000/` trả 404
+
+Đây không phải lỗi server. Root route `/` chưa được định nghĩa. Dùng:
+
+```text
+http://localhost:8000/health
+http://localhost:8000/docs
+http://localhost:8000/api/v1/stats/realtime
+```
+
+### API không truy cập được
+
+Kiểm tra:
+
+```bash
+docker compose ps api
+docker compose logs --tail=100 api
+curl http://localhost:8000/health
+```
+
+### Kafka chưa sẵn sàng
+
+Kiểm tra:
+
+```bash
+docker compose ps kafka zookeeper kafka-init
+docker compose logs --tail=100 kafka
+```
+
+### MinIO chưa có dữ liệu
+
+Kiểm tra Object store writer:
+
+```bash
+docker compose logs --tail=100 object-store-writer
+```
+
+Kiểm tra MinIO Console:
+
+```text
+http://localhost:9001
+```
+
+### Batch view rỗng
+
+Nguyên nhân thường gặp:
+
+1. **Chưa replay dữ liệu vào Kafka** → Chạy `make replay-raw` trước
+2. **`object-store-writer` chưa flush Parquet** → Đợi 30-60 giây hoặc xem logs
+3. **Spark batch job chưa chạy** → ❌ **PHỔ BIẾN NHẤT** 
+   - Fix: Chạy `docker compose exec spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /app/batch/spark_batch_job.py`
+   - Hoặc: Bật Airflow với `make orchestration` để tự động
+4. **Đường dẫn `STORAGE_RAW_BASE` hoặc `STORAGE_BATCH_VIEWS_BASE` sai** → Check `.env`
+
+Kiểm tra:
+
+```bash
+# 1. Xem dữ liệu raw trên MinIO
+docker compose exec minio mc ls minio/social-lake/data/raw --recursive | head
+
+# 2. Xem batch views trên MinIO
+docker compose exec minio mc ls minio/social-lake/data/batch_views --recursive | head
+
+# 3. Xem batch index trên Elasticsearch
+curl http://localhost:9200/social_batch_views/_search | jq '.hits.total'
+```
+
+### NLP không dùng DistilBERT/spaCy thật
+
+Hiện image local chưa cài model nặng. Pipeline fallback để vẫn chạy end-to-end. Nếu cần strict SOP production, cần thêm:
+
+- `torch`
+- `transformers`
+- `spacy`
+- `en_core_web_sm`
+
+và tải/cache model trong Docker build.
+
+## Trạng Thái SOP
+
+Đã có các phần chính:
+
+- Docker Compose full stack.
+- Kafka source topics và DLQ.
+- Ingestion simulator + canonical schema.
+- MinIO raw Parquet writer.
+- Spark batch views.
+- Airflow DAG.
+- Speed layer realtime processing.
+- Redis/Cassandra/Elasticsearch serving outputs.
+- FastAPI + dashboard.
+- Prometheus/Grafana monitoring.
+- Validation scripts Phase 2, 3, 4, 5.
+- Unit/e2e/load tests.
+
+Các điểm còn cần lưu ý nếu chấm SOP nghiêm ngặt:
+
+- NLP hiện có fallback; chưa bắt buộc DistilBERT + spaCy thật trong Docker image.
+- F1 test NLP hiện dùng synthetic sample, chưa phải benchmark dataset thực.
+- Monitoring dùng `prometheus-client`; chưa dùng `starlette-exporter`.
+- Serving layer dùng Elasticsearch/Kibana thay vì Druid/Superset.
+- Anomaly detector hiện thiên về rolling/fallback baseline, chưa train strict Isolation Forest từ historical batch view ở startup.
+
+## Dọn Dẹp
+
+Xóa container/network nhưng giữ dữ liệu volume:
+
+```bash
+docker compose down
+```
+
+Xóa cả dữ liệu volume:
+
+```bash
 docker compose down -v
 ```
 
-### Monitoring
+Xóa cache Python sinh ra khi chạy test:
 
 ```bash
-# Batch consumer: kiểm tra số records đã flush
-docker compose logs batch-consumer | grep "Flushed"
-
-# ETL tracker: xem ngày đã xử lý
-docker compose exec airflow-scheduler \
-  cat /opt/etl_state/processed_dates.json
-
-# Streaming: xem throughput
-docker compose logs streaming | grep "Streaming query"
+find . -type d -name __pycache__ -prune -exec rm -rf {} +
+find . -type d -name .pytest_cache -prune -exec rm -rf {} +
 ```
-
----
-
-## Phát triển
-
-### Setup local
-
-```bash
-# Tạo virtual environment
-python -m venv .venv
-source .venv/bin/activate
-
-# Cài dependencies
-pip install -r requirements.txt
-
-# Nếu cần chạy Spark locally
-pip install -r requirements-spark.txt
-
-# Set PYTHONPATH
-export PYTHONPATH=$(pwd)
-```
-
-### Chạy tests / smoke tests
-
-```bash
-# Test facebook normalizer
-python ingestion/normalizers/facebook.py
-
-# Test instagram normalizer
-python ingestion/normalizers/instagram.py
-
-# Test reddit normalizer
-python ingestion/normalizers/reddit.py
-
-# Ingestion dry-run (không cần Kafka)
-python -m ingestion.main --dry-run --source facebook
-```
-
-### Thêm nguồn dữ liệu mới
-
-1. Tạo normalizer tại `ingestion/normalizers/<platform>.py` với hàm `normalize(raw: dict) -> dict`
-2. Thêm reader function vào `ingestion/producer/readers.py`
-3. Đăng ký trong `SOURCES` dict tại `ingestion/main.py`
-4. Thêm data paths vào `shared/config.py` (`DATA_PATHS`) và `ingestion/config/settings.py` (`PATHS`)
-
-### Cấu trúc dữ liệu đầu vào
-
-**Facebook:** Folder `batch_data/{post_id}/post.json` — mỗi folder là 1 bài viết
-```
-facebook_data/batch_data/
-└── 123456789/
-    └── post.json
-```
-
-**Instagram/Reddit:** File JSONL — mỗi dòng là 1 bài viết
-```
-instagram_data/batch_data/posts.jsonl
-reddit_data/batch_data/posts.jsonl
-```
-
----
-
-## Schema dữ liệu
-
-### Engagement Tiers
-
-| Tier | Điều kiện |
-|------|-----------|
-| `viral` | `total_engagement > 1000` |
-| `high` | `total_engagement > 100` |
-| `medium` | `total_engagement > 10` |
-| `low` | Còn lại |
-
-### Comment Extra Schema (cross-platform)
-
-```json
-{
-  "parent_id": "string|null",
-  "depth": 0,
-  "reply_count": 0,
-  "is_truncated": false,
-  "platform_meta": {}
-}
-```
-
----
-
-## License
-
-MIT License — xem [LICENSE](LICENSE)
