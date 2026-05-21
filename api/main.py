@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException, Query
@@ -7,6 +8,8 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from serving.merge_service import ServeQuery
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Social Lambda Pipeline API", version="1.0.0")
 app.add_middleware(
@@ -42,6 +45,8 @@ def posts(
     end: datetime | None = None,
     limit: int = Query(100, ge=1, le=500),
 ) -> dict:
+    if platform and platform not in {"reddit", "facebook", "instagram"}:
+        raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
     end = end or datetime.now(timezone.utc)
     start = start or end - timedelta(hours=24)
     return {"data": service.query_posts(platform, start, end, limit), "limit": limit}
@@ -54,6 +59,8 @@ def sentiment_trend(
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> dict:
+    if platform and platform not in {"reddit", "facebook", "instagram"}:
+        raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
     end = end or datetime.now(timezone.utc)
     start = start or end - timedelta(days=7)
     return {"data": service.query_sentiment_trend(platform, granularity, start, end)}
@@ -65,6 +72,8 @@ def top_hashtags(
     window_hours: int = Query(24),
     top_n: int = Query(20, ge=1, le=100),
 ) -> dict:
+    if platform and platform not in {"reddit", "facebook", "instagram"}:
+        raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
     if window_hours not in {1, 6, 24, 168}:
         raise HTTPException(status_code=400, detail="window_hours must be one of 1, 6, 24, 168")
     return {"data": service.query_top_hashtags(platform, window_hours, top_n)}
@@ -72,6 +81,8 @@ def top_hashtags(
 
 @app.get("/api/v1/stats/realtime")
 def realtime_stats(platform: str | None = None) -> dict:
+    if platform and platform not in {"reddit", "facebook", "instagram"}:
+        raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
     return service.query_realtime_stats(platform)
 
 
@@ -81,5 +92,9 @@ def metrics() -> Response:
         from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-    except Exception:
-        return Response(b"", media_type="text/plain")
+    except ImportError as exc:
+        logger.error("Prometheus client not available: %s", exc)
+        raise HTTPException(status_code=503, detail="Metrics unavailable")
+    except Exception as exc:
+        logger.error("Error generating metrics: %s", exc)
+        raise HTTPException(status_code=500, detail="Error generating metrics")

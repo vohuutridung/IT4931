@@ -22,7 +22,13 @@ alerts: deque[dict] = deque(maxlen=50)
 service = ServeQuery()
 
 
-def cassandra_session():
+_cassandra_session = None
+
+
+def get_cassandra_session():
+    global _cassandra_session
+    if _cassandra_session is not None:
+        return _cassandra_session
     try:
         from cassandra.cluster import Cluster
 
@@ -47,9 +53,10 @@ def cassandra_session():
             )
             """
         )
+        _cassandra_session = session
         return session
     except Exception as exc:
-        logger.warning("Cassandra alerts unavailable: %s", exc)
+        logger.warning("Cassandra alerts connection failed, will retry: %s", exc)
         return None
 
 
@@ -65,22 +72,30 @@ def engagement_value(stats: dict) -> float:
 
 def write_alert(session, alert: dict) -> None:
     alerts.appendleft(alert)
+    if session is None:
+        session = get_cassandra_session()
     if not session:
+        logger.warning("Cassandra not connected. Alert logged locally, but not written to Cassandra: %s", alert)
         return
     import json
     import uuid
 
-    session.execute(
-        f"INSERT INTO {CASSANDRA_ALERTS_TABLE} (alert_id, metric, value, baseline, created_at, payload) VALUES (?, ?, ?, ?, ?, ?)",
-        (
-            str(uuid.uuid4()),
-            alert["metric"],
-            float(alert["value"]),
-            float(alert["baseline"]),
-            datetime.now(timezone.utc),
-            json.dumps(alert, ensure_ascii=False),
-        ),
-    )
+    try:
+        session.execute(
+            f"INSERT INTO {CASSANDRA_ALERTS_TABLE} (alert_id, metric, value, baseline, created_at, payload) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                str(uuid.uuid4()),
+                alert["metric"],
+                float(alert["value"]),
+                float(alert["baseline"]),
+                datetime.now(timezone.utc),
+                json.dumps(alert, ensure_ascii=False),
+            ),
+        )
+    except Exception as exc:
+        logger.error("Failed to execute alert insert in Cassandra, resetting session: %s", exc)
+        global _cassandra_session
+        _cassandra_session = None
 
 
 def detect_once(history: deque[float], session=None) -> None:
@@ -103,9 +118,8 @@ def run_loop(interval_seconds: int = 60) -> None:
     except Exception:
         logger.info("Initial anomaly model ready using rolling baseline fallback")
     history: deque[float] = deque(maxlen=24 * 7)
-    session = cassandra_session()
     while True:
-        detect_once(history, session)
+        detect_once(history, None)
         time.sleep(interval_seconds)
 
 

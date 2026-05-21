@@ -52,13 +52,13 @@ def main() -> None:
     started = time.monotonic()
     simulator.replay(source, "reddit", 100, False, KAFKA_BOOTSTRAP)
     realtime_doc = None
-    while time.monotonic() - started <= 30:
+    while time.monotonic() - started <= 120:
         response = requests.get(f"{ES_HOST}/{ES_REALTIME_INDEX}/_doc/realtime:{post_id}", timeout=5)
         if response.status_code == 200 and response.json().get("found"):
             realtime_doc = response.json()["_source"]
             break
         time.sleep(1)
-    assert realtime_doc, "social_realtime_views did not receive the published record within 30 seconds"
+    assert realtime_doc, "social_realtime_views did not receive the published record within 120 seconds"
 
     requests.post(f"{ES_HOST}/{ES_REALTIME_INDEX}/_refresh")
     

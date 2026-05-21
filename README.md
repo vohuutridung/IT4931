@@ -219,7 +219,7 @@ Password: social
 ## Khởi Động Dự Án
 
 ### Chạy dự án nhanh từ đầu
-Nếu bạn muốn khởi động ngay lập tức toàn bộ hệ thống (dữ liệu chảy liên tục và cập nhật lên Dashboard), hãy chạy 2 lệnh sau:
+Nếu bạn muốn khởi động ngay lập tức toàn bộ hệ thống (dữ liệu chảy liên tục và cập nhật lên Dashboard), hãy chạy 3 bước sau:
 
 ```bash
 # 1. Khởi động toàn bộ hạ tầng lõi và UI (Dashboard, API, Spark, Kafka, Elasticsearch,...)
@@ -227,8 +227,26 @@ docker compose up --build -d
 
 # 2. Khởi động các luồng sinh dữ liệu (Giả lập đẩy data liên tục vào hệ thống)
 make replay-raw
+
+# 3. Chạy batch job để tạo batch views (chạy sau 30-60 giây khi đã có dữ liệu)
+sleep 60 && docker compose exec spark-master \
+  /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  /app/batch/spark_batch_job.py
+
+# (Tùy chọn) Index batch views vào Elasticsearch để query qua API
+docker compose exec spark-master \
+  /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  /app/batch/index_batch_views.py
 ```
-Sau khi chạy xong, hãy truy cập [http://localhost:8084](http://localhost:8084) để xem Dashboard trực quan hóa realtime.
+
+**Lưu ý:**
+- Bước 1-2: Realtime data chảy qua Redis + Elasticsearch ngay, có thể truy cập `/api/v1/stats/realtime` 
+- Bước 3: Batch views được tạo và indexed, kích hoạt `/api/v1/posts` và `/api/v1/sentiment/trend`
+- Nếu muốn batch chạy tự động theo lịch, hãy bật Airflow orchestration (xem phần Airflow bên dưới)
+
+Sau khi chạy xong, hãy truy cập [http://localhost:8084](http://localhost:8084) để xem Dashboard trực quan hóa realtime + batch data.
 
 ### Xóa Dữ Liệu Chạy Lại Từ Đầu (Reset Data)
 Nếu bạn muốn xóa trắng toàn bộ dữ liệu (Kafka, Spark checkpoints, Elasticsearch, Database, MinIO, Redis) để bắt đầu lại một môi trường hoàn toàn mới:
@@ -552,22 +570,34 @@ api/main.py
 
 ## Airflow
 
-DAG chính:
+Airflow là optional orchestrator chạy batch pipeline theo lịch. Nếu không chạy Airflow, bạn phải chạy batch job thủ công.
 
-```text
-orchestration/dags/batch_pipeline_dag.py
+**Bật Airflow** (ngoài core stack):
+
+```bash
+make orchestration
 ```
+
+Sau đó start lại simulator:
+
+```bash
+make replay-raw
+```
+
+Airflow sẽ tự động trigger DAG `social_lambda_batch_pipeline` theo lịch được cấu hình.
 
 Airflow UI:
 
 ```text
 http://localhost:8082
+Username: admin
+Password: admin
 ```
 
-DAG:
+DAG chính:
 
 ```text
-social_lambda_batch_pipeline
+orchestration/dags/batch_pipeline_dag.py
 ```
 
 Kiểm tra import errors:
@@ -824,10 +854,25 @@ http://localhost:9001
 
 Nguyên nhân thường gặp:
 
-- Chưa replay dữ liệu vào Kafka.
-- `object-store-writer` chưa flush Parquet.
-- Spark batch job chưa chạy.
-- Đường dẫn `STORAGE_RAW_BASE` hoặc `STORAGE_BATCH_VIEWS_BASE` sai.
+1. **Chưa replay dữ liệu vào Kafka** → Chạy `make replay-raw` trước
+2. **`object-store-writer` chưa flush Parquet** → Đợi 30-60 giây hoặc xem logs
+3. **Spark batch job chưa chạy** → ❌ **PHỔ BIẾN NHẤT** 
+   - Fix: Chạy `docker compose exec spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /app/batch/spark_batch_job.py`
+   - Hoặc: Bật Airflow với `make orchestration` để tự động
+4. **Đường dẫn `STORAGE_RAW_BASE` hoặc `STORAGE_BATCH_VIEWS_BASE` sai** → Check `.env`
+
+Kiểm tra:
+
+```bash
+# 1. Xem dữ liệu raw trên MinIO
+docker compose exec minio mc ls minio/social-lake/data/raw --recursive | head
+
+# 2. Xem batch views trên MinIO
+docker compose exec minio mc ls minio/social-lake/data/batch_views --recursive | head
+
+# 3. Xem batch index trên Elasticsearch
+curl http://localhost:9200/social_batch_views/_search | jq '.hits.total'
+```
 
 ### NLP không dùng DistilBERT/spaCy thật
 

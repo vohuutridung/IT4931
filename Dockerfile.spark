@@ -13,9 +13,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ── Python deps cho PySpark jobs ──────────────────────────────────────────────
 RUN pip3 install --no-cache-dir --break-system-packages \
-    pyspark==3.5.3 pyarrow==14.0.1 requests==2.32.3 boto3==1.34.131 redis==5.0.4 langdetect==1.0.9 cassandra-driver==3.29.2 'numpy<2' 2>/dev/null || \
+    pyspark==3.5.3 pyarrow==14.0.1 requests==2.32.3 boto3==1.34.131 redis==5.0.4 \
+    confluent-kafka==2.4.0 langdetect==1.0.9 cassandra-driver==3.29.2 'numpy<2' 2>/dev/null || \
     pip3 install --no-cache-dir \
-    pyspark==3.5.3 pyarrow==14.0.1 requests==2.32.3 boto3==1.34.131 redis==5.0.4 langdetect==1.0.9 cassandra-driver==3.29.2 'numpy<2'
+    pyspark==3.5.3 pyarrow==14.0.1 requests==2.32.3 boto3==1.34.131 redis==5.0.4 \
+    confluent-kafka==2.4.0 langdetect==1.0.9 cassandra-driver==3.29.2 'numpy<2'
 
 # ── Tải JARs vào thư mục jars của Spark ──────────────────────────────────────
 ARG SPARK_JARS_DIR=/opt/spark/jars

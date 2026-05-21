@@ -93,8 +93,27 @@ class ElasticsearchIndexer:
         )
         response.raise_for_status()
         body = response.json()
+        
         if body.get("errors"):
-            raise RuntimeError(f"Elasticsearch bulk index reported errors: {body}")
+            failures = []
+            items = body.get("items", [])
+            for i, item in enumerate(items):
+                op = item.get("index", {})
+                if op.get("error"):
+                    doc_id = op.get("_id", i)
+                    failures.append({
+                        "doc_id": doc_id,
+                        "error": op.get("error"),
+                        "doc": docs[i] if i < len(docs) else None
+                    })
+            if failures:
+                logger.error("ES bulk index had %d failures:", len(failures))
+                for f in failures[:5]:
+                    logger.error("  %s: %s", f["doc_id"], f["error"])
+                raise RuntimeError(f"Bulk index: {len(failures)}/{len(docs)} docs failed: {failures[:5]}")
+            else:
+                raise RuntimeError(f"Elasticsearch bulk index reported errors: {body}")
+
         logger.info("Indexed %d docs into %s", len(docs), index)
 
 

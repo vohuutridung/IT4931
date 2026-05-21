@@ -64,14 +64,22 @@ def create_spark() -> SparkSession:
     return configure_s3a(builder).getOrCreate()
 
 
+_writer = None
+_producer = None
+
+
 def foreach_batch(df, batch_id: int) -> None:
     import json
     from confluent_kafka import Producer
     from speed.nlp_pipeline import enrich_post
     from speed.realtime_stores import RealtimeViewWriter
 
-    writer = RealtimeViewWriter()
-    producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS})
+    global _writer, _producer
+    if _writer is None:
+        _writer = RealtimeViewWriter()
+    if _producer is None:
+        _producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS})
+
     chunk: list[dict] = []
     total = 0
     for spark_row in df.toLocalIterator():
@@ -79,21 +87,21 @@ def foreach_batch(df, batch_id: int) -> None:
         enriched = dict(row, enrichment=enrich_post(row))
         chunk.append(enriched)
         
-        producer.produce(
+        _producer.produce(
             "social.enriched.posts",
             key=str(enriched.get("post_id", "")).encode("utf-8"),
             value=json.dumps(enriched).encode("utf-8")
         )
         
         if len(chunk) >= SPEED_WRITE_BATCH_SIZE:
-            writer.write(chunk)
-            producer.flush()
+            _writer.write(chunk)
+            _producer.flush()
             total += len(chunk)
             chunk.clear()
             
     if chunk:
-        writer.write(chunk)
-        producer.flush()
+        _writer.write(chunk)
+        _producer.flush()
         total += len(chunk)
         
     logger.info("Processed and stored speed micro-batch %s | records=%d", batch_id, total)

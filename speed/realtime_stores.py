@@ -48,6 +48,14 @@ class RealtimeViewWriter:
         except Exception as exc:
             logger.warning("Elasticsearch not ready: %s", exc)
 
+    def __del__(self) -> None:
+        """Close Cassandra session properly."""
+        if hasattr(self, "cassandra") and self.cassandra:
+            try:
+                self.cassandra.shutdown()
+            except Exception as exc:
+                logger.warning("Error closing Cassandra session: %s", exc)
+
     @staticmethod
     def _connect_redis():
         try:
@@ -209,4 +217,5 @@ class RealtimeViewWriter:
         try:
             self.es.bulk_index(ES_REALTIME_INDEX, docs)
         except Exception as exc:
-            logger.warning("Realtime ES index failed: %s", exc)
+            logger.error("Realtime ES index failed: %s", exc)
+            raise

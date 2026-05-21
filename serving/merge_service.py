@@ -23,7 +23,8 @@ class ServeQuery:
             import redis
 
             self._redis = redis.Redis(host=redis_host, port=redis_port, decode_responses=True)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Redis client could not be initialized: %s", exc)
             self._redis = None
 
     def _search(self, index: str, query: dict, size: int = 100) -> list[dict]:
@@ -35,7 +36,8 @@ class ServeQuery:
             )
             response.raise_for_status()
             return [hit.get("_source", {}) for hit in response.json().get("hits", {}).get("hits", [])]
-        except Exception:
+        except Exception as exc:
+            logger.error("Elasticsearch search failed for index %s: %s", index, exc)
             return []
 
     @staticmethod
@@ -45,18 +47,43 @@ class ServeQuery:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
     @staticmethod
-    def _dedupe(posts: list[dict], limit: int) -> list[dict]:
-        seen: set[str] = set()
-        merged: list[dict] = []
+    def _parse_event_ts(post: dict) -> datetime:
+        ts = post.get("event_ts")
+        if not ts:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        if isinstance(ts, datetime):
+            return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+        try:
+            return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        except Exception:
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+    @classmethod
+    def _dedupe(cls, posts: list[dict], limit: int) -> list[dict]:
+        seen: dict[str, dict] = {}
         for post in posts:
             post_id = str(post.get("post_id") or "")
-            if not post_id or post_id in seen:
+            if not post_id:
                 continue
-            seen.add(post_id)
-            merged.append(post)
-            if len(merged) >= limit:
-                break
-        return merged
+            if post_id not in seen:
+                seen[post_id] = post
+            else:
+                existing = seen[post_id]
+                existing_ts = cls._parse_event_ts(existing)
+                current_ts = cls._parse_event_ts(post)
+                if current_ts > existing_ts:
+                    seen[post_id] = post
+
+        unique_ordered: list[dict] = []
+        seen_ids = set()
+        for post in posts:
+            post_id = str(post.get("post_id") or "")
+            if post_id and post_id not in seen_ids:
+                seen_ids.add(post_id)
+                unique_ordered.append(seen[post_id])
+                if len(unique_ordered) >= limit:
+                    break
+        return unique_ordered
 
     def query_posts(self, platform: str | None, start_dt: datetime | str, end_dt: datetime | str, limit: int = 100) -> list[dict]:
         start = self._parse_dt(start_dt)
@@ -123,8 +150,8 @@ class ServeQuery:
                         "platform": platform or "all",
                         "view": "sentiment_time_series"
                     })
-        except Exception as exc:
-            logger.warning("Failed to fetch realtime sentiment aggregation: %s", exc)
+        except requests.RequestException as exc:
+            logger.error("Failed to fetch realtime sentiment aggregation from Elasticsearch: %s", exc)
 
         # 3. Merge: Realtime overrides Batch for the same time bucket
         merged = {r.get("event_hour"): r for r in batch_results if r.get("event_hour")}

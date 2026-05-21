@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import time
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -17,6 +18,9 @@ from config.settings import (
     CLICKHOUSE_HOST,
     CLICKHOUSE_PASSWORD,
     CLICKHOUSE_USER,
+    CLICKHOUSE_WRITE_TIMEOUT,
+    MAX_RETRIES,
+    RETRY_BACKOFF_BASE,
     SPARK_MASTER,
     STORAGE_BATCH_VIEWS_BASE,
 )
@@ -114,18 +118,41 @@ def create_spark() -> SparkSession:
     return configure_s3a(builder).getOrCreate()
 
 
+_session = None
+
+
+def get_session() -> requests.Session:
+    global _session
+    if _session is None:
+        _session = requests.Session()
+    return _session
+
+
 def clickhouse(sql: str, data: bytes | None = None, use_database: bool = True) -> str:
     params = {"user": CLICKHOUSE_USER, "password": CLICKHOUSE_PASSWORD}
     if use_database:
         params["database"] = CLICKHOUSE_DATABASE
-    response = requests.post(
-        CLICKHOUSE_HOST,
-        params=params,
-        data=(sql.encode("utf-8") if data is None else sql.encode("utf-8") + data),
-        timeout=60,
-    )
-    response.raise_for_status()
-    return response.text
+    body = sql.encode("utf-8") if data is None else sql.encode("utf-8") + data
+    
+    # Retry logic with exponential backoff
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = get_session().post(
+                CLICKHOUSE_HOST,
+                params=params,
+                data=body,
+                timeout=CLICKHOUSE_WRITE_TIMEOUT,
+            )
+            response.raise_for_status()
+            return response.text
+        except requests.RequestException as exc:
+            if attempt < MAX_RETRIES - 1:
+                backoff = RETRY_BACKOFF_BASE ** (attempt + 1)
+                logger.warning("ClickHouse request failed (attempt %d/%d), retrying in %.1fs: %s", attempt + 1, MAX_RETRIES, backoff, exc)
+                time.sleep(backoff)
+            else:
+                logger.error("ClickHouse request failed after %d attempts: %s", MAX_RETRIES, exc)
+                raise
 
 
 def ensure_schema() -> None:
@@ -135,7 +162,10 @@ def ensure_schema() -> None:
 
 
 def truncate_tables(tables: list[str]) -> None:
+    valid_tables = set(VIEWS.values())
     for table in tables:
+        if table not in valid_tables:
+            raise ValueError(f"Invalid table '{table}'. Allowed tables: {valid_tables}")
         clickhouse(f"TRUNCATE TABLE IF EXISTS {table}")
 
 

@@ -22,11 +22,15 @@ from config.settings import (
     CONSUMER_FLUSH_INTERVAL,
     KAFKA_ALL_SOURCE_TOPICS,
     KAFKA_BOOTSTRAP_SERVERS,
+    KAFKA_TOPIC_ENRICHED,
+    MAX_RETRIES,
+    RETRY_BACKOFF_BASE,
     S3_ACCESS_KEY,
     S3_BUCKET,
     S3_ENDPOINT,
     S3_REGION,
     S3_SECRET_KEY,
+    S3_WRITE_TIMEOUT,
     STORAGE_RAW_BASE,
 )
 
@@ -112,7 +116,7 @@ def flatten(record: dict) -> dict:
         "comments": _non_negative_int(metrics.get("comments")),
         "shares": _non_negative_int(metrics.get("shares")),
         "views": _non_negative_int(metrics.get("views", metrics.get("video_views"))),
-        "sentiment_score": float(enrichment.get("sentiment_score", 0.0)),
+        "sentiment_score": float(enrichment["sentiment_score"]) if "sentiment_score" in enrichment else None,
         "sentiment_label": str(enrichment.get("sentiment_label") or "neutral"),
         "keywords": _string_list(enrichment.get("keywords")),
         "language": str(enrichment.get("language") or "en"),
@@ -170,8 +174,23 @@ def write_rows(client, rows: list[dict], key: tuple[str, int, int, int]) -> None
     out_prefix = f"{prefix.rstrip('/')}/{platform}/year={year:04d}/month={month:02d}/day={day:02d}"
     filename = f"part-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}.parquet"
     object_key = f"{out_prefix}/{filename}"
-    client.put_object(Bucket=bucket, Key=object_key, Body=_write_parquet_bytes(rows))
-    logger.info("Wrote %d rows to s3://%s/%s", len(rows), bucket, object_key)
+    
+    body = _write_parquet_bytes(rows)
+    
+    # Retry logic with exponential backoff
+    for attempt in range(MAX_RETRIES):
+        try:
+            client.put_object(Bucket=bucket, Key=object_key, Body=body)
+            logger.info("Wrote %d rows to s3://%s/%s", len(rows), bucket, object_key)
+            return
+        except Exception as exc:
+            if attempt < MAX_RETRIES - 1:
+                backoff = RETRY_BACKOFF_BASE ** (attempt + 1)
+                logger.warning("S3 write failed (attempt %d/%d), retrying in %.1fs: %s", attempt + 1, MAX_RETRIES, backoff, exc)
+                time.sleep(backoff)
+            else:
+                logger.error("S3 write failed after %d attempts: %s", MAX_RETRIES, exc)
+                raise
 
 
 def flush(client, buffers: dict[tuple[str, int, int, int], list[dict]]) -> int:
@@ -193,7 +212,7 @@ def run() -> None:
         "auto.offset.reset": "earliest",
         "enable.auto.commit": False,
     })
-    consumer.subscribe(["social.enriched.posts"])
+    consumer.subscribe(list(KAFKA_ALL_SOURCE_TOPICS))
     buffers: dict[tuple[str, int, int, int], list[dict]] = defaultdict(list)
     last_flush = time.monotonic()
     total = 0

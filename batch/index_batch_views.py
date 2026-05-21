@@ -23,13 +23,14 @@ def row_to_doc(view: str, row) -> dict:
         key: _json_value(value)
         for key, value in row.asDict(recursive=True).items()
     }
-    doc["view"] = view
-    doc["indexed_at"] = datetime.now(timezone.utc).isoformat()
     if "post_id" in doc:
-        doc["doc_id"] = f"{view}:{doc['post_id']}"
+        doc_id = f"{view}:{doc['post_id']}"
     else:
         key = ":".join(str(v) for v in doc.values() if v is not None)[:256]
-        doc["doc_id"] = f"{view}:{key}"
+        doc_id = f"{view}:{key}"
+    doc["view"] = view
+    doc["indexed_at"] = datetime.now(timezone.utc).isoformat()
+    doc["doc_id"] = doc_id
     return doc
 
 
