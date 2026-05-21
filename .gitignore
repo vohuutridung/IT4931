@@ -238,3 +238,10 @@ target/
 *.class
 *.jar
 !spark/jars/          # nếu có thư mục jars custom — cần giữ lại
+
+#  EXCLUDED CONTENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+# SOP nội bộ không nên push lên GitHub
+SOP/
+
