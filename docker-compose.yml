@@ -152,6 +152,9 @@ services:
       retries: 10
 
   spark-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
     image: social-spark:3.5.3
     container_name: spark-worker
     depends_on:
@@ -409,6 +412,9 @@ services:
     restart: "no"
 
   speed:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
     image: social-spark:3.5.3
     container_name: speed
     depends_on:
