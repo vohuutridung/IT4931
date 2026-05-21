@@ -122,25 +122,32 @@ Ghi chú:
 
 ## Thành Phần Dịch Vụ
 
-Docker Compose khởi động các service sau:
+Docker Compose mặc định chỉ khởi động core pipeline để nhẹ máy hơn. Các service
+monitoring/debug/orchestration/warehouse được đưa vào profile riêng.
 
 | Service | Vai trò | URL/Cổng |
 | --- | --- | --- |
 | Kafka | Message broker cho ingestion, batch và speed layer | `localhost:9092` |
-| Kafka UI | UI xem topic/message Kafka | http://localhost:8080 |
 | MinIO | Raw data và batch view storage | http://localhost:9001 |
-| ClickHouse | OLAP data warehouse | http://localhost:8123 |
 | Spark Master | Spark cluster master | http://localhost:8081 |
 | Spark Worker | Spark worker UI | http://localhost:8083 |
 | Redis | Realtime aggregate cache | `localhost:6379` |
-| Cassandra | Enrichment và alert store | `localhost:9042` |
 | Elasticsearch | Serving indexes | http://localhost:9200 |
-| Kibana | Elasticsearch UI | http://localhost:5601 |
-| Airflow | Batch orchestration | http://localhost:8082 |
 | FastAPI | Serving API | http://localhost:8000 |
 | Dashboard | Static dashboard | http://localhost:8084 |
-| Prometheus | Metrics scraping | http://localhost:9090 |
-| Grafana | Metrics dashboard UI | http://localhost:3000 |
+
+Các service theo profile:
+
+| Profile | Service | Vai trò | URL/Cổng |
+| --- | --- | --- | --- |
+| `debug` | Kafka UI | UI xem topic/message Kafka | http://localhost:8080 |
+| `debug` | Kibana | Elasticsearch UI | http://localhost:5601 |
+| `monitoring` | Prometheus | Metrics scraping | http://localhost:9090 |
+| `monitoring` | Grafana | Metrics dashboard UI | http://localhost:3000 |
+| `orchestration` | Airflow | Batch orchestration | http://localhost:8082 |
+| `warehouse` | ClickHouse | OLAP data warehouse | http://localhost:8123 |
+| `enrichment` | Cassandra | Lưu enrichment tùy chọn từ speed layer | `localhost:9042` |
+| `anomaly` | Cassandra + ml-anomaly | Phát hiện bất thường sau serving layer | `localhost:9042` |
 
 Airflow mặc định:
 
@@ -153,10 +160,10 @@ Password: admin
 
 - Docker
 - Docker Compose plugin
-- Tối thiểu khoảng 8 GB RAM trống để chạy đủ stack local.
+- Tối thiểu khoảng 6 GB RAM trống cho core stack; 8 GB+ nếu bật thêm nhiều profile.
 - Python 3.10+ nếu chạy test/script ngoài container.
 
-Khuyến nghị chạy bằng Docker Compose vì Spark, Kafka, MinIO, ClickHouse, Cassandra và Elasticsearch cần nhiều service phụ thuộc.
+Khuyến nghị chạy bằng Docker Compose vì Spark, Kafka, MinIO và Elasticsearch cần nhiều service phụ thuộc.
 
 ## Cấu Hình
 
@@ -187,7 +194,7 @@ Các biến quan trọng:
 | `CONSUMER_FLUSH_SIZE` | `500` | Số record trước khi Object store writer flush |
 | `CONSUMER_FLUSH_INTERVAL` | `30` | Thời gian flush tối đa theo giây |
 
-Trong Docker network, các service dùng host nội bộ như `kafka:29092`, `redis`, `cassandra`, `elasticsearch`. Từ host machine, dùng `localhost:<port>`.
+Trong Docker network, các service dùng host nội bộ như `kafka:29092`, `redis`, `elasticsearch`. Nếu bật profile `enrichment` hoặc `anomaly` thì Cassandra dùng host nội bộ `cassandra`. Từ host machine, dùng `localhost:<port>`.
 
 MinIO mặc định:
 
@@ -211,7 +218,29 @@ Password: social
 
 ## Khởi Động Dự Án
 
-Build và start toàn bộ stack:
+### Chạy dự án nhanh từ đầu
+Nếu bạn muốn khởi động ngay lập tức toàn bộ hệ thống (dữ liệu chảy liên tục và cập nhật lên Dashboard), hãy chạy 2 lệnh sau:
+
+```bash
+# 1. Khởi động toàn bộ hạ tầng lõi và UI (Dashboard, API, Spark, Kafka, Elasticsearch,...)
+docker compose up --build -d
+
+# 2. Khởi động các luồng sinh dữ liệu (Giả lập đẩy data liên tục vào hệ thống)
+make replay-raw
+```
+Sau khi chạy xong, hãy truy cập [http://localhost:8084](http://localhost:8084) để xem Dashboard trực quan hóa realtime.
+
+### Xóa Dữ Liệu Chạy Lại Từ Đầu (Reset Data)
+Nếu bạn muốn xóa trắng toàn bộ dữ liệu (Kafka, Spark checkpoints, Elasticsearch, Database, MinIO, Redis) để bắt đầu lại một môi trường hoàn toàn mới:
+
+```bash
+# Lệnh này sẽ stop toàn bộ container và xóa các docker volumes gắn kèm
+docker compose down -v
+```
+Sau đó bạn có thể lặp lại 2 lệnh ở phần **Chạy dự án nhanh từ đầu** để khởi động lại một hệ thống sạch.
+
+### Khởi động từng phần (Manual)
+Build và start core stack cơ bản:
 
 ```bash
 docker compose up --build -d
@@ -221,6 +250,18 @@ Hoặc dùng Makefile:
 
 ```bash
 make up
+```
+
+Bật các nhóm phụ trợ khi cần:
+
+```bash
+make monitoring      # Prometheus + Grafana
+make debug           # Kafka UI + Kibana
+make orchestration   # Postgres + Airflow
+make warehouse-stack # ClickHouse
+make enrichment      # Cassandra cho enrichment persistence tùy chọn
+make anomaly         # Cassandra + anomaly detector
+make up-full         # tất cả profile
 ```
 
 Kiểm tra trạng thái:
@@ -272,13 +313,23 @@ curl "http://localhost:8000/api/v1/hashtags/top?platform=reddit&window_hours=24&
 
 ## Chạy Ingestion Simulator
 
-Replay sample Reddit:
+Replay toàn bộ raw data Reddit. Nếu không truyền `--source`, simulator tự dùng
+`data/<platform>_data/raw_data`:
 
 ```bash
 python -m ingestion.simulator \
-  --source data/reddit_data/sample_data/post.json \
   --platform reddit \
-  --rate 50 \
+  --rate 20 \
+  --kafka-bootstrap localhost:9092
+```
+
+Replay một thư mục hoặc một file cụ thể:
+
+```bash
+python -m ingestion.simulator \
+  --source data/facebook_data/raw_data \
+  --platform facebook \
+  --rate 20 \
   --kafka-bootstrap localhost:9092
 ```
 
@@ -289,10 +340,44 @@ docker compose run --rm --no-deps \
   -v "$PWD:/app" \
   api \
   python -m ingestion.simulator \
-    --source data/reddit_data/sample_data/post.json \
     --platform reddit \
-    --rate 50 \
+    --rate 20 \
     --kafka-bootstrap kafka:29092
+```
+
+Replay cả ba nền tảng như luồng giả realtime trong Docker Compose:
+
+```bash
+make replay-raw
+```
+
+Lệnh này bật profile `replay`, chạy ba service `replay-reddit`,
+`replay-facebook`, `replay-instagram`, đọc mặc định từ các thư mục:
+
+```text
+data/reddit_data/raw_data
+data/facebook_data/raw_data
+data/instagram_data/raw_data
+```
+
+Điều chỉnh tốc độ publish:
+
+```bash
+REPLAY_RATE_PER_SEC=20 make replay-raw
+```
+
+Mặc định replay có dedupe trong mỗi lượt chạy để tránh cùng một `post_id`
+bị publish lặp khi xuất hiện ở nhiều file raw. Có thể tắt khi cần test duplicate:
+
+```bash
+REPLAY_DEDUPE=false make replay-raw
+```
+
+Speed layer mặc định chỉ đọc message mới từ lúc stream chạy. Nếu cần replay lại
+topic cũ vào realtime store trong môi trường dev:
+
+```bash
+STREAM_STARTING_OFFSETS=earliest docker compose up -d speed
 ```
 
 Kafka topics được tạo tự động:
@@ -396,13 +481,18 @@ speed/streaming_job.py
   -> ghi Redis/Cassandra/Elasticsearch qua speed/realtime_stores.py
 ```
 
+NLP enrichment của từng post là một phần của core stream và luôn nằm trong
+service `speed`. Service `ml-anomaly` không nằm trực tiếp trên đường Kafka
+stream; nó là detector phụ trợ đọc realtime stats qua serving layer và ghi alert.
+
 Redis key realtime có dạng:
 
 ```text
 rt:stats:<platform>:<window_start>
 ```
 
-Cassandra lưu enrichment trong keyspace:
+Cassandra là optional. Nếu bật profile `enrichment` hoặc `anomaly`, enrichment
+được lưu trong keyspace:
 
 ```text
 social_lambda.enrichments
@@ -641,17 +731,13 @@ Start stack:
 docker compose up --build -d
 ```
 
-Stop stack nhưng giữ volumes:
+Stop stack nhưng giữ volumes (giữ lại dữ liệu):
 
 ```bash
 docker compose down
 ```
 
-Stop stack và xóa volumes dữ liệu:
 
-```bash
-docker compose down -v
-```
 
 Xem logs API:
 

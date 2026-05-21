@@ -21,6 +21,9 @@ x-common-env: &common-env
   CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-social_warehouse}
   CLICKHOUSE_USER: ${CLICKHOUSE_USER:-social}
   CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-social}
+  STREAM_STARTING_OFFSETS: ${STREAM_STARTING_OFFSETS:-latest}
+  STREAM_TRIGGER_SECS: ${STREAM_TRIGGER_SECS:-5}
+  SPEED_WRITE_BATCH_SIZE: ${SPEED_WRITE_BATCH_SIZE:-500}
 
 x-airflow-env: &airflow-env
   <<: *common-env
@@ -80,6 +83,7 @@ services:
         kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic social.reddit.posts --partitions 3 --replication-factor 1
         kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic social.facebook.posts --partitions 3 --replication-factor 1
         kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic social.instagram.posts --partitions 3 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic social.enriched.posts --partitions 3 --replication-factor 1
         kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic social.dlq --partitions 1 --replication-factor 1
         kafka-topics --bootstrap-server kafka:29092 --list
     restart: "no"
@@ -87,6 +91,7 @@ services:
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
+    profiles: ["debug"]
     depends_on:
       kafka:
         condition: service_healthy
@@ -169,6 +174,7 @@ services:
   cassandra:
     image: cassandra:4.1
     container_name: cassandra
+    profiles: ["enrichment", "anomaly"]
     ports:
       - "${CASSANDRA_HOST_PORT:-9042}:9042"
     environment:
@@ -193,6 +199,7 @@ services:
   kibana:
     image: docker.elastic.co/kibana/kibana:8.12.2
     container_name: kibana
+    profiles: ["debug"]
     depends_on:
       - elasticsearch
     ports:
@@ -203,6 +210,7 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.8
     container_name: clickhouse
+    profiles: ["warehouse"]
     ports:
       - "${CLICKHOUSE_HTTP_HOST_PORT:-8123}:8123"
       - "${CLICKHOUSE_NATIVE_HOST_PORT:-9002}:9000"
@@ -220,6 +228,7 @@ services:
   postgres:
     image: postgres:15
     container_name: postgres
+    profiles: ["orchestration"]
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
@@ -237,6 +246,7 @@ services:
       context: .
       dockerfile: Dockerfile.airflow
     container_name: airflow-init
+    profiles: ["orchestration"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -258,6 +268,7 @@ services:
       context: .
       dockerfile: Dockerfile.airflow
     container_name: airflow-webserver
+    profiles: ["orchestration"]
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -276,6 +287,7 @@ services:
       context: .
       dockerfile: Dockerfile.airflow
     container_name: airflow-scheduler
+    profiles: ["orchestration"]
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -306,6 +318,96 @@ services:
     command: ["python", "-m", "batch.object_store_writer"]
     restart: unless-stopped
 
+  replay-reddit:
+    image: social-python:latest
+    profiles: ["replay"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      object-store-writer:
+        condition: service_started
+      speed:
+        condition: service_started
+    volumes:
+      - ./data:/app/data:ro
+    environment:
+      <<: *common-env
+      REPLAY_RATE_PER_SEC: ${REPLAY_RATE_PER_SEC:-20}
+      REPLAY_DEDUPE: ${REPLAY_DEDUPE:-true}
+    command:
+      - python
+      - -m
+      - ingestion.simulator
+      - --platform
+      - reddit
+      - --rate
+      - ${REPLAY_RATE_PER_SEC:-20}
+      - --dedupe
+      - ${REPLAY_DEDUPE:-true}
+      - --kafka-bootstrap
+      - kafka:29092
+    restart: "no"
+
+  replay-facebook:
+    image: social-python:latest
+    profiles: ["replay"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      object-store-writer:
+        condition: service_started
+      speed:
+        condition: service_started
+    volumes:
+      - ./data:/app/data:ro
+    environment:
+      <<: *common-env
+      REPLAY_RATE_PER_SEC: ${REPLAY_RATE_PER_SEC:-20}
+      REPLAY_DEDUPE: ${REPLAY_DEDUPE:-true}
+    command:
+      - python
+      - -m
+      - ingestion.simulator
+      - --platform
+      - facebook
+      - --rate
+      - ${REPLAY_RATE_PER_SEC:-20}
+      - --dedupe
+      - ${REPLAY_DEDUPE:-true}
+      - --kafka-bootstrap
+      - kafka:29092
+    restart: "no"
+
+  replay-instagram:
+    image: social-python:latest
+    profiles: ["replay"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      object-store-writer:
+        condition: service_started
+      speed:
+        condition: service_started
+    volumes:
+      - ./data:/app/data:ro
+    environment:
+      <<: *common-env
+      REPLAY_RATE_PER_SEC: ${REPLAY_RATE_PER_SEC:-20}
+      REPLAY_DEDUPE: ${REPLAY_DEDUPE:-true}
+    command:
+      - python
+      - -m
+      - ingestion.simulator
+      - --platform
+      - instagram
+      - --rate
+      - ${REPLAY_RATE_PER_SEC:-20}
+      - --dedupe
+      - ${REPLAY_DEDUPE:-true}
+      - --kafka-bootstrap
+      - kafka:29092
+    restart: "no"
+
   speed:
     image: social-spark:3.5.3
     container_name: speed
@@ -315,8 +417,6 @@ services:
       kafka-init:
         condition: service_completed_successfully
       redis:
-        condition: service_started
-      cassandra:
         condition: service_started
       elasticsearch:
         condition: service_started
@@ -375,6 +475,7 @@ services:
       dockerfile: Dockerfile
     image: social-ml:latest
     container_name: ml-anomaly
+    profiles: ["anomaly"]
     depends_on:
       - api
       - cassandra
@@ -385,6 +486,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
+    profiles: ["monitoring"]
     ports:
       - "${PROMETHEUS_HOST_PORT:-9090}:9090"
     volumes:
@@ -393,6 +495,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
+    profiles: ["monitoring"]
     ports:
       - "${GRAFANA_HOST_PORT:-3000}:3000"
     volumes:

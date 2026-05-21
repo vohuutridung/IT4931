@@ -7,6 +7,19 @@ def test_sentiment_fallback_positive():
     assert -1.0 <= result["score"] <= 1.0
 
 
+def test_sentiment_fallback_negative_finance_terms():
+    result = analyze_sentiment("Beware a dollar confidence crisis and catastrophic warming risk")
+    assert result["label"] == "negative"
+    assert result["score"] < 0
+
+
+def test_sentiment_fallback_vietnamese_terms():
+    positive = analyze_sentiment("Bài viết rất hay và tuyệt vời ❤️")
+    negative = analyze_sentiment("Dịch vụ tệ quá, rất thất vọng")
+    assert positive["score"] > 0
+    assert negative["score"] < 0
+
+
 def test_keywords_are_limited():
     keywords = extract_keywords("social media pipeline pipeline analytics", top_n=2)
     assert len(keywords) <= 2

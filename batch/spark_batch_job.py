@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
+from pyspark.sql.types import DoubleType
 from pyspark.sql.window import Window
 
 from config.settings import SPARK_MASTER, STORAGE_BATCH_VIEWS_BASE, STORAGE_RAW_BASE
@@ -14,6 +16,81 @@ from config.spark import configure_s3a
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s - %(message)s")
 logger = logging.getLogger("spark_batch_job")
+
+
+# Sentiment lexicons (for use in UDF)
+POSITIVE = {
+    "amazing", "awesome", "beautiful", "benefit", "best", "better", "bullish", "calm",
+    "clear", "confident", "constructive", "cute", "enjoy", "excellent", "gain", "gains",
+    "good", "great", "growth", "happy", "hope", "hopeful", "improve", "improved",
+    "like", "love", "positive", "profit", "profits", "recover", "recovery", "safe",
+    "strong", "support", "useful", "win", "winner",
+    "ổn", "tốt", "hay", "vui", "thích", "yêu", "đẹp", "xinh", "đỉnh", "tuyệt",
+    "tuyệtvời", "hạnhphúc", "ủnghộ", "lãi", "tăng", "mạnh", "khỏe", "an toàn",
+}
+NEGATIVE = {
+    "angry", "awful", "bad", "bearish", "beware", "catastrophic", "concern", "crack",
+    "crash", "crisis", "cut", "cuts", "decline", "debt", "drop", "fall", "falling",
+    "fear", "fraud", "gap", "hate", "inflation", "loss", "losses", "losing", "miss",
+    "negative", "poor", "problem", "risk", "sad", "scam", "terrible", "weak", "worse",
+    "worst", "worried",
+    "buồn", "tệ", "xấu", "ghét", "chán", "khóc", "giận", "lo", "rủi ro", "lỗ",
+    "giảm", "sập", "khủng hoảng", "thất vọng", "đau", "kém",
+}
+POSITIVE_EMOJI = {"😀", "😃", "😄", "😁", "😊", "😍", "🥰", "❤️", "❤", "👍", "🔥", "✨"}
+NEGATIVE_EMOJI = {"😢", "😭", "😡", "😠", "💔", "👎", "😞", "😔", "😟", "😨"}
+
+
+def _normalize_text(text: str) -> str:
+    """Normalize Vietnamese text for sentiment analysis."""
+    replacements = {
+        "áàảãạăắằẳẵặâấầẩẫậ": "a",
+        "éèẻẽẹêếềểễệ": "e",
+        "íìỉĩị": "i",
+        "óòỏõọôốồổỗộơớờởỡợ": "o",
+        "úùủũụưứừửữự": "u",
+        "ýỳỷỹỵ": "y",
+        "đ": "d",
+    }
+    output = text.lower()
+    for chars, replacement in replacements.items():
+        for char in chars:
+            output = output.replace(char, replacement)
+    return re.sub(r"\s+", " ", output)
+
+
+def _lexicon_sentiment_batch(text: str) -> float:
+    """Lightweight lexicon-based sentiment analysis (for batch layer)."""
+    if not text:
+        return 0.0
+    
+    normalized = _normalize_text(text)
+    tokens = re.findall(r"[a-z0-9_]+", normalized)
+    token_count = max(len(tokens), 1)
+    token_set = set(tokens)
+    
+    positive = len(token_set & {_normalize_text(word) for word in POSITIVE if " " not in word})
+    negative = len(token_set & {_normalize_text(word) for word in NEGATIVE if " " not in word})
+
+    for phrase in POSITIVE:
+        normalized_phrase = _normalize_text(phrase)
+        if " " in phrase and normalized_phrase in normalized:
+            positive += 1
+    for phrase in NEGATIVE:
+        normalized_phrase = _normalize_text(phrase)
+        if " " in phrase and normalized_phrase in normalized:
+            negative += 1
+
+    positive += sum(text.count(item) for item in POSITIVE_EMOJI)
+    negative += sum(text.count(item) for item in NEGATIVE_EMOJI)
+
+    exclamation_boost = min(text.count("!"), 3) * 0.03
+    raw = (positive - negative) / max(token_count**0.5, 1)
+    if raw > 0:
+        raw += exclamation_boost
+    elif raw < 0:
+        raw -= exclamation_boost
+    return max(-1.0, min(1.0, raw))
 
 
 def create_spark() -> SparkSession:
@@ -28,8 +105,21 @@ def create_spark() -> SparkSession:
 
 def read_raw(spark: SparkSession, platform: str | None, date: str | None) -> DataFrame:
     base = STORAGE_RAW_BASE.rstrip("/")
-    path = f"{base}/{platform}" if platform else base
-    df = spark.read.option("basePath", base).parquet(path)
+    platforms = [platform] if platform else ["reddit", "facebook", "instagram"]
+    dfs = []
+    for p in platforms:
+        path = f"{base}/{p}"
+        try:
+            df_p = spark.read.option("basePath", path).parquet(path)
+            dfs.append(df_p)
+        except Exception:
+            pass
+    if not dfs:
+        path = f"{base}/reddit"
+        df = spark.read.option("basePath", path).parquet(path).limit(0)
+    else:
+        from functools import reduce
+        df = reduce(DataFrame.unionByName, dfs)
     if date:
         year, month, day = date.split("-")
         df = df.filter(
@@ -41,7 +131,22 @@ def read_raw(spark: SparkSession, platform: str | None, date: str | None) -> Dat
 
 
 def add_common_columns(df: DataFrame) -> DataFrame:
-    sentiment = F.coalesce(F.col("sentiment_score"), F.lit(0.0)) if "sentiment_score" in df.columns else F.lit(0.0)
+    # Create UDF for lightweight sentiment analysis (lexicon-based)
+    @F.udf(returnType=DoubleType())
+    def compute_sentiment(text: str) -> float:
+        if not text:
+            return 0.0
+        try:
+            return _lexicon_sentiment_batch(text)
+        except Exception:
+            return 0.0
+    
+    # Use existing sentiment_score or compute from content
+    if "sentiment_score" in df.columns:
+        sentiment = F.coalesce(F.col("sentiment_score"), compute_sentiment(F.col("content")))
+    else:
+        sentiment = compute_sentiment(F.col("content")) if "content" in df.columns else F.lit(0.0)
+    
     engagement = (
         F.coalesce(F.col("likes"), F.lit(0))
         + F.coalesce(F.col("comments"), F.lit(0)) * 2
@@ -82,7 +187,7 @@ def top_hashtags_weekly(df: DataFrame) -> DataFrame:
         .filter(F.col("hashtag").isNotNull() & (F.length("hashtag") > 0))
         .groupBy("platform", "event_week", F.lower("hashtag").alias("hashtag"))
         .agg(F.count("*").alias("frequency"))
-        .withColumn("rank", F.row_number().over(Window.partitionBy("platform", "event_week").orderBy(F.desc("frequency"))))
+        .withColumn("rank", F.row_number().over(Window.partitionBy("platform", "event_week").orderBy(F.desc("frequency"), F.asc("hashtag"))))
     )
     return ranked.filter(F.col("rank") <= 100)
 
@@ -100,7 +205,7 @@ def sentiment_time_series(df: DataFrame) -> DataFrame:
 
 
 def top_posts(df: DataFrame) -> DataFrame:
-    ranked = df.withColumn("rank", F.row_number().over(Window.orderBy(F.desc("engagement_score"))))
+    ranked = df.withColumn("rank", F.row_number().over(Window.orderBy(F.desc("engagement_score"), F.asc("post_id"))))
     return ranked.filter(F.col("rank") <= 1000).select(
         "rank", "post_id", "platform", "event_ts", "author_id", "content", "engagement_score"
     )

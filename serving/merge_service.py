@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import logging
 
 import requests
 
 from config.settings import ES_HOST, REALTIME_WINDOW_HOURS, REDIS_HOST, REDIS_PORT
+
+logger = logging.getLogger(__name__)
 
 
 class ServeQuery:
@@ -72,10 +75,62 @@ class ServeQuery:
         return self._dedupe(posts, limit)
 
     def query_sentiment_trend(self, platform: str | None, granularity: str, start_dt: datetime | str, end_dt: datetime | str) -> list[dict]:
+        start = self._parse_dt(start_dt)
+        end = self._parse_dt(end_dt)
+
+        # 1. Fetch from batch views
         filters: list[dict[str, Any]] = [{"term": {"view": "sentiment_time_series"}}]
         if platform:
             filters.append({"term": {"platform": platform}})
-        return self._search("social_batch_views", {"bool": {"filter": filters}}, 1000)
+        batch_results = self._search("social_batch_views", {"bool": {"filter": filters}}, 1000)
+
+        # 2. Fetch realtime aggregations
+        rt_filters: list[dict[str, Any]] = [
+            {"range": {"event_ts": {"gte": start.isoformat(), "lte": end.isoformat()}}}
+        ]
+        if platform:
+            rt_filters.append({"term": {"platform": platform}})
+
+        aggs = {
+            "trend": {
+                "date_histogram": {
+                    "field": "event_ts",
+                    "calendar_interval": granularity,
+                },
+                "aggs": {
+                    "avg_sentiment": {
+                        "avg": {"field": "sentiment_score"}
+                    }
+                }
+            }
+        }
+
+        rt_results = []
+        try:
+            response = requests.post(
+                f"{self.es_host}/social_realtime_views/_search",
+                json={"query": {"bool": {"filter": rt_filters}}, "size": 0, "aggs": aggs},
+                timeout=3,
+            )
+            response.raise_for_status()
+            buckets = response.json().get("aggregations", {}).get("trend", {}).get("buckets", [])
+            for b in buckets:
+                val = b.get("avg_sentiment", {}).get("value")
+                if val is not None:
+                    rt_results.append({
+                        "event_hour": b["key_as_string"],
+                        "avg_sentiment": val,
+                        "platform": platform or "all",
+                        "view": "sentiment_time_series"
+                    })
+        except Exception as exc:
+            logger.warning("Failed to fetch realtime sentiment aggregation: %s", exc)
+
+        # 3. Merge: Realtime overrides Batch for the same time bucket
+        merged = {r.get("event_hour"): r for r in batch_results if r.get("event_hour")}
+        merged.update({r.get("event_hour"): r for r in rt_results if r.get("event_hour")})
+        
+        return list(merged.values())
 
     def query_top_hashtags(self, platform: str | None, window_hours: int, top_n: int) -> list[dict]:
         if self._redis:
@@ -84,10 +139,11 @@ class ServeQuery:
             for key in keys:
                 for tag, score in self._redis.zrevrange(key, 0, top_n - 1, withscores=True):
                     counts[tag] = counts.get(tag, 0.0) + float(score)
-            return [
-                {"hashtag": tag, "frequency": score}
-                for tag, score in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:top_n]
-            ]
+            if counts:
+                return [
+                    {"hashtag": tag, "frequency": score}
+                    for tag, score in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:top_n]
+                ]
         filters: list[dict[str, Any]] = [{"term": {"view": "top_hashtags_weekly"}}]
         if platform:
             filters.append({"term": {"platform": platform}})

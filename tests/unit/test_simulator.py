@@ -3,13 +3,83 @@ import re
 
 import pytest
 
-from ingestion.simulator import normalise, read_records, to_sop_schema, validate_sop_post
+import ingestion.simulator as simulator
+from ingestion.simulator import (
+    default_source_for_platform,
+    iter_source_files,
+    normalise,
+    read_records,
+    to_sop_schema,
+    validate_sop_post,
+)
 
 
 def test_read_records_supports_single_json_object(tmp_path):
     source = tmp_path / "post.json"
     source.write_text(json.dumps({"post_id": "p1"}), encoding="utf-8")
     assert list(read_records(source)) == [{"post_id": "p1"}]
+
+
+def test_read_records_falls_back_to_json_lines_when_file_starts_with_object(tmp_path):
+    source = tmp_path / "posts.jsonl"
+    source.write_text(
+        "\n".join([json.dumps({"post_id": "p1"}), json.dumps({"post_id": "p2"})]),
+        encoding="utf-8",
+    )
+    assert list(read_records(source)) == [{"post_id": "p1"}, {"post_id": "p2"}]
+
+
+def test_iter_source_files_recursively_finds_supported_files(tmp_path):
+    nested = tmp_path / "page" / "2026_05_21"
+    nested.mkdir(parents=True)
+    supported = nested / "post.json"
+    ignored = nested / "notes.txt"
+    supported.write_text(json.dumps({"post_id": "p1"}), encoding="utf-8")
+    ignored.write_text("not a source record", encoding="utf-8")
+
+    assert list(iter_source_files(tmp_path)) == [supported]
+
+
+def test_default_source_for_platform_uses_raw_data_directory():
+    assert default_source_for_platform("facebook").as_posix() == "data/facebook_data/raw_data"
+
+
+def test_replay_deduplicates_posts_with_same_canonical_id(tmp_path, monkeypatch):
+    source = tmp_path / "raw"
+    source.mkdir()
+    raw = {
+        "post_id": "abc123",
+        "title": "Launch notes",
+        "selftext": "New release #Data",
+        "author_fullname": "t2_author",
+        "author": "alice",
+        "subreddit": "datascience",
+        "created_utc_raw": 1_700_000_000,
+    }
+    (source / "a.json").write_text(json.dumps(raw), encoding="utf-8")
+    (source / "b.json").write_text(json.dumps(raw), encoding="utf-8")
+
+    produced = []
+
+    class FakeProducer:
+        def __init__(self, _config):
+            pass
+
+        def produce(self, **kwargs):
+            produced.append(kwargs)
+
+        def poll(self, _timeout):
+            pass
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(simulator, "Producer", FakeProducer)
+
+    simulator.replay(source, "reddit", 10_000, False, "localhost:9092", dedupe=True)
+
+    assert len(produced) == 1
+    assert produced[0]["topic"] == "social.reddit.posts"
 
 
 def test_normalise_emits_sop_canonical_schema_for_reddit():

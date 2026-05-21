@@ -44,8 +44,11 @@ CLICKHOUSE_HOST = os.getenv("CLICKHOUSE_HOST", "http://localhost:8123")
 CLICKHOUSE_DATABASE = os.getenv("CLICKHOUSE_DATABASE", "social_warehouse")
 CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER", "social")
 CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD", "social")
-REPLAY_RATE_PER_SEC = int(os.getenv("REPLAY_RATE_PER_SEC", "50"))
+REPLAY_RATE_PER_SEC = int(os.getenv("REPLAY_RATE_PER_SEC", "20"))
+REPLAY_DEDUPE = os.getenv("REPLAY_DEDUPE", "true").lower() in {"1", "true", "yes", "y", "on"}
 STREAM_TRIGGER_SECS = int(os.getenv("STREAM_TRIGGER_SECS", "5"))
+STREAM_STARTING_OFFSETS = os.getenv("STREAM_STARTING_OFFSETS", "latest")
+SPEED_WRITE_BATCH_SIZE = int(os.getenv("SPEED_WRITE_BATCH_SIZE", "500"))
 REALTIME_WINDOW_HOURS = int(os.getenv("REALTIME_WINDOW_HOURS", "4"))
 NLP_MODEL_NAME = os.getenv(
     "NLP_MODEL_NAME",

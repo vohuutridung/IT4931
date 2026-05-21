@@ -12,6 +12,8 @@ from config.settings import (
     KAFKA_ALL_SOURCE_TOPICS,
     KAFKA_BOOTSTRAP_SERVERS,
     SPARK_MASTER,
+    SPEED_WRITE_BATCH_SIZE,
+    STREAM_STARTING_OFFSETS,
     STREAM_TRIGGER_SECS,
 )
 
@@ -51,17 +53,50 @@ POST_SCHEMA = StructType([
 
 
 def create_spark() -> SparkSession:
-    return SparkSession.builder.appName("SocialLambdaSpeedLayer").master(SPARK_MASTER).getOrCreate()
+    from config.spark import configure_s3a
+    builder = (
+        SparkSession.builder
+        .appName("SocialLambdaSpeedLayer")
+        .master(SPARK_MASTER)
+        .config("spark.executor.cores", "2")
+        .config("spark.cores.max", "2")
+    )
+    return configure_s3a(builder).getOrCreate()
 
 
 def foreach_batch(df, batch_id: int) -> None:
+    import json
+    from confluent_kafka import Producer
     from speed.nlp_pipeline import enrich_post
     from speed.realtime_stores import RealtimeViewWriter
 
-    rows = [row.asDict(recursive=True) for row in df.collect()]
-    enriched = [dict(row, enrichment=enrich_post(row)) for row in rows]
-    RealtimeViewWriter().write(enriched)
-    logger.info("Processed and stored speed micro-batch %s | records=%d", batch_id, len(enriched))
+    writer = RealtimeViewWriter()
+    producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS})
+    chunk: list[dict] = []
+    total = 0
+    for spark_row in df.toLocalIterator():
+        row = spark_row.asDict(recursive=True)
+        enriched = dict(row, enrichment=enrich_post(row))
+        chunk.append(enriched)
+        
+        producer.produce(
+            "social.enriched.posts",
+            key=str(enriched.get("post_id", "")).encode("utf-8"),
+            value=json.dumps(enriched).encode("utf-8")
+        )
+        
+        if len(chunk) >= SPEED_WRITE_BATCH_SIZE:
+            writer.write(chunk)
+            producer.flush()
+            total += len(chunk)
+            chunk.clear()
+            
+    if chunk:
+        writer.write(chunk)
+        producer.flush()
+        total += len(chunk)
+        
+    logger.info("Processed and stored speed micro-batch %s | records=%d", batch_id, total)
 
 
 def main() -> None:
@@ -70,7 +105,7 @@ def main() -> None:
         spark.readStream.format("kafka")
         .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
         .option("subscribe", ",".join(KAFKA_ALL_SOURCE_TOPICS))
-        .option("startingOffsets", "latest")
+        .option("startingOffsets", STREAM_STARTING_OFFSETS)
         .load()
     )
     parsed = (
@@ -88,14 +123,19 @@ def main() -> None:
         | F.col("post.created_at").isNull()
     )
 
-    bad.writeStream.format("parquet").option("path", "/tmp/social-speed/bad_records").option(
-        "checkpointLocation", "/tmp/social-speed/checkpoints/bad_records"
-    ).start()
+    (
+        bad.selectExpr("CAST(json_value AS STRING) AS value")
+        .writeStream.format("kafka")
+        .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
+        .option("topic", "social.dlq")
+        .option("checkpointLocation", "s3a://social-lake/checkpoints/speed/dlq")
+        .start()
+    )
 
     (
         good.writeStream.foreachBatch(foreach_batch)
         .trigger(processingTime=f"{STREAM_TRIGGER_SECS} seconds")
-        .option("checkpointLocation", "/tmp/social-speed/checkpoints/enriched")
+        .option("checkpointLocation", "s3a://social-lake/checkpoints/speed/enriched")
         .start()
         .awaitTermination()
     )

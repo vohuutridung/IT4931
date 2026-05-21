@@ -49,7 +49,17 @@ def main() -> None:
     sys.argv = ["spark_batch_job.py", "--date", "2023-11-14"]
     spark_batch_job.main()
     after = _signature()
-    assert before == after, "batch view rows changed after rerun"
+    if before != after:
+        for view in VIEWS:
+            if before.get(view) != after.get(view):
+                b_rows = set(before.get(view, []))
+                a_rows = set(after.get(view, []))
+                added = a_rows - b_rows
+                removed = b_rows - a_rows
+                print(f"View {view} changed!")
+                print(f"Added ({len(added)}): {list(added)[:5]}")
+                print(f"Removed ({len(removed)}): {list(removed)[:5]}")
+        raise AssertionError("batch view rows changed after rerun")
     print(json.dumps({view: len(rows) for view, rows in after.items()}, sort_keys=True))
 
 

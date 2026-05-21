@@ -245,3 +245,5 @@ target/
 # SOP nội bộ không nên push lên GitHub
 SOP/
 
+CODE_REVIEW_FINDINGS.md
+CURRENT_ISSUES.md

@@ -25,6 +25,7 @@ from config.settings import (
     KAFKA_BOOTSTRAP_SERVERS,
     KAFKA_SOURCE_TOPICS,
     KAFKA_TOPIC_DLQ,
+    REPLAY_DEDUPE,
     REPLAY_RATE_PER_SEC,
 )
 
@@ -46,6 +47,7 @@ NORMALIZERS = {
     "facebook": facebook.normalize,
     "instagram": instagram.normalize,
 }
+SUPPORTED_SOURCE_SUFFIXES = {".csv", ".json", ".jsonl", ".ndjson"}
 
 REQUIRED_POST_FIELDS = {
     "post_id",
@@ -99,6 +101,8 @@ class TokenBucket:
 
 def read_records(path: Path) -> Iterator[dict]:
     suffix = path.suffix.lower()
+    if suffix not in SUPPORTED_SOURCE_SUFFIXES:
+        raise ValueError(f"Unsupported source file type: {path}")
     if suffix == ".csv":
         with path.open(newline="", encoding="utf-8-sig") as handle:
             yield from csv.DictReader(handle)
@@ -108,7 +112,14 @@ def read_records(path: Path) -> Iterator[dict]:
         first = handle.read(1)
         handle.seek(0)
         if first in {"[", "{"}:
-            data = json.load(handle)
+            try:
+                data = json.load(handle)
+            except json.JSONDecodeError as exc:
+                if "Extra data" not in str(exc):
+                    raise
+                handle.seek(0)
+                yield from _read_json_lines(handle, path)
+                return
             if isinstance(data, dict):
                 yield data
                 return
@@ -119,16 +130,42 @@ def read_records(path: Path) -> Iterator[dict]:
                     yield row
             return
 
-        for lineno, line in enumerate(handle, 1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"Invalid JSON line {lineno}: {exc}") from exc
-            if isinstance(row, dict):
-                yield row
+        yield from _read_json_lines(handle, path)
+
+
+def _read_json_lines(handle, path: Path) -> Iterator[dict]:
+    for lineno, line in enumerate(handle, 1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSON line {lineno} in {path}: {exc}") from exc
+        if isinstance(row, dict):
+            yield row
+
+
+def iter_source_files(source: Path) -> Iterator[Path]:
+    if source.is_file():
+        yield source
+        return
+    if not source.exists():
+        raise FileNotFoundError(f"Source does not exist: {source}")
+    if not source.is_dir():
+        raise ValueError(f"Source must be a file or directory: {source}")
+
+    found = False
+    for path in sorted(source.rglob("*")):
+        if path.is_file() and path.suffix.lower() in SUPPORTED_SOURCE_SUFFIXES:
+            found = True
+            yield path
+    if not found:
+        raise ValueError(f"No supported source files found under: {source}")
+
+
+def default_source_for_platform(platform: str) -> Path:
+    return Path("data") / f"{platform}_data" / "raw_data"
 
 
 def normalise(platform: str, raw: dict) -> dict:
@@ -312,28 +349,57 @@ def publish_dlq(producer: Producer, platform: str, raw: dict, error: Exception) 
         publish_errors_total.labels(platform=platform).inc()
 
 
-def replay(source: Path, platform: str, rate: int, loop: bool, kafka_bootstrap: str) -> None:
+def replay(
+    source: Path,
+    platform: str,
+    rate: int,
+    loop: bool,
+    kafka_bootstrap: str,
+    dedupe: bool = REPLAY_DEDUPE,
+    max_records: int | None = None,
+) -> None:
     producer = Producer({"bootstrap.servers": kafka_bootstrap, "acks": "all"})
     bucket = TokenBucket(rate)
     topic = KAFKA_SOURCE_TOPICS[platform]
+    files = list(iter_source_files(source))
     total = 0
 
     try:
         while True:
             emitted = 0
-            for raw in read_records(source):
-                bucket.wait()
-                try:
-                    post = normalise(platform, raw)
-                    publish(producer, topic, post, platform)
-                    emitted += 1
-                    total += 1
-                except Exception as exc:
-                    logger.warning("Routing malformed record to DLQ: %s", exc)
-                    publish_dlq(producer, platform, raw, exc)
+            skipped_duplicates = 0
+            seen_post_ids: set[str] = set()
+            for file_path in files:
+                for raw in read_records(file_path):
+                    if max_records is not None and total >= max_records:
+                        break
+                    bucket.wait()
+                    try:
+                        post = normalise(platform, raw)
+                        post_id = str(post["post_id"])
+                        if dedupe and post_id in seen_post_ids:
+                            skipped_duplicates += 1
+                            continue
+                        seen_post_ids.add(post_id)
+                        publish(producer, topic, post, platform)
+                        emitted += 1
+                        total += 1
+                    except Exception as exc:
+                        logger.warning("Routing malformed record to DLQ: %s | source=%s", exc, file_path)
+                        publish_dlq(producer, platform, raw, exc)
+                if max_records is not None and total >= max_records:
+                    break
             producer.flush()
-            logger.info("Replay pass complete | platform=%s emitted=%d total=%d", platform, emitted, total)
-            if not loop:
+            logger.info(
+                "Replay pass complete | platform=%s source=%s files=%d emitted=%d duplicates=%d total=%d",
+                platform,
+                source,
+                len(files),
+                emitted,
+                skipped_duplicates,
+                total,
+            )
+            if not loop or (max_records is not None and total >= max_records):
                 break
     finally:
         producer.flush()
@@ -345,11 +411,17 @@ def parse_bool(value: str) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Replay static social files to Kafka")
-    parser.add_argument("--source", required=True, type=Path)
+    parser.add_argument(
+        "--source",
+        type=Path,
+        help="Source file or directory. Defaults to data/<platform>_data/raw_data.",
+    )
     parser.add_argument("--platform", required=True, choices=sorted(NORMALIZERS))
     parser.add_argument("--rate", type=int, default=REPLAY_RATE_PER_SEC)
     parser.add_argument("--loop", type=parse_bool, default=False)
     parser.add_argument("--kafka-bootstrap", default=KAFKA_BOOTSTRAP_SERVERS)
+    parser.add_argument("--dedupe", type=parse_bool, default=REPLAY_DEDUPE)
+    parser.add_argument("--max-records", type=int)
     parser.add_argument("--metrics-port", type=int, default=9101)
     parser.add_argument("--metrics-hold-seconds", type=int, default=0)
     args = parser.parse_args()
@@ -358,7 +430,8 @@ def main() -> None:
         start_http_server(args.metrics_port)
         logger.info("Prometheus metrics listening on :%d", args.metrics_port)
 
-    replay(args.source, args.platform, args.rate, args.loop, args.kafka_bootstrap)
+    source = args.source or default_source_for_platform(args.platform)
+    replay(source, args.platform, args.rate, args.loop, args.kafka_bootstrap, args.dedupe, args.max_records)
     if args.metrics_hold_seconds > 0:
         logger.info("Keeping metrics endpoint alive for %d seconds", args.metrics_hold_seconds)
         time.sleep(args.metrics_hold_seconds)

@@ -46,8 +46,26 @@ if pipeline:
     except Exception as exc:
         logger.warning("Transformer sentiment unavailable, using fallback: %s", exc)
 
-POSITIVE = {"good", "great", "love", "excellent", "amazing", "happy", "best", "like"}
-NEGATIVE = {"bad", "hate", "awful", "terrible", "sad", "worst", "angry", "poor"}
+POSITIVE = {
+    "amazing", "awesome", "beautiful", "benefit", "best", "better", "bullish", "calm",
+    "clear", "confident", "constructive", "cute", "enjoy", "excellent", "gain", "gains",
+    "good", "great", "growth", "happy", "hope", "hopeful", "improve", "improved",
+    "like", "love", "positive", "profit", "profits", "recover", "recovery", "safe",
+    "strong", "support", "useful", "win", "winner",
+    "ổn", "tốt", "hay", "vui", "thích", "yêu", "đẹp", "xinh", "đỉnh", "tuyệt",
+    "tuyệtvời", "hạnhphúc", "ủnghộ", "lãi", "tăng", "mạnh", "khỏe", "an toàn",
+}
+NEGATIVE = {
+    "angry", "awful", "bad", "bearish", "beware", "catastrophic", "concern", "crack",
+    "crash", "crisis", "cut", "cuts", "decline", "debt", "drop", "fall", "falling",
+    "fear", "fraud", "gap", "hate", "inflation", "loss", "losses", "losing", "miss",
+    "negative", "poor", "problem", "risk", "sad", "scam", "terrible", "weak", "worse",
+    "worst", "worried",
+    "buồn", "tệ", "xấu", "ghét", "chán", "khóc", "giận", "lo", "rủi ro", "lỗ",
+    "giảm", "sập", "khủng hoảng", "thất vọng", "đau", "kém",
+}
+POSITIVE_EMOJI = {"😀", "😃", "😄", "😁", "😊", "😍", "🥰", "❤️", "❤", "👍", "🔥", "✨"}
+NEGATIVE_EMOJI = {"😢", "😭", "😡", "😠", "💔", "👎", "😞", "😔", "😟", "😨"}
 
 
 def analyze_sentiment(text: str) -> dict:
@@ -58,10 +76,55 @@ def analyze_sentiment(text: str) -> dict:
         label = result["label"].lower()
         score = raw_score if "pos" in label else -raw_score
     else:
-        words = {w.lower() for w in re.findall(r"[A-Za-z']+", text)}
-        score = (len(words & POSITIVE) - len(words & NEGATIVE)) / max(len(words), 1)
-        label = "positive" if score > 0.05 else "negative" if score < -0.05 else "neutral"
+        score = _lexicon_sentiment(text)
+        label = "positive" if score > 0.03 else "negative" if score < -0.03 else "neutral"
     return {"score": max(-1.0, min(1.0, score)), "label": label}
+
+
+def _lexicon_sentiment(text: str) -> float:
+    normalized = _normalize_text(text)
+    tokens = re.findall(r"[a-z0-9_]+", normalized)
+    token_count = max(len(tokens), 1)
+    token_set = set(tokens)
+    positive = len(token_set & {_normalize_text(word) for word in POSITIVE if " " not in word})
+    negative = len(token_set & {_normalize_text(word) for word in NEGATIVE if " " not in word})
+
+    for phrase in POSITIVE:
+        normalized_phrase = _normalize_text(phrase)
+        if " " in phrase and normalized_phrase in normalized:
+            positive += 1
+    for phrase in NEGATIVE:
+        normalized_phrase = _normalize_text(phrase)
+        if " " in phrase and normalized_phrase in normalized:
+            negative += 1
+
+    positive += sum(text.count(item) for item in POSITIVE_EMOJI)
+    negative += sum(text.count(item) for item in NEGATIVE_EMOJI)
+
+    exclamation_boost = min(text.count("!"), 3) * 0.03
+    raw = (positive - negative) / max(token_count**0.5, 1)
+    if raw > 0:
+        raw += exclamation_boost
+    elif raw < 0:
+        raw -= exclamation_boost
+    return max(-1.0, min(1.0, raw))
+
+
+def _normalize_text(text: str) -> str:
+    replacements = {
+        "áàảãạăắằẳẵặâấầẩẫậ": "a",
+        "éèẻẽẹêếềểễệ": "e",
+        "íìỉĩị": "i",
+        "óòỏõọôốồổỗộơớờởỡợ": "o",
+        "úùủũụưứừửữự": "u",
+        "ýỳỷỹỵ": "y",
+        "đ": "d",
+    }
+    output = text.lower()
+    for chars, replacement in replacements.items():
+        for char in chars:
+            output = output.replace(char, replacement)
+    return re.sub(r"\s+", " ", output)
 
 
 def extract_keywords(text: str, top_n: int = 10) -> list[str]:
