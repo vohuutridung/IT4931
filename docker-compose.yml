@@ -32,7 +32,7 @@ x-airflow-env: &airflow-env
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
   AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
   AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-  SPARK_HOME: /opt/spark
+  SPARK_HOME: /home/airflow/.local/lib/python3.11/site-packages/pyspark
   AIRFLOW_SPARK_MASTER: ${AIRFLOW_SPARK_MASTER:-local[2]}
   PIPELINE_DIR: /opt/social_pipeline
   PYTHONPATH: /opt/social_pipeline
@@ -182,6 +182,12 @@ services:
     container_name: redis
     ports:
       - "${REDIS_HOST_PORT:-6379}:6379"
+    # [FIX] Thêm healthcheck để các service phụ thuộc biết khi nào Redis thực sự sẵn sàng
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   cassandra:
     image: cassandra:4.1
@@ -195,6 +201,12 @@ services:
       HEAP_NEWSIZE: 128M
     volumes:
       - cassandra_data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
@@ -207,13 +219,22 @@ services:
       ES_JAVA_OPTS: -Xms512m -Xmx512m
     volumes:
       - es_data:/usr/share/elasticsearch/data
+    # [FIX] Thêm healthcheck — ES mất 30-60s để sẵn sàng; không có healthcheck
+    #       thì speed/serving-init sẽ crash-loop khi ES chưa ready.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
 
   kibana:
     image: docker.elastic.co/kibana/kibana:8.12.2
     container_name: kibana
     profiles: ["debug"]
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
     ports:
       - "${KIBANA_HOST_PORT:-5601}:5601"
     environment:
@@ -236,6 +257,11 @@ services:
       nofile:
         soft: 262144
         hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   postgres:
     image: postgres:15
@@ -293,6 +319,7 @@ services:
       - ./:/opt/social_pipeline:ro
       - airflow_logs:/opt/airflow/logs
     command: webserver
+    restart: unless-stopped
 
   airflow-scheduler:
     build:
@@ -310,6 +337,7 @@ services:
       - ./:/opt/social_pipeline:ro
       - airflow_logs:/opt/airflow/logs
     command: scheduler
+    restart: unless-stopped
 
   object-store-writer:
     build:
@@ -331,6 +359,7 @@ services:
     restart: unless-stopped
 
   replay-reddit:
+    # [FIX] Dùng lại image đã build bởi object-store-writer, không build lại
     image: social-python:0.1.0
     profiles: ["replay"]
     depends_on:
@@ -431,10 +460,15 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      # [FIX] Chờ minio-init hoàn thành để bucket tồn tại trước khi Spark ghi checkpoint
+      minio-init:
+        condition: service_completed_successfully
       redis:
-        condition: service_started
+        # [FIX] Chờ Redis thực sự sẵn sàng (nhờ healthcheck mới thêm)
+        condition: service_healthy
       elasticsearch:
-        condition: service_started
+        # [FIX] Chờ ES healthy thay vì service_started — tránh crash-loop
+        condition: service_healthy
     environment:
       <<: *common-env
       SPARK_MASTER: spark://spark-master:7077
@@ -447,32 +481,37 @@ services:
     restart: on-failure
 
   serving-init:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # [FIX] Dùng lại image social-python thay vì build riêng
     image: social-python:0.1.0
     container_name: serving-init
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
+      # Đảm bảo image đã được build
+      object-store-writer:
+        condition: service_started
     environment:
       <<: *common-env
     command: ["python", "-m", "serving.es_indexer", "--ensure"]
     restart: "no"
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: social-api:0.1.0
+    # [FIX] Dùng lại social-python:0.1.0 thay vì build thêm image social-api:0.1.0 giống hệt
+    image: social-python:0.1.0
     container_name: api
     depends_on:
-      - serving-init
-      - redis
+      # [FIX] Chờ serving-init HOÀN THÀNH (tạo xong ES indices) mới start API
+      serving-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     ports:
       - "${API_HOST_PORT:-8000}:8000"
     environment:
       <<: *common-env
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    # [FIX] Thêm restart policy — trước đây không có, nếu crash sẽ không tự restart
+    restart: unless-stopped
 
   dashboard:
     image: nginx:alpine
@@ -483,6 +522,7 @@ services:
       - "${DASHBOARD_HOST_PORT:-8084}:80"
     volumes:
       - ./dashboard:/usr/share/nginx/html:ro
+    restart: unless-stopped
 
   ml-anomaly:
     build:
@@ -499,6 +539,7 @@ services:
     environment:
       <<: *common-env
     command: ["python", "-m", "ml.anomaly_detector"]
+    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:v2.53.1
@@ -517,6 +558,7 @@ services:
       - "${GRAFANA_HOST_PORT:-3000}:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+    restart: unless-stopped
 
 volumes:
   minio_data:

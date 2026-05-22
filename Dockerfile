@@ -13,6 +13,7 @@ WORKDIR /app
 COPY requirements*.txt ./
 RUN pip wheel --no-cache-dir --wheel-dir /wheels -r "${REQUIREMENTS_FILE}"
 
+# ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM python:3.11-slim
 
 ARG REQUIREMENTS_FILE=requirements.runtime.txt
@@ -21,6 +22,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         librdkafka1 \
     && rm -rf /var/lib/apt/lists/*
+
+# [FIX] Chạy với non-root user để giảm attack surface
+RUN groupadd --gid 1001 appgroup \
+    && useradd --uid 1001 --gid appgroup --no-create-home appuser
 
 WORKDIR /app
 COPY requirements*.txt ./
@@ -39,7 +44,14 @@ COPY speed/      speed/
 COPY warehouse/  warehouse/
 
 # Tạo __init__.py cho package root nếu cần import tuyệt đối
-RUN touch __init__.py
+RUN touch __init__.py \
+    && chown -R appuser:appgroup /app
 
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
+
+# [FIX] Non-root user
+USER appuser
+
+# [FIX] Thêm CMD mặc định để tránh lỗi khi chạy standalone
+CMD ["python", "-c", "print('social-python image ok — specify command in docker-compose')"]

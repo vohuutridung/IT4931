@@ -13,31 +13,33 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        default-jre-headless \
        curl \
+       procps \
     && rm -rf /var/lib/apt/lists/*
 
 USER airflow
 
+# Cài pyspark riêng (constraints ghim 3.5.1)
+RUN pip install --no-cache-dir "pyspark==${SPARK_VERSION}"
+
+# Để constraint file tự chọn version provider tương thích
 RUN pip install --no-cache-dir \
-      "pyspark==${SPARK_VERSION}" \
-      "boto3==1.34.131" \
-      "requests==2.32.3" \
-      "apache-airflow-providers-apache-spark==4.8.0" \
+      "apache-airflow-providers-apache-spark" \
       --constraint "${AIRFLOW_CONSTRAINTS_URL}"
 
 USER root
 
-ENV SPARK_HOME=/opt/spark
-ENV PYSPARK_HOME=/home/airflow/.local/lib/python${PYTHON_VERSION}/site-packages/pyspark
+# Trỏ SPARK_HOME thẳng vào thư mục pyspark đã cài — không copy, không symlink
+# Đây là cách đúng: toàn bộ JAR của Spark đã có sẵn trong thư mục này
+ENV SPARK_HOME=/home/airflow/.local/lib/python${PYTHON_VERSION}/site-packages/pyspark
 
-RUN ln -s "${PYSPARK_HOME}" "${SPARK_HOME}" \
-    && mkdir -p /opt/spark/jars \
+# Thêm JAR S3/MinIO vào đúng thư mục jars của pyspark
+RUN curl --fail --show-error --silent --location --retry 3 \
+        -o "${SPARK_HOME}/jars/hadoop-aws-${HADOOP_AWS_VERSION}.jar" \
+        "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_AWS_VERSION}/hadoop-aws-${HADOOP_AWS_VERSION}.jar" \
     && curl --fail --show-error --silent --location --retry 3 \
-      -o "/opt/spark/jars/hadoop-aws-${HADOOP_AWS_VERSION}.jar" \
-      "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_AWS_VERSION}/hadoop-aws-${HADOOP_AWS_VERSION}.jar" \
-    && curl --fail --show-error --silent --location --retry 3 \
-      -o "/opt/spark/jars/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VERSION}.jar" \
-      "https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_BUNDLE_VERSION}/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VERSION}.jar" \
-    && chown -R airflow: "${PYSPARK_HOME}"
+        -o "${SPARK_HOME}/jars/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VERSION}.jar" \
+        "https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_BUNDLE_VERSION}/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VERSION}.jar" \
+    && chown -R airflow: "${SPARK_HOME}/jars"
 
 ENV PATH="${SPARK_HOME}/bin:${PATH}"
 

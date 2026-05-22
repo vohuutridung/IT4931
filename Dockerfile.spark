@@ -1,13 +1,11 @@
-# ── Apache Spark chính thức ────────────────────────────────────────────────────
-# apache/spark-py đã ngừng cập nhật (tag mới nhất v3.4.0)
-# apache/spark:3.5.3 tồn tại và được maintain bởi Apache Software Foundation
 FROM apache/spark:3.5.3
 
 USER root
 
 ARG SPARK_VERSION=3.5.3
 ARG SCALA_BINARY_VERSION=2.12
-ARG KAFKA_CLIENTS_VERSION=3.4.1
+# [FIX] kafka-clients 3.6.0 để khớp với Confluent 7.6.0 (Kafka 3.6.x)
+ARG KAFKA_CLIENTS_VERSION=3.6.0
 ARG HADOOP_AWS_VERSION=3.3.4
 ARG AWS_SDK_BUNDLE_VERSION=1.12.262
 ARG COMMONS_POOL2_VERSION=2.11.1
@@ -19,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -sf /usr/bin/python3 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Python deps cho Spark jobs. PySpark đến từ base image /opt/spark. ─────────
+# ── Python deps cho Spark jobs ────────────────────────────────────────────────
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 WORKDIR /app
@@ -52,7 +50,7 @@ RUN curl --fail --show-error --silent --location --retry 3 \
         -o "${SPARK_JARS_DIR}/commons-pool2-${COMMONS_POOL2_VERSION}.jar" \
         "https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/${COMMONS_POOL2_VERSION}/commons-pool2-${COMMONS_POOL2_VERSION}.jar"
 
-# ── Tạo thư mục Ivy cache ────────────────────────────────────────────────────
+# ── Tạo thư mục Ivy cache ─────────────────────────────────────────────────────
 RUN mkdir -p /home/spark/.ivy2/cache && chown -R spark:spark /home/spark/.ivy2
 
 # ── App code ──────────────────────────────────────────────────────────────────
@@ -64,11 +62,13 @@ COPY scripts/    scripts/
 COPY warehouse/  warehouse/
 RUN touch __init__.py
 
-# ── Runtime writable directories ─────────────────────────────────────────────
-RUN mkdir -p /tmp/social-speed/checkpoints /tmp/social-speed/bad_records && \
-    chmod -R 777 /tmp/social-speed
+# ── Runtime writable directories ──────────────────────────────────────────────
+# [FIX] chmod 755 thay vì 777 — chỉ spark user cần ghi
+RUN mkdir -p /tmp/social-speed/checkpoints /tmp/social-speed/bad_records \
+    && chown -R spark:spark /tmp/social-speed \
+    && chmod -R 755 /tmp/social-speed
 
-# Fix permission cho thư mục work của Spark Worker (nếu bị mount volume mới đè lên)
+# Fix permission cho thư mục work của Spark Worker
 RUN mkdir -p /opt/spark/work && chown -R spark:spark /opt/spark/work
 
 ENV SPARK_HOME=/opt/spark
