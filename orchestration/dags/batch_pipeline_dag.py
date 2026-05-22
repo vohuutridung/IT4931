@@ -74,7 +74,7 @@ def mark_raw_data_processed() -> None:
 with DAG(
     dag_id="social_lambda_batch_pipeline",
     start_date=datetime(2026, 5, 1),
-    schedule="@hourly",
+    schedule="*/5 * * * *",
     catchup=False,
     on_failure_callback=slack_failure_callback,
 ) as dag:

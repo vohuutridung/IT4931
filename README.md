@@ -106,7 +106,19 @@ Không bắt buộc tạo `.env` nếu dùng toàn bộ default.
 
 ## Chạy Dự Án Từ Đầu
 
-### 1. Build image
+Phần này dành cho người mới clone repo lần đầu và muốn chạy toàn bộ luồng local để thấy dashboard có dữ liệu.
+
+### 1. Clone repo và tạo file env
+
+```bash
+git clone <repo-url>
+cd social-pipeline
+cp .env.example .env
+```
+
+Nếu không cần override port hoặc credential local, có thể bỏ qua bước `cp .env.example .env` vì Docker Compose đã có default. Tuy vậy, nên tạo `.env` để cấu hình chạy nhất quán giữa các máy.
+
+### 2. Build image
 
 ```bash
 docker compose build
@@ -124,7 +136,15 @@ Nếu sửa Spark/batch/speed code:
 docker compose build spark-master spark-worker speed
 ```
 
-### 2. Start core infrastructure
+### 3. Start core infrastructure
+
+Ngắn gọn (dùng Makefile):
+
+```bash
+make core-up
+```
+
+Lệnh này tương đương với:
 
 ```bash
 docker compose up -d zookeeper kafka kafka-init minio minio-init redis elasticsearch serving-init
@@ -133,7 +153,7 @@ docker compose up -d zookeeper kafka kafka-init minio minio-init redis elasticse
 Kiểm tra container:
 
 ```bash
-docker compose ps
+make ps
 ```
 
 Kiểm tra Elasticsearch index đã được tạo:
@@ -142,7 +162,8 @@ Kiểm tra Elasticsearch index đã được tạo:
 docker compose exec -T elasticsearch curl -fsS http://localhost:9200/_cat/indices?v
 ```
 
-### 3. Start Spark, speed layer, object-store writer, API và dashboard
+### 4. Start Spark, speed layer, object-store writer, API và dashboard
+
 
 ```bash
 docker compose up -d spark-master spark-worker speed object-store-writer api dashboard
@@ -160,64 +181,72 @@ Kết quả đúng:
 {"status":"ok"}
 ```
 
-### 4. Replay dữ liệu mẫu vào Kafka
+### 5. Chạy pipeline
 
-Replay cả 3 platform:
+Trong dự án này, luồng production và toàn bộ orchestration được điều phối bởi Airflow. Phần hướng dẫn dưới đây là cách chính thức để chạy pipeline; các lệnh `spark-submit` thủ công chỉ là fallback cho debug và không được khuyến khích khi vận hành.
 
-```bash
-docker compose --profile replay up replay-reddit replay-facebook replay-instagram
-```
 
-Hoặc replay từng platform:
+1) Bật Airflow orchestration (bắt buộc):
 
 ```bash
-docker compose --profile replay up replay-reddit
-docker compose --profile replay up replay-facebook
-docker compose --profile replay up replay-instagram
+make orchestration
 ```
 
-Sau replay, để `object-store-writer` và `speed` xử lý thêm vài chục giây:
+- `airflow-init` khởi tạo metadata DB, tạo user admin và đăng ký connection `spark_default`.
+- Truy cập Airflow UI: `http://localhost:8082` (Username: `admin`, Password: `admin`).
+- Trong Airflow UI bật (unpause) DAG `social_lambda_batch_pipeline` hoặc trigger thủ công DAG này.
+
+
+2) Replay sample data (nếu cần) — trước khi trigger DAG:
 
 ```bash
-docker compose logs -f object-store-writer
-docker compose logs -f speed
+make replay
 ```
 
-Thoát log bằng `Ctrl+C`; thao tác này không tắt container.
+- Lệnh trên khởi các container replay để publish sample messages vào Kafka. Đợi vài chục giây để `object-store-writer` và `speed` consume và flush raw Parquet/realtime aggregates.
 
-### 5. Chạy batch Spark job
 
-Batch job đọc raw Parquet từ MinIO và ghi batch views trở lại MinIO.
+Kiểm tra logs (tuỳ chọn):
 
 ```bash
-docker compose exec -T spark-master \
-  /opt/spark/bin/spark-submit \
-  --master spark://spark-master:7077 \
-  /app/batch/spark_batch_job.py \
-  --input-partitions 64 \
-  --shuffle-partitions 64
+make logs
 ```
 
-Ghi chú:
+3) Trigger DAG
 
-- `--input-partitions 64` giảm số partition input khi raw data có nhiều file nhỏ.
-- `--shuffle-partitions 64` phù hợp local Docker. Tăng nếu dataset lớn và máy đủ tài nguyên.
-- Job sẽ fail nếu không tìm thấy raw data. Đây là hành vi đúng để tránh ghi batch views rỗng.
+- Vào Airflow UI, trigger DAG `social_lambda_batch_pipeline` hoặc đợi DAG chạy theo lịch (5 phút 1 lần).
+- DAG sẽ kiểm tra dữ liệu raw mới trên MinIO, chạy Spark batch, refresh serving layer và đánh dấu dữ liệu đã xử lý.
 
-### 6. Index batch views vào Elasticsearch
+Ghi chú vận hành:
+
+- Không nên chạy `spark_batch_job.py` hay `index_batch_views.py` thủ công trong môi trường vận hành; chỉ dùng khi debug offline.
+- Nếu cần chạy thủ công (fallback), xem phần "Fallback: chạy thủ công" bên dưới.
+
+### 6. Fallback: chạy thủ công (không khuyến khích)
+
+Chỉ dùng khi debug hoặc môi trường dev đơn giản. Thực hiện các bước theo thứ tự:
+
+- Replay dữ liệu mẫu vào Kafka (nếu cần):
 
 ```bash
-docker compose exec -T spark-master \
-  /opt/spark/bin/spark-submit \
-  --master spark://spark-master:7077 \
-  /app/batch/index_batch_views.py
+make replay
 ```
 
-Sau bước này dashboard/API có thể đọc cả batch data và realtime data.
+- Chạy batch Spark job (reads raw Parquet từ MinIO):
 
-### 7. Mở dashboard
+```bash
+make spark-batch
+```
 
-Truy cập:
+- Index batch views vào Elasticsearch:
+
+```bash
+make index-batch-docker
+```
+
+### 7. Mở dashboard và kiểm tra API
+
+Truy cập dashboard:
 
 ```text
 http://localhost:8084
@@ -232,6 +261,16 @@ http://localhost:8000/api/v1/sentiment/trend
 http://localhost:8000/api/v1/hashtags/top
 http://localhost:8000/api/v1/stats/realtime
 ```
+
+Kiểm tra nhanh bằng API:
+
+```bash
+curl -fsS http://localhost:8000/health
+curl -fsS "http://localhost:8000/api/v1/posts?limit=5&start=2023-01-01T00:00:00Z"
+curl -fsS "http://localhost:8000/api/v1/sentiment/trend?start=2023-01-01T00:00:00Z"
+```
+
+Ghi chú: dữ liệu mẫu có timestamp trải dài trong quá khứ, vì vậy khi kiểm tra posts/trend nên truyền `start=2023-01-01T00:00:00Z` để chắc chắn nhìn thấy dữ liệu.
 
 ## Chạy Lại Batch Layer
 
@@ -317,60 +356,18 @@ docker compose logs --tail=100 elasticsearch
 
 ## Xóa Dữ Liệu Để Chạy Lại Từ Đầu
 
-Có 3 mức reset. Chọn mức phù hợp, tránh xóa volume khi còn cần dữ liệu cũ.
-
-### Mức 1: Chạy lại pipeline nhưng giữ Docker volumes
-
-Dùng khi chỉ muốn replay thêm dữ liệu hoặc chạy lại batch.
+Khi dữ liệu đã chạy hết và muốn xem pipeline chạy lại từ đầu, dùng luồng dưới đây. Luồng này xóa dữ liệu Docker volume của dự án rồi replay lại sample data. Không cần `docker compose build` nếu không sửa Dockerfile hoặc requirements.
 
 ```bash
-docker compose down
+docker compose down -v --remove-orphans
 docker compose up -d zookeeper kafka kafka-init minio minio-init redis elasticsearch serving-init
 docker compose up -d spark-master spark-worker speed object-store-writer api dashboard
-```
-
-Mức này giữ lại:
-
-- MinIO bucket/data.
-- Elasticsearch indices.
-- Redis data có thể mất nếu container bị recreate vì Redis không mount volume.
-- Kafka data nếu container/volume nội bộ còn tồn tại.
-
-### Mức 2: Xóa dữ liệu trong MinIO và Elasticsearch, giữ image
-
-Dùng khi muốn chạy lại luồng sạch nhưng không muốn xóa toàn bộ Docker volume.
-
-Xóa object trong MinIO:
-
-```bash
-docker compose run --rm --entrypoint sh minio-init -c \
-  'mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" && mc rm -r --force local/social-lake/data'
-```
-
-Xóa Elasticsearch indices:
-
-```bash
-docker compose exec -T elasticsearch curl -fsS -X DELETE http://localhost:9200/social_batch_views
-docker compose exec -T elasticsearch curl -fsS -X DELETE http://localhost:9200/social_realtime_views
-```
-
-Tạo lại index/mapping:
-
-```bash
-docker compose up -d --force-recreate serving-init
-```
-
-Flush Redis:
-
-```bash
-docker compose exec -T redis redis-cli FLUSHALL
-```
-
-Sau đó replay và chạy batch lại từ đầu:
-
-```bash
 docker compose --profile replay up replay-reddit replay-facebook replay-instagram
+```
 
+Sau replay, đợi khoảng 30-60 giây để `object-store-writer` và `speed` xử lý dữ liệu. Sau đó chạy batch job và index batch views:
+
+```bash
 docker compose exec -T spark-master \
   /opt/spark/bin/spark-submit \
   --master spark://spark-master:7077 \
@@ -384,24 +381,11 @@ docker compose exec -T spark-master \
   /app/batch/index_batch_views.py
 ```
 
-### Mức 3: Xóa sạch toàn bộ Docker volumes của dự án
+Mở lại dashboard:
 
-Dùng khi muốn quay về trạng thái sạch nhất. Lệnh này xóa dữ liệu MinIO, Elasticsearch, Postgres, ClickHouse, Cassandra, Grafana.
-
-```bash
-docker compose down -v --remove-orphans
+```text
+http://localhost:8084
 ```
-
-Sau đó chạy lại từ bước build/start:
-
-```bash
-docker compose build
-docker compose up -d zookeeper kafka kafka-init minio minio-init redis elasticsearch serving-init
-docker compose up -d spark-master spark-worker speed object-store-writer api dashboard
-docker compose --profile replay up replay-reddit replay-facebook replay-instagram
-```
-
-Rồi chạy batch + index batch như ở trên.
 
 ## Tắt Dự Án
 

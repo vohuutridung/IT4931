@@ -61,7 +61,7 @@ S3_WRITE_TIMEOUT = int(os.getenv("S3_WRITE_TIMEOUT", "60"))
 CLICKHOUSE_WRITE_TIMEOUT = int(os.getenv("CLICKHOUSE_WRITE_TIMEOUT", "60"))
 ES_REQUEST_TIMEOUT = int(os.getenv("ES_REQUEST_TIMEOUT", "5"))
 SPEED_WRITE_BATCH_SIZE = int(os.getenv("SPEED_WRITE_BATCH_SIZE", "500"))
-REALTIME_WINDOW_HOURS = int(os.getenv("REALTIME_WINDOW_HOURS", "4"))
+REALTIME_WINDOW_HOURS = int(os.getenv("REALTIME_WINDOW_HOURS", "24"))
 NLP_MODEL_NAME = os.getenv(
     "NLP_MODEL_NAME",
     "distilbert-base-uncased-finetuned-sst-2-english",
