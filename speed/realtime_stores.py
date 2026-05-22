@@ -114,7 +114,7 @@ class RealtimeViewWriter:
         pipe = self.redis.pipeline(transaction=False)
         stats: dict[tuple[str, str], list[float]] = defaultdict(list)
         stats_hashtags: dict[tuple[str, str], Counter] = defaultdict(Counter)
-        hashtag_counts: dict[str, Counter] = defaultdict(Counter)
+        hashtag_counts: dict[tuple[str, str], Counter] = defaultdict(Counter)
 
         for post in posts:
             platform = post.get("platform") or post.get("source") or "unknown"
@@ -124,7 +124,8 @@ class RealtimeViewWriter:
             stats[(platform, window_start)].append(float(enrichment.get("sentiment_score") or 0.0))
             tags = [tag.lower() for tag in post.get("hashtags") or []]
             stats_hashtags[(platform, window_start)].update(tags)
-            hashtag_counts[window_start].update(tags)
+            hashtag_counts[(platform, window_start)].update(tags)
+            hashtag_counts[("__all__", window_start)].update(tags)
 
             recent_key = f"rt:recent:{platform}"
             pipe.zadd(recent_key, {json.dumps(post, ensure_ascii=False, default=str): int(created.timestamp() * 1000)})
@@ -136,19 +137,22 @@ class RealtimeViewWriter:
             top_hashtag = ""
             if stats_hashtags[(platform, window_start)]:
                 top_hashtag = stats_hashtags[(platform, window_start)].most_common(1)[0][0]
+            sentiment_sum = sum(sentiments)
+            sentiment_count = len(sentiments)
+            pipe.hincrby(key, "post_count", sentiment_count)
+            pipe.hincrbyfloat(key, "sentiment_sum", sentiment_sum)
+            pipe.hincrby(key, "sentiment_count", sentiment_count)
             pipe.hset(
                 key,
                 mapping={
-                    "post_count": len(sentiments),
-                    "avg_sentiment": sum(sentiments) / max(len(sentiments), 1),
                     "top_hashtag": top_hashtag,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
             pipe.expire(key, 7200)
 
-        for window_start, counts in hashtag_counts.items():
-            key = f"rt:hashtags:{window_start}"
+        for (platform, window_start), counts in hashtag_counts.items():
+            key = f"rt:hashtags:{platform}:{window_start}"
             if counts:
                 pipe.zincrby(key, 0, "__init__")
                 for tag, count in counts.items():

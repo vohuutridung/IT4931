@@ -26,6 +26,7 @@ def slack_failure_callback(context):
 
 
 RAW_DATA_MARKER_VARIABLE = "social_lambda_latest_raw_object"
+SPARK_MASTER = os.getenv("AIRFLOW_SPARK_MASTER", "local[2]")
 
 
 def _s3_client():
@@ -92,7 +93,7 @@ with DAG(
             conn_id=os.getenv("SPARK_CONN_ID", "spark_default"),
             env_vars={
                 "PYTHONPATH": "/opt/social_pipeline",
-                "SPARK_MASTER": "local[2]",
+                "SPARK_MASTER": SPARK_MASTER,
             },
         )
     else:
@@ -104,7 +105,7 @@ with DAG(
     refresh_serving_layer = BashOperator(
         task_id="refresh_serving_layer",
         bash_command=(
-            "export PYTHONPATH=/opt/social_pipeline SPARK_MASTER=local[2] && "
+            f"export PYTHONPATH=/opt/social_pipeline SPARK_MASTER='{SPARK_MASTER}' && "
             "cd /opt/social_pipeline && "
             "python -m serving.es_indexer --ensure && "
             "spark-submit batch/index_batch_views.py"

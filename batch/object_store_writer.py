@@ -19,10 +19,10 @@ import pyarrow.parquet as pq
 from confluent_kafka import Consumer, KafkaError
 
 from config.settings import (
+    CONSUMER_FLUSH_SIZE,
     CONSUMER_FLUSH_INTERVAL,
     KAFKA_ALL_SOURCE_TOPICS,
     KAFKA_BOOTSTRAP_SERVERS,
-    KAFKA_TOPIC_ENRICHED,
     MAX_RETRIES,
     RETRY_BACKOFF_BASE,
     S3_ACCESS_KEY,
@@ -54,10 +54,6 @@ SCHEMA = pa.schema([
     pa.field("comments", pa.int64()),
     pa.field("shares", pa.int64()),
     pa.field("views", pa.int64()),
-    pa.field("sentiment_score", pa.float64()),
-    pa.field("sentiment_label", pa.string()),
-    pa.field("keywords", pa.list_(pa.string())),
-    pa.field("language", pa.string()),
     pa.field("raw_json", pa.string()),
 ])
 
@@ -99,7 +95,6 @@ def flatten(record: dict) -> dict:
     metrics = record.get("metrics") or record.get("engagement") or {}
     created_at = _parse_timestamp(record.get("created_at"), record.get("event_time"))
     ingested_at = _parse_timestamp(record.get("ingested_at"), record.get("ingest_time"))
-    enrichment = record.get("enrichment") or {}
     return {
         "post_id": str(record.get("post_id") or ""),
         "platform": str(record.get("platform") or record.get("source") or ""),
@@ -116,10 +111,6 @@ def flatten(record: dict) -> dict:
         "comments": _non_negative_int(metrics.get("comments")),
         "shares": _non_negative_int(metrics.get("shares")),
         "views": _non_negative_int(metrics.get("views", metrics.get("video_views"))),
-        "sentiment_score": float(enrichment["sentiment_score"]) if "sentiment_score" in enrichment else None,
-        "sentiment_label": str(enrichment.get("sentiment_label") or "neutral"),
-        "keywords": _string_list(enrichment.get("keywords")),
-        "language": str(enrichment.get("language") or "en"),
         "raw_json": json.dumps(record, ensure_ascii=False, default=str),
     }
 
@@ -216,7 +207,7 @@ def run() -> None:
     buffers: dict[tuple[str, int, int, int], list[dict]] = defaultdict(list)
     last_flush = time.monotonic()
     total = 0
-    flush_size = int(os.getenv("CONSUMER_FLUSH_SIZE", "500"))
+    flush_size = CONSUMER_FLUSH_SIZE
 
     try:
         while RUNNING:

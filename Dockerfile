@@ -1,16 +1,32 @@
-FROM python:3.10-slim
+FROM python:3.11-slim AS builder
+
+ARG REQUIREMENTS_FILE=requirements.runtime.txt
 
 # ── System deps ───────────────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc \
         librdkafka-dev \
-        curl \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python deps ───────────────────────────────────────────────────────────────
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements*.txt ./
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r "${REQUIREMENTS_FILE}"
+
+FROM python:3.11-slim
+
+ARG REQUIREMENTS_FILE=requirements.runtime.txt
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        librdkafka1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements*.txt ./
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir --no-index --find-links=/wheels -r "${REQUIREMENTS_FILE}" \
+    && rm -rf /wheels
 
 # ── App code ──────────────────────────────────────────────────────────────────
 COPY ingestion/  ingestion/

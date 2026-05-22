@@ -20,6 +20,12 @@ class DummyRedis:
     def hset(self, *args, **kwargs):
         self.commands.append(("hset", args, kwargs))
 
+    def hincrby(self, *args, **kwargs):
+        self.commands.append(("hincrby", args, kwargs))
+
+    def hincrbyfloat(self, *args, **kwargs):
+        self.commands.append(("hincrbyfloat", args, kwargs))
+
     def zincrby(self, *args, **kwargs):
         self.commands.append(("zincrby", args, kwargs))
 
@@ -45,5 +51,7 @@ def test_write_redis_realtime_views():
         ]
     )
     command_names = [cmd[0] for cmd in writer.redis.commands]
+    assert "hincrby" in command_names
+    assert "hincrbyfloat" in command_names
     assert "hset" in command_names
     assert "zadd" in command_names

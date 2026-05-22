@@ -740,6 +740,7 @@
       async function loadAll() {
         const platform = els.platform.value;
         const limit = els.limit.value;
+        const historyStart = '2023-01-01T00:00:00Z';
         els.refreshBtn.disabled = true;
         setStatus('', 'Loading');
         try {
@@ -747,8 +748,8 @@
             getJson('/health'),
             getJson('/api/v1/stats/realtime' + qs({ platform })),
             getJson('/api/v1/hashtags/top' + qs({ platform, top_n: 12 })),
-            getJson('/api/v1/posts' + qs({ platform, limit, start: '2023-01-01T00:00:00Z' })),
-            getJson('/api/v1/sentiment/trend' + qs({ platform }))
+            getJson('/api/v1/posts' + qs({ platform, limit, start: historyStart })),
+            getJson('/api/v1/sentiment/trend' + qs({ platform, start: historyStart }))
           ]);
 
           const stats = normalizeStats(statsPayload.stats || []);

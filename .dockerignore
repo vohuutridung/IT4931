@@ -1,0 +1,76 @@
+.git
+.gitignore
+.gitattributes
+
+# Python/local tooling
+.venv
+venv
+env
+ENV
+__pycache__
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.tox
+.nox
+htmlcov
+.coverage
+.coverage.*
+junit*.xml
+test-results
+
+# Secrets/local config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets
+.secrets
+credentials.json
+
+# Runtime output
+logs
+airflow/logs
+spark-warehouse
+metastore_db
+derby.log
+spark-checkpoints
+spark_checkpoints
+checkpoint
+checkpoints
+_spark_metadata
+processed_dates.json
+
+# Large/generated data. Sample data is mounted into replay containers, not copied.
+data
+*.parquet
+*.snappy.parquet
+*.delta
+*.orc
+*.avro
+*.jsonl
+*.ndjson
+
+# Editor/OS
+.idea
+.vscode
+*.code-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Project files not needed by Docker image builds
+tests
+dashboard
+monitoring
+README.md
+LICENSE

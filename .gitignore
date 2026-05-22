@@ -113,8 +113,7 @@ Desktop.ini
 
 # Environment files  (giữ lại .env.example để làm template)
 .env
-.env.local
-.env.*.local
+.env.*
 !.env.example
 
 # Certificates & keys
@@ -127,7 +126,12 @@ Desktop.ini
 # Local overrides
 config.local.yml
 secrets.yml
+secrets/
+.secrets/
 credentials.json
+*.secret
+*.secrets
+*.token
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -176,6 +180,10 @@ ivy2/
 *.parquet
 *.snappy.parquet
 *.delta
+*.orc
+*.avro
+*.jsonl
+*.ndjson
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -225,6 +233,13 @@ docker-compose.local.yml
 *.bak
 *.swp
 *.orig
+*.pid
+*.seed
+*.sqlite
+*.sqlite3
+*.db
+.cache/
+.hypothesis/
 
 # ETL state tracker (được mount qua Docker volume — không cần commit)
 processed_dates.json
@@ -237,7 +252,9 @@ processed_dates.json
 target/
 *.class
 *.jar
-!spark/jars/          # nếu có thư mục jars custom — cần giữ lại
+
+# Nếu sau này có custom Spark JARs cần commit, đặt trong spark/jars/README.md
+# rồi unignore cụ thể từng file cần thiết thay vì commit toàn bộ *.jar.
 
 #  EXCLUDED CONTENT
 # ══════════════════════════════════════════════════════════════════════════════

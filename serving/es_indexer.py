@@ -27,7 +27,8 @@ class ElasticsearchIndexer:
 
     def post_json(self, path: str, payload: dict | str, *, ndjson: bool = False) -> None:
         headers = {"Content-Type": "application/x-ndjson"} if ndjson else None
-        response = requests.post(f"{self.host}/{path.lstrip('/')}", data=payload if ndjson else None, json=None if ndjson else payload, headers=headers, timeout=30)
+        data = payload.encode("utf-8") if ndjson and isinstance(payload, str) else payload if ndjson else None
+        response = requests.post(f"{self.host}/{path.lstrip('/')}", data=data, json=None if ndjson else payload, headers=headers, timeout=30)
         response.raise_for_status()
 
     def ensure_indices(self) -> None:
@@ -87,7 +88,7 @@ class ElasticsearchIndexer:
         payload = self._bulk_payload(index, docs)
         response = requests.post(
             f"{self.host}/_bulk",
-            data=payload,
+            data=payload.encode("utf-8"),
             headers={"Content-Type": "application/x-ndjson"},
             timeout=30,
         )

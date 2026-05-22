@@ -71,5 +71,5 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # ── Batch Consumer tuning ─────────────────────────────────────────────────────
 # Flush khi đạt N records HOẶC sau M giây, tùy cái nào đến trước
-CONSUMER_FLUSH_SIZE     = int(os.getenv("CONSUMER_FLUSH_SIZE",     "5000"))  # Increased to reduce small files
+CONSUMER_FLUSH_SIZE     = int(os.getenv("CONSUMER_FLUSH_SIZE",     "500"))
 CONSUMER_FLUSH_INTERVAL = int(os.getenv("CONSUMER_FLUSH_INTERVAL", "60"))

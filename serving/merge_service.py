@@ -27,11 +27,14 @@ class ServeQuery:
             logger.warning("Redis client could not be initialized: %s", exc)
             self._redis = None
 
-    def _search(self, index: str, query: dict, size: int = 100) -> list[dict]:
+    def _search(self, index: str, query: dict, size: int = 100, sort: list[dict] | None = None) -> list[dict]:
+        payload: dict[str, Any] = {"query": query, "size": size}
+        if sort:
+            payload["sort"] = sort
         try:
             response = requests.post(
                 f"{self.es_host}/{index}/_search",
-                json={"query": query, "size": size},
+                json=payload,
                 timeout=3,
             )
             response.raise_for_status()
@@ -57,6 +60,38 @@ class ServeQuery:
             return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
         except Exception:
             return datetime.min.replace(tzinfo=timezone.utc)
+
+    @classmethod
+    def _parse_time_bucket(cls, value: Any) -> datetime | None:
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+        except Exception:
+            return None
+
+    @classmethod
+    def _bucket_key(cls, row: dict, granularity: str) -> str | None:
+        ts = cls._parse_time_bucket(row.get("event_hour") or row.get("event_ts"))
+        if ts is None:
+            return None
+        if granularity == "day":
+            ts = ts.replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            ts = ts.replace(minute=0, second=0, microsecond=0)
+        return ts.isoformat()
+
+    @staticmethod
+    def _parse_redis_window_key(key: str, prefix: str) -> datetime | None:
+        if not key.startswith(prefix):
+            return None
+        try:
+            value = key[len(prefix):]
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except Exception:
+            return None
 
     @classmethod
     def _dedupe(cls, posts: list[dict], limit: int) -> list[dict]:
@@ -93,12 +128,13 @@ class ServeQuery:
         if platform:
             filters.append({"term": {"platform": platform}})
         query = {"bool": {"filter": filters}}
+        sort = [{"event_ts": {"order": "desc", "missing": "_last"}}]
 
         posts: list[dict] = []
         if end >= cutoff:
-            posts.extend(self._search("social_realtime_views", query, limit))
+            posts.extend(self._search("social_realtime_views", query, limit, sort=sort))
         if start < cutoff:
-            posts.extend(self._search("social_batch_views", query, limit))
+            posts.extend(self._search("social_batch_views", query, limit, sort=sort))
         return self._dedupe(posts, limit)
 
     def query_sentiment_trend(self, platform: str | None, granularity: str, start_dt: datetime | str, end_dt: datetime | str) -> list[dict]:
@@ -106,7 +142,10 @@ class ServeQuery:
         end = self._parse_dt(end_dt)
 
         # 1. Fetch from batch views
-        filters: list[dict[str, Any]] = [{"term": {"view": "sentiment_time_series"}}]
+        filters: list[dict[str, Any]] = [
+            {"term": {"view": "sentiment_time_series"}},
+            {"range": {"event_hour": {"gte": start.isoformat(), "lte": end.isoformat()}}},
+        ]
         if platform:
             filters.append({"term": {"platform": platform}})
         batch_results = self._search("social_batch_views", {"bool": {"filter": filters}}, 1000)
@@ -153,15 +192,39 @@ class ServeQuery:
         except requests.RequestException as exc:
             logger.error("Failed to fetch realtime sentiment aggregation from Elasticsearch: %s", exc)
 
-        # 3. Merge: Realtime overrides Batch for the same time bucket
-        merged = {r.get("event_hour"): r for r in batch_results if r.get("event_hour")}
-        merged.update({r.get("event_hour"): r for r in rt_results if r.get("event_hour")})
-        
-        return list(merged.values())
+        # 3. Merge by normalized time bucket. Realtime overrides batch only for
+        # the same platform bucket, which avoids duplicate points like
+        # "2026-05-21T22:00:00+00:00" and "2026-05-21T22:00:00.000Z".
+        merged: dict[tuple[str, str], dict] = {}
+        for row in batch_results:
+            bucket = self._bucket_key(row, granularity)
+            if not bucket:
+                continue
+            row["event_hour"] = bucket
+            key = (str(platform or row.get("platform") or "all"), bucket) if platform else ("all", bucket)
+            merged[key] = row
+
+        for row in rt_results:
+            bucket = self._bucket_key(row, granularity)
+            if not bucket:
+                continue
+            row["event_hour"] = bucket
+            key = (str(platform or row.get("platform") or "all"), bucket) if platform else ("all", bucket)
+            merged[key] = row
+
+        return sorted(merged.values(), key=lambda row: str(row.get("event_hour") or ""))
 
     def query_top_hashtags(self, platform: str | None, window_hours: int, top_n: int) -> list[dict]:
         if self._redis:
-            keys = self._redis.keys("rt:hashtags:*")
+            now = datetime.now(timezone.utc)
+            cutoff = now - timedelta(hours=window_hours)
+            redis_platform = platform or "__all__"
+            prefix = f"rt:hashtags:{redis_platform}:"
+            keys = [
+                key for key in self._redis.keys(f"{prefix}*")
+                if (window_start := self._parse_redis_window_key(key, prefix)) is not None
+                and cutoff <= window_start <= now
+            ]
             counts: dict[str, float] = {}
             for key in keys:
                 for tag, score in self._redis.zrevrange(key, 0, top_n - 1, withscores=True):
@@ -180,4 +243,14 @@ class ServeQuery:
         if not self._redis:
             return {"platform": platform, "stats": []}
         pattern = f"rt:stats:{platform}:*" if platform else "rt:stats:*"
-        return {"platform": platform, "stats": [self._redis.hgetall(key) | {"key": key} for key in self._redis.keys(pattern)]}
+        stats = []
+        for key in self._redis.keys(pattern):
+            row = self._redis.hgetall(key)
+            try:
+                sentiment_sum = float(row.get("sentiment_sum") or 0.0)
+                sentiment_count = int(float(row.get("sentiment_count") or 0))
+                row["avg_sentiment"] = sentiment_sum / sentiment_count if sentiment_count else 0.0
+            except (TypeError, ValueError):
+                row["avg_sentiment"] = 0.0
+            stats.append(row | {"key": key})
+        return {"platform": platform, "stats": stats}
