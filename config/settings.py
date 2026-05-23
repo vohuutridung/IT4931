@@ -29,6 +29,7 @@ if ENV == "production" and ("minioadmin" in S3_ACCESS_KEY or "minioadmin" in S3_
 S3_REGION = os.getenv("S3_REGION", "us-east-1")
 S3_PATH_STYLE_ACCESS = os.getenv("S3_PATH_STYLE_ACCESS", "true")
 STORAGE_RAW_BASE = os.getenv("STORAGE_RAW_BASE", f"s3a://{S3_BUCKET}/data/raw")
+STORAGE_DISCARDED_BASE = os.getenv("STORAGE_DISCARDED_BASE", f"s3a://{S3_BUCKET}/data/discarded")
 STORAGE_BATCH_VIEWS_BASE = os.getenv(
     "STORAGE_BATCH_VIEWS_BASE",
     f"s3a://{S3_BUCKET}/data/batch_views",

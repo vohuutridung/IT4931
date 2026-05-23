@@ -54,4 +54,3 @@ def test_write_redis_realtime_views():
     assert "hincrby" in command_names
     assert "hincrbyfloat" in command_names
     assert "hset" in command_names
-    assert "zadd" in command_names

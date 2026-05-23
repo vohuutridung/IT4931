@@ -53,7 +53,7 @@ POSITIVE = {
     "like", "love", "positive", "profit", "profits", "recover", "recovery", "safe",
     "strong", "support", "useful", "win", "winner",
     "ổn", "tốt", "hay", "vui", "thích", "yêu", "đẹp", "xinh", "đỉnh", "tuyệt",
-    "tuyệtvời", "hạnhphúc", "ủnghộ", "lãi", "tăng", "mạnh", "khỏe", "an toàn",
+    "tuyệt vời", "hạnh phúc", "ủng hộ", "lãi", "tăng", "mạnh", "khỏe", "an toàn",
 }
 NEGATIVE = {
     "angry", "awful", "bad", "bearish", "beware", "catastrophic", "concern", "crack",
@@ -86,17 +86,21 @@ def _lexicon_sentiment(text: str) -> float:
     tokens = re.findall(r"[a-z0-9_]+", normalized)
     token_count = max(len(tokens), 1)
     token_set = set(tokens)
-    positive = len(token_set & {_normalize_text(word) for word in POSITIVE if " " not in word})
-    negative = len(token_set & {_normalize_text(word) for word in NEGATIVE if " " not in word})
+    
+    positive = len(token_set & {re.sub(r"[^a-z0-9_]+", "", _normalize_text(word)) for word in POSITIVE if " " not in word})
+    negative = len(token_set & {re.sub(r"[^a-z0-9_]+", "", _normalize_text(word)) for word in NEGATIVE if " " not in word})
 
+    normalized_clean = f" {re.sub(r'[^a-z0-9_]+', ' ', normalized)} "
     for phrase in POSITIVE:
-        normalized_phrase = _normalize_text(phrase)
-        if " " in phrase and normalized_phrase in normalized:
-            positive += 1
+        if " " in phrase:
+            normalized_phrase = re.sub(r"[^a-z0-9_]+", " ", _normalize_text(phrase)).strip()
+            if f" {normalized_phrase} " in normalized_clean:
+                positive += 1
     for phrase in NEGATIVE:
-        normalized_phrase = _normalize_text(phrase)
-        if " " in phrase and normalized_phrase in normalized:
-            negative += 1
+        if " " in phrase:
+            normalized_phrase = re.sub(r"[^a-z0-9_]+", " ", _normalize_text(phrase)).strip()
+            if f" {normalized_phrase} " in normalized_clean:
+                negative += 1
 
     positive += sum(text.count(item) for item in POSITIVE_EMOJI)
     negative += sum(text.count(item) for item in NEGATIVE_EMOJI)

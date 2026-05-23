@@ -214,14 +214,45 @@ class ServeQuery:
 
         return sorted(merged.values(), key=lambda row: str(row.get("event_hour") or ""))
 
-    def query_top_hashtags(self, platform: str | None, window_hours: int, top_n: int) -> list[dict]:
-        if self._redis:
+    def query_hashtag_weeks(self, platform: str | None = None) -> list[str]:
+        filters: list[dict[str, Any]] = [{"term": {"view": "top_hashtags_weekly"}}]
+        if platform:
+            filters.append({"term": {"platform": platform}})
+        
+        payload = {
+            "query": {"bool": {"filter": filters}},
+            "size": 0,
+            "aggs": {
+                "weeks": {
+                    "terms": {
+                        "field": "event_week",
+                        "size": 1000,
+                        "order": {"_key": "desc"}
+                    }
+                }
+            }
+        }
+        try:
+            response = requests.post(
+                f"{self.es_host}/social_batch_views/_search",
+                json=payload,
+                timeout=3,
+            )
+            response.raise_for_status()
+            buckets = response.json().get("aggregations", {}).get("weeks", {}).get("buckets", [])
+            return [b.get("key_as_string") or str(b.get("key")) for b in buckets if b.get("key_as_string") or b.get("key") is not None]
+        except Exception as exc:
+            logger.error("Failed to query hashtag weeks: %s", exc)
+            return []
+
+    def query_top_hashtags(self, platform: str | None, window_hours: int, top_n: int, week: str | None = None) -> list[dict]:
+        if not week and self._redis:
             now = datetime.now(timezone.utc)
             cutoff = now - timedelta(hours=window_hours)
             redis_platform = platform or "__all__"
             prefix = f"rt:hashtags:{redis_platform}:"
             keys = [
-                key for key in self._redis.keys(f"{prefix}*")
+                key for key in self._redis.scan_iter(f"{prefix}*")
                 if (window_start := self._parse_redis_window_key(key, prefix)) is not None
                 and cutoff <= window_start <= now
             ]
@@ -231,20 +262,44 @@ class ServeQuery:
                     counts[tag] = counts.get(tag, 0.0) + float(score)
             if counts:
                 return [
-                    {"hashtag": tag, "frequency": score}
+                    {"hashtag": tag, "frequency": score, "week": "realtime"}
                     for tag, score in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:top_n]
                 ]
+        
         filters: list[dict[str, Any]] = [{"term": {"view": "top_hashtags_weekly"}}]
         if platform:
             filters.append({"term": {"platform": platform}})
-        return self._search("social_batch_views", {"bool": {"filter": filters}}, top_n)
+        
+        target_week = week
+        if not target_week:
+            # Fallback to the latest week from ES
+            weeks = self.query_hashtag_weeks(platform)
+            if weeks:
+                target_week = weeks[0]
+        
+        if target_week:
+            filters.append({"term": {"event_week": target_week}})
+            sort = [{"frequency": {"order": "desc"}}, {"event_week": {"order": "desc"}}]
+            raw_results = self._search("social_batch_views", {"bool": {"filter": filters}}, size=1000, sort=sort)
+            
+            counts: dict[str, int] = {}
+            for row in raw_results:
+                tag = row.get("hashtag")
+                if tag:
+                    counts[tag] = counts.get(tag, 0) + int(row.get("frequency") or 0)
+            return [
+                {"hashtag": tag, "frequency": freq, "week": target_week}
+                for tag, freq in sorted(counts.items(), key=lambda x: x[1], reverse=True)[:top_n]
+            ]
+        
+        return []
 
     def query_realtime_stats(self, platform: str | None = None) -> dict:
         if not self._redis:
             return {"platform": platform, "stats": []}
         pattern = f"rt:stats:{platform}:*" if platform else "rt:stats:*"
         stats = []
-        for key in self._redis.keys(pattern):
+        for key in self._redis.scan_iter(pattern):
             row = self._redis.hgetall(key)
             try:
                 sentiment_sum = float(row.get("sentiment_sum") or 0.0)

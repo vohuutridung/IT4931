@@ -32,6 +32,7 @@ from config.settings import (
     S3_SECRET_KEY,
     S3_WRITE_TIMEOUT,
     STORAGE_RAW_BASE,
+    STORAGE_DISCARDED_BASE,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s - %(message)s")
@@ -159,9 +160,9 @@ def _write_parquet_bytes(rows: list[dict]) -> bytes:
     return buf.getvalue()
 
 
-def write_rows(client, rows: list[dict], key: tuple[str, int, int, int]) -> None:
+def write_rows(client, rows: list[dict], key: tuple[str, int, int, int], storage_base: str) -> None:
     platform, year, month, day = key
-    bucket, prefix = parse_object_uri(STORAGE_RAW_BASE)
+    bucket, prefix = parse_object_uri(storage_base)
     out_prefix = f"{prefix.rstrip('/')}/{platform}/year={year:04d}/month={month:02d}/day={day:02d}"
     filename = f"part-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}.parquet"
     object_key = f"{out_prefix}/{filename}"
@@ -188,7 +189,12 @@ def flush(client, buffers: dict[tuple[str, int, int, int], list[dict]]) -> int:
     count = 0
     for key, rows in list(buffers.items()):
         if rows:
-            write_rows(client, rows, key)
+            platform, year, month, day = key
+            if year == 2026 and 1 <= month <= 4:
+                storage_base = STORAGE_RAW_BASE
+            else:
+                storage_base = STORAGE_DISCARDED_BASE
+            write_rows(client, rows, key, storage_base)
             count += len(rows)
             del buffers[key]
     return count

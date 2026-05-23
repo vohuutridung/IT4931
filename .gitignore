@@ -101,6 +101,7 @@ Desktop.ini
 
 # Codex / Cursor / AI tools
 .codex
+.codegraph/
 .cursorignore
 .cursorindexingignore
 .aider*

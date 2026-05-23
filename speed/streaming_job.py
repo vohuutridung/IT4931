@@ -120,15 +120,21 @@ def main() -> None:
         raw.select(F.col("value").cast("string").alias("json_value"))
         .select(F.from_json("json_value", POST_SCHEMA).alias("post"), "json_value")
     )
+    ts = F.to_timestamp(F.col("post.created_at"))
     good = parsed.filter(
         F.col("post.post_id").isNotNull()
         & F.col("post.platform").isNotNull()
         & F.col("post.created_at").isNotNull()
+        & (ts >= F.lit("2026-01-01 00:00:00"))
+        & (ts <= F.lit("2026-04-30 23:59:59"))
     ).select("post.*")
     bad = parsed.filter(
         F.col("post.post_id").isNull()
         | F.col("post.platform").isNull()
         | F.col("post.created_at").isNull()
+        | ts.isNull()
+        | (ts < F.lit("2026-01-01 00:00:00"))
+        | (ts > F.lit("2026-04-30 23:59:59"))
     )
 
     (

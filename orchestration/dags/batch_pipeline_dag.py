@@ -5,8 +5,7 @@ from datetime import datetime
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
-from airflow.operators.python import PythonOperator
-from airflow.sensors.python import PythonSensor
+from airflow.operators.python import ShortCircuitOperator, PythonOperator
 from airflow.models import Variable
 
 try:
@@ -78,12 +77,9 @@ with DAG(
     catchup=False,
     on_failure_callback=slack_failure_callback,
 ) as dag:
-    check_new_data = PythonSensor(
+    check_new_data = ShortCircuitOperator(
         task_id="check_new_data",
         python_callable=has_new_raw_data,
-        poke_interval=60,
-        timeout=30 * 60,
-        mode="reschedule",
     )
 
     if SparkSubmitOperator:

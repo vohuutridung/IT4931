@@ -128,6 +128,8 @@ def test_normalise_emits_sop_canonical_schema_for_reddit():
     assert post["comments"][0]["text"] == "Great update"
     assert re.fullmatch(r"[0-9a-f]{64}", post["author_id"])
     assert post["author_id"] != raw["author_fullname"]
+    assert re.fullmatch(r"[0-9a-f]{64}", post["comments"][0]["author_id"])
+    assert post["comments"][0]["author_id"] != raw["comments"][0]["author_fullname"]
 
 
 def test_to_sop_schema_requires_event_time():

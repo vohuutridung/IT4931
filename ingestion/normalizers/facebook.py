@@ -79,15 +79,15 @@ def _coalesce_int(*values: Any) -> int:
 
 def _parse_timestamp(value: Any) -> Optional[int]:
     """
-    Parse any timestamp into UTC milliseconds, truncated to the minute (giây bị bỏ).
-    Accepts: ISO-8601 string | unix-seconds float | unix-ms float.
+    Parse any timestamp into UTC milliseconds.
+    Accepts: ISO-8601 string (with/without Z) | unix-seconds float | unix-ms float.
     Returns None on failure so the caller decides the fallback.
     """
     if value is None:
         return None
     try:
         if isinstance(value, str):
-            dt = datetime.fromisoformat(value)
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
         else:
@@ -413,8 +413,8 @@ def normalize(raw: dict) -> Optional[Dict[str, Any]]:
 
     # ── Author ────────────────────────────────────────────
     author_raw = raw.get("author") or {}
-    author_id = author_raw.get("id")
-    author_name = author_raw.get("name")
+    author_id = str(author_raw.get("id") or "unknown")
+    author_name = str(author_raw.get("name") or "unknown")
 
     # ── Content ───────────────────────────────────────────
     content = _clean_text(raw.get("content") or "")
@@ -423,14 +423,20 @@ def normalize(raw: dict) -> Optional[Dict[str, Any]]:
     url = raw.get("url")
 
     # ── Hashtags ──────────────────────────────────────────
-    hashtags = []  # Facebook may not have explicit hashtags in content
+    hashtags = re.findall(r"#([\wÀ-ỹ]+)", content or "")
+    hashtags = list(dict.fromkeys(h.lower() for h in hashtags))
 
     # ── Engagement ────────────────────────────────────────
+    likes = _coalesce_int(raw.get("reactionsCount"), raw.get("likes"))
+    comments_count = _coalesce_int(raw.get("commentCount"))
+    shares = _coalesce_int(raw.get("shareCount"))
+    score = likes + 2 * comments_count + 3 * shares
+
     engagement = {
-        "likes": _coalesce_int(raw.get("reactionsCount"), raw.get("likes")),
-        "comments": _coalesce_int(raw.get("commentCount")),
-        "shares": _coalesce_int(raw.get("shareCount")),
-        "score": 0,  # Facebook doesn't have score like Reddit
+        "likes": likes,
+        "comments": comments_count,
+        "shares": shares,
+        "score": score,
         "video_views": 0,  # Not in sample
         "comments_normalized_count": 0,  # Will set after normalizing comments
     }

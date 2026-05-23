@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,6 +18,17 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_cache_control_header(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/v1/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 service = ServeQuery()
 
 
@@ -71,12 +82,20 @@ def top_hashtags(
     platform: str | None = None,
     window_hours: int = Query(24),
     top_n: int = Query(20, ge=1, le=100),
+    week: str | None = Query(None),
 ) -> dict:
     if platform and platform not in {"reddit", "facebook", "instagram"}:
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
     if window_hours not in {1, 6, 24, 168}:
         raise HTTPException(status_code=400, detail="window_hours must be one of 1, 6, 24, 168")
-    return {"data": service.query_top_hashtags(platform, window_hours, top_n)}
+    return {"data": service.query_top_hashtags(platform, window_hours, top_n, week)}
+
+
+@app.get("/api/v1/hashtags/weeks")
+def hashtag_weeks(platform: str | None = None) -> dict:
+    if platform and platform not in {"reddit", "facebook", "instagram"}:
+        raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
+    return {"data": service.query_hashtag_weeks(platform)}
 
 
 @app.get("/api/v1/stats/realtime")

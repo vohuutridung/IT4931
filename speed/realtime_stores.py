@@ -127,10 +127,7 @@ class RealtimeViewWriter:
             hashtag_counts[(platform, window_start)].update(tags)
             hashtag_counts[("__all__", window_start)].update(tags)
 
-            recent_key = f"rt:recent:{platform}"
-            pipe.zadd(recent_key, {json.dumps(post, ensure_ascii=False, default=str): int(created.timestamp() * 1000)})
-            pipe.zremrangebyrank(recent_key, 0, -1001)
-            pipe.expire(recent_key, 7200)
+
 
         for (platform, window_start), sentiments in stats.items():
             key = f"rt:stats:{platform}:{window_start}"

@@ -8,6 +8,7 @@ x-common-env: &common-env
   S3_REGION: ${S3_REGION:-us-east-1}
   S3_PATH_STYLE_ACCESS: "true"
   STORAGE_RAW_BASE: s3a://${S3_BUCKET:-social-lake}/data/raw
+  STORAGE_DISCARDED_BASE: s3a://${S3_BUCKET:-social-lake}/data/discarded
   STORAGE_BATCH_VIEWS_BASE: s3a://${S3_BUCKET:-social-lake}/data/batch_views
   REDIS_HOST: redis
   REDIS_PORT: 6379

@@ -4,172 +4,332 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Social Lambda Dashboard</title>
+    <!-- Modern Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
     <style>
       :root {
-        color-scheme: light;
-        --bg: #f4f6f8;
+        --bg: #f8fafc;
         --panel: #ffffff;
-        --panel-soft: #f9fafb;
-        --border: #d8dee8;
-        --border-strong: #aab4c2;
-        --text: #17202a;
-        --muted: #667085;
-        --blue: #2563eb;
-        --green: #0f8a5f;
-        --red: #c24132;
-        --amber: #b7791f;
-        --ink: #27364a;
-        --shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+        --panel-soft: #f1f5f9;
+        --panel-border: #e2e8f0;
+        --text: #0f172a;
+        --text-muted: #64748b;
+        --primary: #6366f1;
+        --primary-hover: #4f46e5;
+        --success: #10b981;
+        --danger: #ef4444;
+        --warning: #f59e0b;
+        --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+        --shadow-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+        --accent: #e0e7ff;
+        --badge-bg: #f1f5f9;
+        --badge-text: #334155;
       }
 
-      * { box-sizing: border-box; }
+      body.dark-mode {
+        --bg: #0f172a;
+        --panel: #1e293b;
+        --panel-soft: #0f172a;
+        --panel-border: #334155;
+        --text: #f8fafc;
+        --text-muted: #94a3b8;
+        --primary: #818cf8;
+        --primary-hover: #6366f1;
+        --success: #34d399;
+        --danger: #f87171;
+        --warning: #fbbf24;
+        --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+        --shadow-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+        --accent: #312e81;
+        --badge-bg: #1e293b;
+        --badge-text: #cbd5e1;
+      }
+
+      * { 
+        box-sizing: border-box; 
+        transition: background-color 0.2s ease, border-color 0.2s ease;
+      }
 
       body {
         margin: 0;
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
         background: var(--bg);
         color: var(--text);
+        line-height: 1.5;
       }
 
       header {
         position: sticky;
         top: 0;
-        z-index: 5;
+        z-index: 50;
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
-        min-height: 64px;
-        padding: 12px 24px;
-        background: rgba(255, 255, 255, 0.96);
-        border-bottom: 1px solid var(--border);
-        backdrop-filter: blur(8px);
+        min-height: 72px;
+        padding: 12px 32px;
+        background: rgba(var(--panel), 0.85);
+        border-bottom: 1px solid var(--panel-border);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+
+      /* Apply background variables directly to blurred header context */
+      body:not(.dark-mode) header {
+        background: rgba(255, 255, 255, 0.85);
+      }
+      body.dark-mode header {
+        background: rgba(30, 41, 59, 0.85);
       }
 
       h1 {
         margin: 0;
-        font-size: 20px;
-        line-height: 1.2;
-        font-weight: 700;
-        letter-spacing: 0;
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        background: linear-gradient(135deg, var(--primary), var(--success));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
       }
 
       .status-line {
         display: flex;
         align-items: center;
-        gap: 10px;
-        color: var(--muted);
+        gap: 8px;
+        color: var(--text-muted);
         font-size: 13px;
+        font-weight: 500;
         white-space: nowrap;
       }
 
       .dot {
-        width: 9px;
-        height: 9px;
+        width: 8px;
+        height: 8px;
         border-radius: 50%;
-        background: var(--amber);
+        background: var(--warning);
+        position: relative;
       }
 
-      .dot.ok { background: var(--green); }
-      .dot.err { background: var(--red); }
+      .dot::after {
+        content: '';
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        background: inherit;
+        animation: pulse 1.8s infinite;
+        opacity: 0.4;
+      }
+
+      @keyframes pulse {
+        0% { transform: scale(1); opacity: 0.6; }
+        100% { transform: scale(2.8); opacity: 0; }
+      }
+
+      .dot.ok { background: var(--success); }
+      .dot.err { background: var(--danger); }
+      .dot.err::after { animation: none; }
 
       .toolbar {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 12px;
         flex-wrap: wrap;
+      }
+
+      .auto-refresh-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--panel-soft);
+        border: 1px solid var(--panel-border);
+        padding: 4px 10px;
+        border-radius: 8px;
+        height: 38px;
+      }
+
+      .progress-container {
+        width: 50px;
+        height: 4px;
+        background: var(--panel-border);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+
+      .progress-bar {
+        height: 100%;
+        width: 100%;
+        background: var(--primary);
+        border-radius: inherit;
+        transition: width 1s linear;
       }
 
       select,
       button {
-        height: 36px;
-        border: 1px solid var(--border-strong);
-        border-radius: 6px;
-        background: #fff;
+        height: 38px;
+        border: 1px solid var(--panel-border);
+        border-radius: 8px;
+        background: var(--panel);
         color: var(--text);
-        padding: 0 12px;
-        font: inherit;
+        padding: 0 14px;
+        font-family: inherit;
         font-size: 14px;
+        font-weight: 500;
+        outline: none;
+        cursor: pointer;
+        transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.1s ease;
+      }
+
+      select:hover, select:focus {
+        border-color: var(--primary);
       }
 
       button {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-width: 88px;
-        background: var(--ink);
-        border-color: var(--ink);
-        color: #fff;
-        cursor: pointer;
+        gap: 6px;
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #ffffff;
+        font-weight: 600;
+      }
+
+      button:hover {
+        background: var(--primary-hover);
+        border-color: var(--primary-hover);
+      }
+
+      button:active {
+        transform: scale(0.97);
+      }
+
+      button.btn-secondary {
+        background: var(--panel-soft);
+        border-color: var(--panel-border);
+        color: var(--text);
+      }
+
+      button.btn-secondary:hover {
+        background: var(--panel-border);
+      }
+
+      button.btn-secondary.paused {
+        opacity: 0.65;
+        border-style: dashed;
+      }
+
+      button.btn-icon {
+        width: 38px;
+        padding: 0;
+        background: var(--panel-soft);
+        border-color: var(--panel-border);
+        color: var(--text);
+      }
+
+      button.btn-icon:hover {
+        background: var(--panel-border);
       }
 
       button:disabled {
         cursor: wait;
-        opacity: 0.72;
+        opacity: 0.65;
       }
 
       main {
         width: min(1440px, 100%);
         margin: 0 auto;
-        padding: 20px 24px 28px;
+        padding: 24px 32px 40px;
       }
 
       .kpis {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 12px;
-        margin-bottom: 16px;
+        gap: 16px;
+        margin-bottom: 24px;
       }
 
       .kpi,
       .panel {
         background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 8px;
+        border: 1px solid var(--panel-border);
+        border-radius: 12px;
         box-shadow: var(--shadow);
+        transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+      }
+
+      .kpi:hover,
+      .panel:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-hover);
+        border-color: rgba(var(--primary), 0.4);
+      }
+      
+      body.dark-mode .kpi:hover,
+      body.dark-mode .panel:hover {
+        border-color: var(--primary);
       }
 
       .kpi {
-        min-height: 104px;
-        padding: 14px 16px;
+        min-height: 112px;
+        padding: 18px 20px;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
       }
 
-      .kpi-label,
-      .panel-title,
-      th {
-        color: var(--muted);
+      .kpi-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .kpi-label {
+        color: var(--text-muted);
         font-size: 12px;
         font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.06em;
+      }
+
+      .kpi-icon {
+        color: var(--primary);
+        opacity: 0.85;
       }
 
       .kpi-value {
-        font-size: 30px;
-        line-height: 1;
-        font-weight: 760;
-        letter-spacing: 0;
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 32px;
+        line-height: 1.1;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        margin: 8px 0 4px;
       }
 
       .kpi-note {
-        color: var(--muted);
+        color: var(--text-muted);
         font-size: 13px;
+        font-weight: 500;
         min-height: 18px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .grid {
         display: grid;
-        grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.85fr);
-        gap: 16px;
+        grid-template-columns: minmax(0, 1.45fr) minmax(380px, 0.85fr);
+        gap: 20px;
         align-items: start;
       }
 
       .stack {
         display: grid;
-        gap: 16px;
+        gap: 20px;
       }
 
       .panel {
@@ -182,18 +342,27 @@
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-        min-height: 48px;
-        padding: 14px 16px;
-        border-bottom: 1px solid var(--border);
+        min-height: 56px;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--panel-border);
+      }
+
+      .panel-title {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 15px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
       }
 
       .panel-body {
-        padding: 16px;
+        padding: 20px;
       }
 
       .chart-wrap {
         position: relative;
-        height: 300px;
+        height: 320px;
       }
 
       canvas {
@@ -204,15 +373,15 @@
 
       .bars {
         display: grid;
-        gap: 10px;
+        gap: 12px;
       }
 
       .bar-row {
         display: grid;
-        grid-template-columns: minmax(90px, 150px) minmax(0, 1fr) 54px;
+        grid-template-columns: minmax(100px, 150px) minmax(0, 1fr) 56px;
         align-items: center;
-        gap: 10px;
-        min-height: 28px;
+        gap: 12px;
+        min-height: 30px;
         font-size: 14px;
       }
 
@@ -221,26 +390,34 @@
         text-overflow: ellipsis;
         white-space: nowrap;
         color: var(--text);
+        font-weight: 600;
       }
 
       .bar-track {
-        height: 10px;
+        height: 8px;
         border-radius: 999px;
-        background: #e8edf4;
+        background: var(--panel-soft);
         overflow: hidden;
+        position: relative;
       }
 
       .bar-fill {
         height: 100%;
-        min-width: 2px;
+        min-width: 4px;
         border-radius: inherit;
-        background: var(--blue);
+        background: linear-gradient(90deg, var(--primary), var(--success));
+        transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
       }
 
       .bar-value {
         text-align: right;
-        color: var(--muted);
+        color: var(--text-muted);
+        font-weight: 600;
         font-variant-numeric: tabular-nums;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
       }
 
       table {
@@ -251,15 +428,28 @@
 
       th,
       td {
-        padding: 11px 12px;
-        border-bottom: 1px solid #e7ebf0;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--panel-border);
         text-align: left;
-        vertical-align: top;
+        vertical-align: middle;
+      }
+
+      th {
+        background: var(--panel-soft);
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
       }
 
       td {
         font-size: 14px;
-        line-height: 1.35;
+        line-height: 1.4;
+      }
+
+      tbody tr {
+        transition: background-color 0.15s ease;
       }
 
       tbody tr:hover {
@@ -271,44 +461,91 @@
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
+        font-weight: 500;
       }
 
       .metric {
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
+        font-weight: 600;
       }
 
       .badge {
         display: inline-flex;
         align-items: center;
-        min-height: 22px;
-        padding: 2px 8px;
-        border-radius: 999px;
-        background: #eef2f7;
-        color: #344054;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 3px 8px;
+        border-radius: 9999px;
+      }
+      
+      .badge.reddit {
+        background: rgba(255, 69, 0, 0.15);
+        color: #ff4500;
+      }
+      
+      .badge.facebook {
+        background: rgba(24, 119, 242, 0.15);
+        color: #1877f2;
+      }
+      
+      .badge.instagram {
+        background: rgba(225, 48, 108, 0.15);
+        color: #e1306c;
+      }
+      
+      .badge.other {
+        background: var(--badge-bg);
+        color: var(--badge-text);
+      }
+
+      .sentiment-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
         font-size: 12px;
-        font-weight: 650;
+        font-weight: 600;
+        padding: 3px 8px;
+        border-radius: 6px;
+      }
+      .sentiment-badge.positive {
+        background: rgba(16, 185, 129, 0.12);
+        color: #10b981;
+      }
+      .sentiment-badge.negative {
+        background: rgba(239, 68, 68, 0.12);
+        color: #ef4444;
+      }
+      .sentiment-badge.neutral {
+        background: rgba(245, 158, 11, 0.12);
+        color: #f59e0b;
       }
 
       .empty {
-        min-height: 140px;
+        min-height: 160px;
         display: grid;
         place-items: center;
-        color: var(--muted);
+        color: var(--text-muted);
         text-align: center;
         padding: 24px;
+        font-weight: 500;
       }
 
       .error {
-        color: var(--red);
+        color: var(--danger);
+        font-weight: 600;
       }
 
-      @media (max-width: 980px) {
+      @media (max-width: 1024px) {
         header {
-          align-items: flex-start;
-          flex-direction: column;
+          padding: 12px 20px;
         }
-
+        main {
+          padding: 20px 20px 32px;
+        }
         .kpis {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
@@ -319,10 +556,11 @@
       }
 
       @media (max-width: 640px) {
-        header,
-        main {
-          padding-left: 14px;
-          padding-right: 14px;
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 12px;
+          padding: 16px;
         }
 
         .kpis {
@@ -331,19 +569,25 @@
 
         .toolbar {
           width: 100%;
+          gap: 8px;
+        }
+
+        .auto-refresh-group {
+          flex: 1 1 100%;
+          justify-content: space-between;
         }
 
         select,
         button {
-          flex: 1 1 130px;
+          flex: 1 1 120px;
+        }
+
+        #themeToggleBtn {
+          flex: 0 0 38px;
         }
 
         .chart-wrap {
-          height: 240px;
-        }
-
-        .bar-row {
-          grid-template-columns: minmax(74px, 112px) minmax(0, 1fr) 44px;
+          height: 250px;
         }
 
         th:nth-child(4),
@@ -363,6 +607,12 @@
         </div>
       </div>
       <div class="toolbar">
+        <div class="auto-refresh-group">
+          <div class="progress-container">
+            <div id="progressBar" class="progress-bar"></div>
+          </div>
+          <button id="toggleAutoBtn" type="button" class="btn-secondary" style="height: 28px; padding: 0 8px; font-size: 12px;">Auto: ON</button>
+        </div>
         <select id="platform" aria-label="Platform">
           <option value="">All platforms</option>
           <option value="reddit">Reddit</option>
@@ -374,6 +624,12 @@
           <option value="50">50 posts</option>
           <option value="100" selected>100 posts</option>
         </select>
+        <button id="themeToggleBtn" type="button" class="btn-icon" aria-label="Toggle Theme">
+          <!-- Sun Icon (shown in dark mode) -->
+          <svg class="sun-icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+          <!-- Moon Icon (shown in light mode) -->
+          <svg class="moon-icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        </button>
         <button id="refreshBtn" type="button">Refresh</button>
       </div>
     </header>
@@ -381,22 +637,42 @@
     <main>
       <section class="kpis" aria-label="Summary">
         <div class="kpi">
-          <div class="kpi-label">Realtime Windows</div>
+          <div class="kpi-top">
+            <div class="kpi-label">Realtime Windows</div>
+            <div class="kpi-icon">
+              <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><line x1="9" y1="9" x2="21" y2="9"></line><line x1="9" y1="15" x2="21" y2="15"></line></svg>
+            </div>
+          </div>
           <div id="kpiWindows" class="kpi-value">0</div>
           <div id="kpiWindowsNote" class="kpi-note">No active windows</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Realtime Posts</div>
+          <div class="kpi-top">
+            <div class="kpi-label">Realtime Posts</div>
+            <div class="kpi-icon">
+              <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+            </div>
+          </div>
           <div id="kpiRealtimePosts" class="kpi-value">0</div>
           <div class="kpi-note">From Redis aggregates</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Avg Sentiment</div>
+          <div class="kpi-top">
+            <div class="kpi-label">Avg Sentiment</div>
+            <div class="kpi-icon">
+              <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+            </div>
+          </div>
           <div id="kpiSentiment" class="kpi-value">0.00</div>
           <div id="kpiSentimentNote" class="kpi-note">Neutral</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Recent Posts</div>
+          <div class="kpi-top">
+            <div class="kpi-label">Recent Posts</div>
+            <div class="kpi-icon">
+              <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></svg>
+            </div>
+          </div>
           <div id="kpiPosts" class="kpi-value">0</div>
           <div id="kpiPostsNote" class="kpi-note">Loaded from serving layer</div>
         </div>
@@ -425,9 +701,9 @@
               <table>
                 <thead>
                   <tr>
-                    <th style="width: 112px;">Platform</th>
+                    <th style="width: 120px;">Platform</th>
                     <th>Content</th>
-                    <th style="width: 118px;">Sentiment</th>
+                    <th style="width: 140px;">Sentiment</th>
                     <th style="width: 132px;">Engagement</th>
                     <th style="width: 170px;">Time</th>
                   </tr>
@@ -441,9 +717,14 @@
 
         <div class="stack">
           <section class="panel">
-            <div class="panel-header">
-              <div class="panel-title">Top Hashtags</div>
-              <div id="hashtagsMeta" class="status-line">0 tags</div>
+            <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="panel-title">Top Hashtags</div>
+                <div id="hashtagsMeta" class="status-line">0 tags</div>
+              </div>
+              <select id="hashtagWeek" aria-label="Select week" style="height: 30px; padding: 0 8px; font-size: 12px;">
+                <option value="">Latest (Realtime/Batch)</option>
+              </select>
             </div>
             <div class="panel-body">
               <div id="hashtagBars" class="bars"></div>
@@ -461,8 +742,8 @@
                 <thead>
                   <tr>
                     <th>Window</th>
-                    <th style="width: 88px;">Posts</th>
-                    <th style="width: 96px;">Sentiment</th>
+                    <th style="width: 90px;">Posts</th>
+                    <th style="width: 100px;">Sentiment</th>
                   </tr>
                 </thead>
                 <tbody id="windowsBody"></tbody>
@@ -494,13 +775,90 @@
         hashtagBars: document.getElementById('hashtagBars'),
         hashtagsEmpty: document.getElementById('hashtagsEmpty'),
         hashtagsMeta: document.getElementById('hashtagsMeta'),
+        hashtagWeek: document.getElementById('hashtagWeek'),
         postsBody: document.getElementById('postsBody'),
         postsEmpty: document.getElementById('postsEmpty'),
         postsMeta: document.getElementById('postsMeta'),
         windowsBody: document.getElementById('windowsBody'),
         windowsEmpty: document.getElementById('windowsEmpty'),
-        windowsMeta: document.getElementById('windowsMeta')
+        windowsMeta: document.getElementById('windowsMeta'),
+        themeToggleBtn: document.getElementById('themeToggleBtn'),
+        toggleAutoBtn: document.getElementById('toggleAutoBtn')
       };
+
+      // Theme toggle icons
+      const sunIcon = els.themeToggleBtn.querySelector('.sun-icon');
+      const moonIcon = els.themeToggleBtn.querySelector('.moon-icon');
+
+      // Theme logic
+      function initTheme() {
+        const savedTheme = localStorage.getItem('theme') || 'dark'; // Dark theme default
+        if (savedTheme === 'dark') {
+          document.body.classList.add('dark-mode');
+          sunIcon.style.display = 'block';
+          moonIcon.style.display = 'none';
+        } else {
+          document.body.classList.remove('dark-mode');
+          sunIcon.style.display = 'none';
+          moonIcon.style.display = 'block';
+        }
+      }
+
+      els.themeToggleBtn.addEventListener('click', () => {
+        const isDark = document.body.classList.toggle('dark-mode');
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        if (isDark) {
+          sunIcon.style.display = 'block';
+          moonIcon.style.display = 'none';
+        } else {
+          sunIcon.style.display = 'none';
+          moonIcon.style.display = 'block';
+        }
+        if (window.lastTrendData) {
+          drawSentimentChart(window.lastTrendData);
+        }
+      });
+
+      // Auto-refresh control logic
+      let autoRefreshActive = true;
+      let countdown = 30;
+      let countdownTimer = null;
+
+      function startCountdown() {
+        if (countdownTimer) clearInterval(countdownTimer);
+        countdown = 30;
+        updateProgressBar();
+        countdownTimer = setInterval(() => {
+          if (!autoRefreshActive) return;
+          countdown--;
+          updateProgressBar();
+          if (countdown <= 0) {
+            loadHashtagWeeks().then(() => loadAll());
+          }
+        }, 1000);
+      }
+
+      function updateProgressBar() {
+        const bar = document.getElementById('progressBar');
+        if (autoRefreshActive) {
+          bar.style.width = `${(countdown / 30) * 100}%`;
+        } else {
+          bar.style.width = '0%';
+        }
+      }
+
+      els.toggleAutoBtn.addEventListener('click', () => {
+        autoRefreshActive = !autoRefreshActive;
+        if (autoRefreshActive) {
+          els.toggleAutoBtn.textContent = 'Auto: ON';
+          els.toggleAutoBtn.classList.remove('paused');
+          startCountdown();
+        } else {
+          els.toggleAutoBtn.textContent = 'Auto: OFF';
+          els.toggleAutoBtn.classList.add('paused');
+          updateProgressBar();
+        }
+      });
 
       function qs(params) {
         const search = new URLSearchParams();
@@ -567,12 +925,36 @@
       }
 
       function normalizeStats(rows) {
-        return [...(rows || [])]
-          .map((row) => ({
-            key: row.key || '',
-            post_count: number(row.post_count),
-            avg_sentiment: number(row.avg_sentiment),
-            top_hashtag: row.top_hashtag || ''
+        const groups = {};
+        (rows || []).forEach((row) => {
+          const parts = (row.key || '').split(':');
+          const windowTime = parts.slice(3).join(':') || row.key || '';
+          if (!windowTime) return;
+          if (!groups[windowTime]) {
+            groups[windowTime] = {
+              time: windowTime,
+              post_count: 0,
+              sentiment_sum: 0,
+              sentiment_count: 0,
+              top_hashtags: []
+            };
+          }
+          const postCount = number(row.post_count);
+          const avgSentiment = number(row.avg_sentiment);
+          groups[windowTime].post_count += postCount;
+          groups[windowTime].sentiment_sum += avgSentiment * postCount;
+          groups[windowTime].sentiment_count += postCount;
+          if (row.top_hashtag) {
+            groups[windowTime].top_hashtags.push(row.top_hashtag);
+          }
+        });
+
+        return Object.values(groups)
+          .map((g) => ({
+            key: g.time,
+            post_count: g.post_count,
+            avg_sentiment: g.sentiment_count ? g.sentiment_sum / g.sentiment_count : 0,
+            top_hashtag: g.top_hashtags[0] || ''
           }))
           .sort((a, b) => String(b.key).localeCompare(String(a.key)));
       }
@@ -594,24 +976,33 @@
         const plotW = width - pad.left - pad.right;
         const plotH = height - pad.top - pad.bottom;
 
-        ctx.strokeStyle = '#d8dee8';
-        ctx.lineWidth = 1;
-        ctx.fillStyle = '#667085';
-        ctx.font = '12px system-ui, sans-serif';
+        const isDark = document.body.classList.contains('dark-mode');
+        const lineColor = isDark ? '#818cf8' : '#6366f1';
+        const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)';
+        const textColor = isDark ? '#94a3b8' : '#64748b';
+        const gradientStart = isDark ? 'rgba(129, 140, 248, 0.22)' : 'rgba(99, 102, 241, 0.16)';
 
+        // Draw gridlines
+        ctx.strokeStyle = gridColor;
+        ctx.lineWidth = 1;
+        
         [-1, -0.5, 0, 0.5, 1].forEach((tick) => {
           const y = pad.top + (1 - (tick + 1) / 2) * plotH;
           ctx.beginPath();
           ctx.moveTo(pad.left, y);
           ctx.lineTo(width - pad.right, y);
           ctx.stroke();
-          ctx.fillText(tick.toFixed(1), 8, y + 4);
+          
+          ctx.fillStyle = textColor;
+          ctx.font = '500 11px Inter, sans-serif';
+          ctx.fillText(tick.toFixed(1), 10, y + 4);
         });
 
         if (!points.length) {
-          ctx.fillStyle = '#667085';
+          ctx.fillStyle = textColor;
           ctx.textAlign = 'center';
-          ctx.fillText('No sentiment data', width / 2, height / 2);
+          ctx.font = '600 14px Inter, sans-serif';
+          ctx.fillText('No sentiment data available', width / 2, height / 2);
           ctx.textAlign = 'left';
           return;
         }
@@ -620,6 +1011,24 @@
         const xFor = (index) => pad.left + (points.length === 1 ? plotW / 2 : (index / (points.length - 1)) * plotW);
         const yFor = (value) => pad.top + (1 - (value + 1) / 2) * plotH;
 
+        // Draw area gradient
+        if (points.length > 1) {
+          const areaGrad = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
+          areaGrad.addColorStop(0, gradientStart);
+          areaGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+          
+          ctx.beginPath();
+          ctx.moveTo(xFor(0), pad.top + plotH);
+          values.forEach((value, index) => {
+            ctx.lineTo(xFor(index), yFor(value));
+          });
+          ctx.lineTo(xFor(points.length - 1), pad.top + plotH);
+          ctx.closePath();
+          ctx.fillStyle = areaGrad;
+          ctx.fill();
+        }
+
+        // Draw line
         ctx.beginPath();
         values.forEach((value, index) => {
           const x = xFor(index);
@@ -627,21 +1036,38 @@
           if (index === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         });
-        ctx.strokeStyle = '#2563eb';
-        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = lineColor;
+        ctx.lineWidth = 3;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
         ctx.stroke();
 
+        // Draw data circles
         values.forEach((value, index) => {
+          const x = xFor(index);
+          const y = yFor(value);
+          
+          // Outer ring
           ctx.beginPath();
-          ctx.arc(xFor(index), yFor(value), 3.2, 0, Math.PI * 2);
-          ctx.fillStyle = value >= 0 ? '#0f8a5f' : '#c24132';
+          ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+          ctx.fillStyle = isDark ? '#1e293b' : '#ffffff';
+          ctx.fill();
+          ctx.strokeStyle = lineColor;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          
+          // Inner dot
+          ctx.beginPath();
+          ctx.arc(x, y, 2, 0, Math.PI * 2);
+          ctx.fillStyle = value >= 0.15 ? '#10b981' : (value <= -0.15 ? '#ef4444' : '#f59e0b');
           ctx.fill();
         });
 
+        // X-axis timestamps
         const first = points[0]?.time;
         const last = points[points.length - 1]?.time;
-        ctx.fillStyle = '#667085';
-        ctx.font = '12px system-ui, sans-serif';
+        ctx.fillStyle = textColor;
+        ctx.font = '500 11px Inter, sans-serif';
         ctx.fillText(fmtDate(first), pad.left, height - 10);
         ctx.textAlign = 'right';
         ctx.fillText(fmtDate(last), width - pad.right, height - 10);
@@ -656,9 +1082,27 @@
           }))
           .filter((row) => row.hashtag)
           .sort((a, b) => b.frequency - a.frequency)
-          .slice(0, 12);
+          .slice(0, 10);
 
-        els.hashtagsMeta.textContent = `${tags.length} tags`;
+        const firstRow = rows && rows[0];
+        const activeWeek = firstRow && firstRow.week;
+        let metaText = `${tags.length} tags`;
+        if (activeWeek) {
+          if (activeWeek === 'realtime') {
+            metaText += ' (Realtime)';
+          } else {
+            const date = new Date(activeWeek);
+            let display = activeWeek;
+            if (!Number.isNaN(date.getTime())) {
+              display = new Intl.DateTimeFormat(undefined, {
+                month: 'short',
+                day: '2-digit'
+              }).format(date);
+            }
+            metaText += ` (${display})`;
+          }
+        }
+        els.hashtagsMeta.textContent = metaText;
         els.hashtagBars.innerHTML = '';
         els.hashtagsEmpty.style.display = tags.length ? 'none' : 'grid';
         const max = Math.max(1, ...tags.map((tag) => tag.frequency));
@@ -684,11 +1128,16 @@
 
         posts.slice(0, Number(els.limit.value)).forEach((post) => {
           const score = number(post.sentiment_score);
+          const label = sentimentLabel(score).toLowerCase();
           const tr = document.createElement('tr');
+          
+          const platformVal = String(post.platform || post.source || '').toLowerCase();
+          const badgeClass = ['reddit', 'facebook', 'instagram'].includes(platformVal) ? platformVal : 'other';
+
           tr.innerHTML = `
-            <td><span class="badge">${escapeHtml(post.platform || post.source || '')}</span></td>
+            <td><span class="badge ${badgeClass}">${escapeHtml(post.platform || post.source || '')}</span></td>
             <td><div class="content-cell">${escapeHtml(post.content || post.title || post.post_id || '')}</div></td>
-            <td class="metric">${escapeHtml(post.sentiment_label || sentimentLabel(score))} ${fmtSentiment(score)}</td>
+            <td><span class="sentiment-badge ${label}">${escapeHtml(sentimentLabel(score))} ${fmtSentiment(score)}</span></td>
             <td class="metric">${fmtInt(engagement(post))}</td>
             <td>${escapeHtml(fmtDate(post.event_ts || post.created_at || post.indexed_at))}</td>
           `;
@@ -707,17 +1156,22 @@
         const weightedSentiment = stats.reduce((sum, row) => sum + row.avg_sentiment * Math.max(row.post_count, 1), 0);
         const divisor = stats.reduce((sum, row) => sum + Math.max(row.post_count, 1), 0);
         const avg = divisor ? weightedSentiment / divisor : 0;
+        
         els.kpiRealtimePosts.textContent = fmtInt(totalPosts);
         els.kpiSentiment.textContent = fmtSentiment(avg);
-        els.kpiSentimentNote.textContent = sentimentLabel(avg);
+        
+        const label = sentimentLabel(avg).toLowerCase();
+        els.kpiSentimentNote.innerHTML = `<span class="sentiment-badge ${label}" style="padding: 1px 6px; font-size: 11px;">${sentimentLabel(avg)}</span>`;
 
         stats.slice(0, 10).forEach((row) => {
           const tr = document.createElement('tr');
           const windowName = row.key.split(':').slice(3).join(':') || row.key;
+          const score = number(row.avg_sentiment);
+          const label = sentimentLabel(score).toLowerCase();
           tr.innerHTML = `
             <td>${escapeHtml(fmtDate(windowName) || windowName)}</td>
             <td class="metric">${fmtInt(row.post_count)}</td>
-            <td class="metric">${fmtSentiment(row.avg_sentiment)}</td>
+            <td><span class="sentiment-badge ${label}" style="padding: 1px 6px; font-size: 11px;">${fmtSentiment(row.avg_sentiment)}</span></td>
           `;
           els.windowsBody.appendChild(tr);
         });
@@ -737,23 +1191,62 @@
         els.statusText.textContent = text;
       }
 
+      async function loadHashtagWeeks() {
+        const platform = els.platform.value;
+        const select = els.hashtagWeek;
+        const currentVal = select.value;
+        try {
+          const payload = await getJson('/api/v1/hashtags/weeks' + qs({ platform }));
+          const weeks = payload.data || [];
+          
+          select.innerHTML = '<option value="">Latest (Realtime/Batch)</option>';
+          weeks.forEach((week) => {
+            const opt = document.createElement('option');
+            opt.value = week;
+            const date = new Date(week);
+            let display = week;
+            if (!Number.isNaN(date.getTime())) {
+              display = 'Week of ' + new Intl.DateTimeFormat(undefined, {
+                month: 'short',
+                day: '2-digit',
+                year: 'numeric'
+              }).format(date);
+            }
+            opt.textContent = display;
+            select.appendChild(opt);
+          });
+
+          if (weeks.includes(currentVal)) {
+            select.value = currentVal;
+          } else {
+            select.value = '';
+          }
+        } catch (error) {
+          console.error('Failed to load hashtag weeks:', error);
+        }
+      }
+
       async function loadAll() {
         const platform = els.platform.value;
         const limit = els.limit.value;
+        const week = els.hashtagWeek.value;
         const historyStart = '2023-01-01T00:00:00Z';
         els.refreshBtn.disabled = true;
         setStatus('', 'Loading');
+        countdown = 30; // Reset progress bar countdown on each manual or scheduled refresh
+        updateProgressBar();
         try {
           const [health, statsPayload, hashtagsPayload, postsPayload, trendPayload] = await Promise.all([
             getJson('/health'),
             getJson('/api/v1/stats/realtime' + qs({ platform })),
-            getJson('/api/v1/hashtags/top' + qs({ platform, top_n: 12 })),
+            getJson('/api/v1/hashtags/top' + qs({ platform, top_n: 12, week })),
             getJson('/api/v1/posts' + qs({ platform, limit, start: historyStart })),
             getJson('/api/v1/sentiment/trend' + qs({ platform, start: historyStart }))
           ]);
 
           const stats = normalizeStats(statsPayload.stats || []);
           const trend = normalizeTrend(trendPayload.data || []);
+          window.lastTrendData = trend;
           renderWindows(stats);
           renderHashtags(hashtagsPayload.data || []);
           renderPosts(postsPayload.data || []);
@@ -767,12 +1260,25 @@
         }
       }
 
-      els.refreshBtn.addEventListener('click', loadAll);
-      els.platform.addEventListener('change', loadAll);
+      els.refreshBtn.addEventListener('click', () => {
+        loadHashtagWeeks().then(() => loadAll());
+      });
+      els.platform.addEventListener('change', async () => {
+        await loadHashtagWeeks();
+        loadAll();
+      });
       els.limit.addEventListener('change', loadAll);
-      window.addEventListener('resize', () => loadAll());
-      loadAll();
-      setInterval(loadAll, 30000);
+      els.hashtagWeek.addEventListener('change', loadAll);
+      window.addEventListener('resize', () => {
+        if (window.lastTrendData) {
+          drawSentimentChart(window.lastTrendData);
+        }
+      });
+      
+      // Initialize dashboard
+      initTheme();
+      loadHashtagWeeks().then(() => loadAll());
+      startCountdown();
     </script>
   </body>
 </html>

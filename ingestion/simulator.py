@@ -319,7 +319,11 @@ def _comments(values: Any) -> list[dict]:
     comments: list[dict] = []
     for value in values:
         if isinstance(value, dict):
-            comments.append(value)
+            cmt = dict(value)
+            author_id = cmt.get("author_id")
+            if author_id not in {None, "", "unknown"}:
+                cmt["author_id"] = _hash_author_id(author_id)
+            comments.append(cmt)
     return comments
 
 

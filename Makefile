@@ -1,7 +1,8 @@
 .PHONY: up up-full monitoring debug orchestration warehouse-stack enrichment anomaly down \
         replay-raw replay test simulate object-store-writer batch index-batch \
         index-batch-docker warehouse stream api build ps logs logs-all \
-        minio-ls-raw spark-batch clean core-up
+        minio-ls-raw spark-batch clean core-up app-up
+
 
 up:
 	docker compose up --build -d
@@ -31,30 +32,32 @@ anomaly:
 	docker compose --profile anomaly up -d cassandra ml-anomaly
 
 replay-raw:
-	@echo "Starting simulators (reddit=9101, facebook=9102, instagram=9103)..."
-	@trap 'kill 0' INT TERM; \
-	python -m ingestion.simulator \
+	@echo "Starting simulators in background (reddit=9101, facebook=9102, instagram=9103)..."
+	@nohup python -m ingestion.simulator \
 	  --platform reddit \
 	  --source data/reddit_data/raw_data \
 	  --rate $${REPLAY_RATE_PER_SEC:-20} \
 	  --kafka-bootstrap $${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092} \
-	  --metrics-port 9101 & \
-	python -m ingestion.simulator \
+	  --metrics-port 9101 \
+	  > logs/reddit_simulator.log 2>&1 & \
+	nohup python -m ingestion.simulator \
 	  --platform facebook \
 	  --source data/facebook_data/raw_data \
 	  --rate $${REPLAY_RATE_PER_SEC:-20} \
 	  --kafka-bootstrap $${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092} \
-	  --metrics-port 9102 & \
-	python -m ingestion.simulator \
+	  --metrics-port 9102 \
+	  > logs/facebook_simulator.log 2>&1 & \
+	nohup python -m ingestion.simulator \
 	  --platform instagram \
 	  --source data/instagram_data/raw_data \
 	  --rate $${REPLAY_RATE_PER_SEC:-20} \
 	  --kafka-bootstrap $${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092} \
-	  --metrics-port 9103 & \
-	wait
+	  --metrics-port 9103 \
+	  > logs/instagram_simulator.log 2>&1 & \
+	echo "All simulators started in background."
 
 down:
-	docker compose down
+	docker compose --profile "*" down
 
 kill-simulators:
 	@pkill -f "ingestion.simulator" && echo "Simulators stopped." || echo "No simulators running."
@@ -106,6 +109,9 @@ replay:
 core-up:
 	docker compose up -d zookeeper kafka kafka-init minio minio-init redis elasticsearch serving-init
 
+app-up:
+	docker compose up -d spark-master spark-worker speed object-store-writer api dashboard
+
 spark-batch:
 	docker compose exec -T spark-master \
 	  /opt/spark/bin/spark-submit \
@@ -126,4 +132,4 @@ minio-ls-raw:
 	   && mc ls -r local/$${S3_BUCKET:-social-lake}/data/raw | head'
 
 clean:
-	docker compose down -v --remove-orphans
+	docker compose --profile "*" down -v --remove-orphans

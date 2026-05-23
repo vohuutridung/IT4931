@@ -82,7 +82,7 @@ def write_alert(session, alert: dict) -> None:
 
     try:
         session.execute(
-            f"INSERT INTO {CASSANDRA_ALERTS_TABLE} (alert_id, metric, value, baseline, created_at, payload) VALUES (?, ?, ?, ?, ?, ?)",
+            f"INSERT INTO {CASSANDRA_ALERTS_TABLE} (alert_id, metric, value, baseline, created_at, payload) VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 str(uuid.uuid4()),
                 alert["metric"],
@@ -110,6 +110,58 @@ def detect_once(history: deque[float], session=None) -> None:
     history.append(current)
 
 
+def warmup_history(history: deque[float]) -> None:
+    from datetime import timedelta
+    logger.info("Warming up anomaly detector history...")
+    try:
+        now = datetime.now(timezone.utc)
+        start = now - timedelta(minutes=288)
+        query = {
+            "bool": {
+                "filter": [
+                    {"range": {"event_ts": {"gte": start.isoformat(), "lte": now.isoformat()}}}
+                ]
+            }
+        }
+        aggs = {
+            "minutes": {
+                "date_histogram": {
+                    "field": "event_ts",
+                    "fixed_interval": "1m",
+                    "extended_bounds": {
+                        "min": start.isoformat(),
+                        "max": now.isoformat()
+                    }
+                }
+            }
+        }
+        import requests
+        response = requests.post(
+            f"{service.es_host}/social_realtime_views/_search",
+            json={"query": query, "size": 0, "aggs": aggs},
+            timeout=5
+        )
+        response.raise_for_status()
+        buckets = response.json().get("aggregations", {}).get("minutes", {}).get("buckets", [])
+        
+        start_min_epoch = int(start.timestamp() // 60)
+        minute_counts = [0] * 288
+        for b in buckets:
+            key_ms = b.get("key")
+            if key_ms is not None:
+                min_epoch = int((key_ms / 1000) // 60)
+                idx = min_epoch - start_min_epoch
+                if 0 <= idx < 288:
+                    minute_counts[idx] = int(b.get("doc_count", 0))
+                    
+        for i in range(120, 288):
+            val = sum(minute_counts[i - 120: i])
+            history.append(val)
+        logger.info("Warmup complete. Loaded %d history points.", len(history))
+    except Exception as exc:
+        logger.warning("Anomaly detector warmup failed (will start empty): %s", exc)
+
+
 def run_loop(interval_seconds: int = 60) -> None:
     try:
         from sklearn.ensemble import IsolationForest  # noqa: F401
@@ -118,8 +170,12 @@ def run_loop(interval_seconds: int = 60) -> None:
     except Exception:
         logger.info("Initial anomaly model ready using rolling baseline fallback")
     history: deque[float] = deque(maxlen=24 * 7)
+    warmup_history(history)
     while True:
-        detect_once(history, None)
+        try:
+            detect_once(history, None)
+        except Exception as exc:
+            logger.error("Exception in anomaly detection iteration: %s", exc)
         time.sleep(interval_seconds)
 
 
