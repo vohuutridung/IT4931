@@ -78,9 +78,9 @@ MinIO mặc định: `minioadmin` / `minioadmin`
 | `debug` | Kafka UI | http://localhost:8080 |
 | `debug` | Kibana | http://localhost:5601 |
 | `orchestration` | Airflow | http://localhost:8082 |
-| `warehouse` | ClickHouse | http://localhost:8123 |
+| `warehouse` | ClickHouse | http://localhost:8123 (Native: 9002) |
 | `monitoring` | Prometheus | http://localhost:9090 |
-| `monitoring` | Grafana | http://localhost:3000 |
+| `monitoring` | Grafana | http://localhost:3000 (Tự động load datasource & dashboard) |
 | `enrichment` | Cassandra | `localhost:9042` |
 | `anomaly` | Cassandra + anomaly detector | `localhost:9042` |
 
@@ -206,6 +206,20 @@ curl -fsS "http://localhost:8000/api/v1/stats/realtime"
 
 > **Lưu ý:** Dữ liệu mẫu có timestamp trong quá khứ. Luôn truyền `start=2023-01-01T00:00:00Z` khi query posts/trend để chắc chắn thấy data.
 
+### 9. Nạp dữ liệu vào ClickHouse Data Warehouse (Tùy chọn)
+
+Nếu bạn muốn phân tích dữ liệu qua kho lưu trữ ClickHouse:
+
+1. Khởi động ClickHouse server:
+   ```bash
+   make warehouse-stack
+   ```
+2. Chạy Spark job nạp dữ liệu tổng hợp từ MinIO sang ClickHouse:
+   ```bash
+   make warehouse
+   ```
+
+
 ---
 
 ## Replay Và Pipeline Thủ Công
@@ -293,16 +307,10 @@ make spark-batch && make index-batch-docker
 ## Tắt Dự Án
 
 ```bash
-# Tắt, giữ dữ liệu volume
+# Dừng sạch tất cả các container của mọi profiles (giữ lại dữ liệu volume)
 make down
 
-# Tắt tất cả profile
-docker compose \
-  --profile replay --profile debug --profile orchestration \
-  --profile monitoring --profile warehouse --profile anomaly \
-  down
-
-# Tắt và xóa dữ liệu
+# Dừng sạch container của mọi profiles và xóa toàn bộ dữ liệu volume
 make clean
 ```
 
@@ -521,6 +529,7 @@ python3 -m py_compile \
 | `make monitoring` | Start Prometheus + Grafana |
 | `make debug` | Start Kafka UI + Kibana |
 | `make warehouse-stack` | Start ClickHouse |
+| `make warehouse` | Chạy Spark job nạp dữ liệu từ MinIO vào ClickHouse |
 | `make enrichment` | Start Cassandra |
 | `make anomaly` | Start Cassandra + anomaly detector |
 | `make replay` | Replay qua Docker container |

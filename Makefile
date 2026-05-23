@@ -82,7 +82,10 @@ index-batch:
 	spark-submit batch/index_batch_views.py
 
 warehouse:
-	spark-submit warehouse/clickhouse_loader.py
+	docker compose exec -T spark-master \
+	  /opt/spark/bin/spark-submit \
+	  --master spark://spark-master:7077 \
+	  /app/warehouse/clickhouse_loader.py
 
 stream:
 	spark-submit speed/streaming_job.py

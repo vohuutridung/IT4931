@@ -162,7 +162,7 @@ def ensure_schema() -> None:
 
 
 def truncate_tables(tables: list[str]) -> None:
-    valid_tables = set(VIEWS.values())
+    valid_tables = set(VIEWS.values()) | {"dim_platform"}
     for table in tables:
         if table not in valid_tables:
             raise ValueError(f"Invalid table '{table}'. Allowed tables: {valid_tables}")
