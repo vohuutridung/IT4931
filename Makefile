@@ -1,7 +1,7 @@
 .PHONY: up up-full monitoring debug orchestration warehouse-stack enrichment anomaly down \
         replay-raw replay test simulate object-store-writer batch index-batch \
         index-batch-docker warehouse stream api build ps logs logs-all \
-        minio-ls-raw spark-batch clean core-up app-up
+        minio-ls-raw spark-batch clean core-up app-up download-data
 
 
 up:
@@ -133,3 +133,6 @@ minio-ls-raw:
 
 clean:
 	docker compose --profile "*" down -v --remove-orphans
+
+download-data:
+	python3 scripts/download_data.py

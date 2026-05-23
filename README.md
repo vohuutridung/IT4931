@@ -102,6 +102,9 @@ MinIO mặc định: `minioadmin` / `minioadmin`
 git clone <repo-url>
 cd social-pipeline
 cp .env.example .env   # tùy chọn — giữ default nếu không cần đổi port/credential
+
+# Tải và giải nén tự động toàn bộ dữ liệu mẫu lớn từ Google Drive
+make download-data
 ```
 
 ### 2. Build image
@@ -533,3 +536,4 @@ python3 -m py_compile \
 | `make clean` | Tắt container và xóa toàn bộ volume |
 | `make test` | Chạy unit tests |
 | `make build` | Build image |
+| `make download-data` | Tải và giải nén tự động dữ liệu mẫu lớn từ Drive |
