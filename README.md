@@ -80,7 +80,7 @@ MinIO mặc định: `minioadmin` / `minioadmin`
 | `orchestration` | Airflow | http://localhost:8082 |
 | `warehouse` | ClickHouse | http://localhost:8123 (Native: 9002) |
 | `monitoring` | Prometheus | http://localhost:9090 |
-| `monitoring` | Grafana | http://localhost:3000 (Tự động load datasource & dashboard) |
+| `monitoring` | Grafana | http://localhost:3000 |
 | `enrichment` | Cassandra | `localhost:9042` |
 | `anomaly` | Cassandra + anomaly detector | `localhost:9042` |
 
