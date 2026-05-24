@@ -21,36 +21,38 @@ Pipeline xử lý dữ liệu mạng xã hội theo mô hình Lambda Architectur
 
 ## Kiến Trúc Hệ Thống
 
-```text
-data/*
-  → ingestion.simulator
-  → Kafka  social.<platform>.posts
-  → batch.object_store_writer
-  → MinIO  s3a://social-lake/data/raw/<platform>/...
-  → batch.spark_batch_job
-  → MinIO  s3a://social-lake/data/batch_views/...
-  → batch.index_batch_views
-  → Elasticsearch  social_batch_views
+```mermaid
+flowchart LR
+    DATA["📁 data/*"]
+    SIM["ingestion.simulator"]
+    KAFKA[["Kafka\nsocial.&lt;platform&gt;.posts"]]
 
-Kafka  social.<platform>.posts
-  → speed.streaming_job  +  speed.nlp_pipeline
-  → Redis       rt:stats:* / rt:hashtags:*
-  → Elasticsearch  social_realtime_views
-  → Kafka       social.enriched.posts
+    subgraph batch["⬛ Batch Layer"]
+        OSW["object_store_writer"]
+        RAW[("MinIO\ndata/raw/")]
+        SPARK["spark_batch_job"]
+        BV[("MinIO\ndata/batch_views/")]
+        IDX["index_batch_views"]
+        ES_B[("Elasticsearch\nsocial_batch_views")]
+    end
 
-Elasticsearch + Redis
-  → serving.merge_service
-  → api.main  (FastAPI)
-  → dashboard/index.html
+    subgraph speed["⚡ Speed Layer"]
+        STREAM["streaming_job\n+ nlp_pipeline"]
+        REDIS[("Redis\nrt:stats:*\nrt:hashtags:*")]
+        ES_RT[("Elasticsearch\nsocial_realtime_views")]
+    end
+
+    subgraph serving["🔗 Serving Layer"]
+        MERGE["merge_service"]
+        API["FastAPI :8000"]
+        DASH["Dashboard :8084"]
+    end
+
+    DATA --> SIM --> KAFKA
+    KAFKA --> OSW --> RAW --> SPARK --> BV --> IDX --> ES_B
+    KAFKA --> STREAM --> REDIS & ES_RT
+    ES_B & ES_RT & REDIS --> MERGE --> API --> DASH
 ```
-
-| Layer | Thành phần | Vai trò |
-|---|---|---|
-| Ingestion | `ingestion.simulator` | Đọc sample data, normalize, publish Kafka |
-| Raw/Object | `batch.object_store_writer` | Consume Kafka → raw Parquet → MinIO |
-| Batch | `batch.spark_batch_job` | Đọc raw Parquet, tạo batch views |
-| Speed | `speed.streaming_job` | Consume Kafka, enrich NLP, ghi Redis + ES |
-| Serving | `serving.merge_service` | Merge batch + realtime cho API |
 
 ---
 
