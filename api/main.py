@@ -74,7 +74,19 @@ def sentiment_trend(
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
     end = end or datetime.now(timezone.utc)
     start = start or end - timedelta(days=7)
-    return {"data": service.query_sentiment_trend(platform, granularity, start, end)}
+    data = service.query_sentiment_trend(platform, granularity, start, end)
+    velocities = [float(r.get("velocity") or 0) for r in data[1:]]
+    avg_velocity = round(sum(velocities) / len(velocities), 4) if velocities else 0.0
+    total_posts = sum(int(r.get("post_count") or 0) for r in data)
+    return {
+        "data": data,
+        "meta": {
+            "trend_direction": service.trend_direction(data),
+            "avg_velocity": avg_velocity,
+            "total_posts": total_posts,
+            "buckets": len(data),
+        },
+    }
 
 
 @app.get("/api/v1/hashtags/top")

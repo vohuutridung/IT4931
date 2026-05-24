@@ -107,6 +107,13 @@ Desktop.ini
 .aider*
 .continue/
 
+# Claude Code
+.claude/
+.agents/
+CLAUDE.md
+*.claude
+claude.json
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  SECRETS & CONFIGURATION

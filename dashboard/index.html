@@ -689,6 +689,15 @@
               <div class="chart-wrap">
                 <canvas id="sentimentChart" width="960" height="320"></canvas>
               </div>
+              <div id="trendSummary" style="display:flex;align-items:center;gap:12px;padding:10px 0 2px;flex-wrap:wrap;">
+                <span id="trendDirection" class="sentiment-badge neutral" style="font-size:12px;">→ Neutral</span>
+                <div style="display:flex;align-items:center;flex:1;min-width:80px;border-radius:4px;overflow:hidden;height:7px;">
+                  <div id="trendPosBar" style="height:100%;background:var(--success);transition:width .4s;width:33%"></div>
+                  <div id="trendNeuBar" style="height:100%;background:var(--warning);transition:width .4s;width:34%"></div>
+                  <div id="trendNegBar" style="height:100%;background:var(--danger);transition:width .4s;width:33%"></div>
+                </div>
+                <span id="trendDistText" class="status-line" style="white-space:nowrap;"></span>
+              </div>
             </div>
           </section>
 
@@ -816,6 +825,7 @@
         }
         if (window.lastTrendData) {
           drawSentimentChart(window.lastTrendData);
+          updateTrendSummary(window.lastTrendData, window.lastTrendMeta || {});
         }
       });
 
@@ -917,11 +927,43 @@
         return [...(rows || [])]
           .map((row) => ({
             time: row.event_hour || row.event_ts || row.indexed_at || row.updated_at || row.key || '',
-            value: number(row.avg_sentiment ?? row.sentiment_score)
+            value: number(row.avg_sentiment ?? row.sentiment_score),
+            weighted: row.weighted_sentiment != null ? number(row.weighted_sentiment) : null,
+            post_count: number(row.post_count) || 0,
+            positive_pct: row.positive_pct != null ? number(row.positive_pct) : null,
+            negative_pct: row.negative_pct != null ? number(row.negative_pct) : null,
+            neutral_pct: row.neutral_pct != null ? number(row.neutral_pct) : null,
+            velocity: row.velocity != null ? number(row.velocity) : 0,
           }))
           .filter((row) => row.time)
           .sort((a, b) => String(a.time).localeCompare(String(b.time)))
           .slice(-48);
+      }
+
+      function updateTrendSummary(trend, meta) {
+        if (!trend.length) return;
+        const direction = (meta && meta.trend_direction) || (function() {
+          if (trend.length < 2) return 'neutral';
+          const recent = trend.slice(-6);
+          const slope = (recent[recent.length - 1].value || 0) - (recent[0].value || 0);
+          return slope > 0.05 ? 'bullish' : slope < -0.05 ? 'bearish' : 'neutral';
+        })();
+        const arrows = { bullish: '↑ Bullish', bearish: '↓ Bearish', neutral: '→ Neutral' };
+        const dirEl = document.getElementById('trendDirection');
+        dirEl.textContent = arrows[direction] || '→ Neutral';
+        dirEl.className = 'sentiment-badge ' + (direction === 'bullish' ? 'positive' : direction === 'bearish' ? 'negative' : 'neutral');
+        const last = trend[trend.length - 1];
+        const hasPct = last.positive_pct != null;
+        const pos = hasPct ? last.positive_pct : 33;
+        const neg = hasPct ? last.negative_pct : 33;
+        const neu = hasPct ? last.neutral_pct : (100 - pos - neg);
+        document.getElementById('trendPosBar').style.width = pos + '%';
+        document.getElementById('trendNeuBar').style.width = neu + '%';
+        document.getElementById('trendNegBar').style.width = neg + '%';
+        if (hasPct) {
+          document.getElementById('trendDistText').textContent =
+            pos.toFixed(0) + '% pos · ' + neu.toFixed(0) + '% neu · ' + neg.toFixed(0) + '% neg (latest bucket)';
+        }
       }
 
       function normalizeStats(rows) {
@@ -1042,11 +1084,32 @@
         ctx.lineCap = 'round';
         ctx.stroke();
 
-        // Draw data circles
+        // Draw dashed weighted-sentiment line (engagement-adjusted)
+        const weightedValues = points.map((p) => p.weighted);
+        if (weightedValues.some((v) => v != null)) {
+          ctx.setLineDash([5, 4]);
+          ctx.strokeStyle = isDark ? 'rgba(251,191,36,0.7)' : 'rgba(217,119,6,0.6)';
+          ctx.lineWidth = 1.5;
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          let started = false;
+          weightedValues.forEach((wv, index) => {
+            if (wv == null) { started = false; return; }
+            const x = xFor(index);
+            const y = yFor(Math.max(-1, Math.min(1, wv)));
+            if (!started) { ctx.moveTo(x, y); started = true; }
+            else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        // Draw data circles (color inner dot by velocity direction)
         values.forEach((value, index) => {
           const x = xFor(index);
           const y = yFor(value);
-          
+          const vel = points[index].velocity || 0;
+
           // Outer ring
           ctx.beginPath();
           ctx.arc(x, y, 4.5, 0, Math.PI * 2);
@@ -1055,12 +1118,21 @@
           ctx.strokeStyle = lineColor;
           ctx.lineWidth = 1.5;
           ctx.stroke();
-          
-          // Inner dot
+
+          // Inner dot: sentiment color; stroke hue shifts with velocity
           ctx.beginPath();
           ctx.arc(x, y, 2, 0, Math.PI * 2);
           ctx.fillStyle = value >= 0.15 ? '#10b981' : (value <= -0.15 ? '#ef4444' : '#f59e0b');
           ctx.fill();
+
+          // Tiny velocity arrow above/below dot when significant
+          if (Math.abs(vel) > 0.02 && points.length <= 36) {
+            ctx.fillStyle = vel > 0 ? '#10b981' : '#ef4444';
+            ctx.font = '500 9px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(vel > 0 ? '▲' : '▼', x, vel > 0 ? y - 8 : y + 14);
+            ctx.textAlign = 'left';
+          }
         });
 
         // X-axis timestamps
@@ -1245,13 +1317,20 @@
           ]);
 
           const stats = normalizeStats(statsPayload.stats || []);
+          const trendMeta = trendPayload.meta || {};
           const trend = normalizeTrend(trendPayload.data || []);
           window.lastTrendData = trend;
+          window.lastTrendMeta = trendMeta;
           renderWindows(stats);
           renderHashtags(hashtagsPayload.data || []);
           renderPosts(postsPayload.data || []);
           drawSentimentChart(trend);
-          els.trendMeta.textContent = `${trend.length} points`;
+          updateTrendSummary(trend, trendMeta);
+          const velStr = trendMeta.avg_velocity != null
+            ? ` · vel ${trendMeta.avg_velocity >= 0 ? '+' : ''}${Number(trendMeta.avg_velocity).toFixed(3)}`
+            : '';
+          const postsStr = trendMeta.total_posts ? ` · ${trendMeta.total_posts} posts` : '';
+          els.trendMeta.textContent = `${trend.length} points${postsStr}${velStr}`;
           setStatus(health.status === 'ok' ? 'ok' : '', `Updated ${new Date().toLocaleTimeString()}`);
         } catch (error) {
           setStatus('err', `API error: ${error.message}`);
