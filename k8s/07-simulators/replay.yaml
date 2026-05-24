@@ -1,0 +1,182 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: replay-reddit
+  namespace: social-pipeline
+  labels:
+    app: replay-reddit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: replay-reddit
+  template:
+    metadata:
+      labels:
+        app: replay-reddit
+    spec:
+      containers:
+        - name: simulator
+          image: social-python:0.1.0
+          command:
+            - python
+            - -m
+            - ingestion.simulator
+            - --platform
+            - reddit
+            - --rate
+            - "20"
+            - --dedupe
+            - "true"
+            - --kafka-bootstrap
+            - kafka-service:9092
+          ports:
+            - containerPort: 9101
+              name: metrics
+          envFrom:
+            - configMapRef:
+                name: social-pipeline-config
+          volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+              readOnly: true
+
+      volumes:
+        - name: data-volume
+          hostPath:
+            path: /social-pipeline/data
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: replay-reddit-service
+  namespace: social-pipeline
+spec:
+  ports:
+    - port: 9101
+      targetPort: 9101
+  selector:
+    app: replay-reddit
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: replay-facebook
+  namespace: social-pipeline
+  labels:
+    app: replay-facebook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: replay-facebook
+  template:
+    metadata:
+      labels:
+        app: replay-facebook
+    spec:
+      containers:
+        - name: simulator
+          image: social-python:0.1.0
+          command:
+            - python
+            - -m
+            - ingestion.simulator
+            - --platform
+            - facebook
+            - --rate
+            - "20"
+            - --dedupe
+            - "true"
+            - --kafka-bootstrap
+            - kafka-service:9092
+          ports:
+            - containerPort: 9101
+              name: metrics
+          envFrom:
+            - configMapRef:
+                name: social-pipeline-config
+          volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+              readOnly: true
+
+      volumes:
+        - name: data-volume
+          hostPath:
+            path: /social-pipeline/data
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: replay-facebook-service
+  namespace: social-pipeline
+spec:
+  ports:
+    - port: 9101
+      targetPort: 9101
+  selector:
+    app: replay-facebook
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: replay-instagram
+  namespace: social-pipeline
+  labels:
+    app: replay-instagram
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: replay-instagram
+  template:
+    metadata:
+      labels:
+        app: replay-instagram
+    spec:
+      containers:
+        - name: simulator
+          image: social-python:0.1.0
+          command:
+            - python
+            - -m
+            - ingestion.simulator
+            - --platform
+            - instagram
+            - --rate
+            - "20"
+            - --dedupe
+            - "true"
+            - --kafka-bootstrap
+            - kafka-service:9092
+          ports:
+            - containerPort: 9101
+              name: metrics
+          envFrom:
+            - configMapRef:
+                name: social-pipeline-config
+          volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+              readOnly: true
+
+      volumes:
+        - name: data-volume
+          hostPath:
+            path: /social-pipeline/data
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: replay-instagram-service
+  namespace: social-pipeline
+spec:
+  ports:
+    - port: 9101
+      targetPort: 9101
+  selector:
+    app: replay-instagram

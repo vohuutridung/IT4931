@@ -1,0 +1,194 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: airflow-init
+  namespace: social-pipeline
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for Postgres..."
+              until nc -z postgres-service 5432; do sleep 2; done
+              echo "Postgres ready!"
+      containers:
+        - name: airflow-init
+          image: social-pipeline-airflow-init:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - bash
+            - -c
+            - |
+              airflow db migrate &&
+              airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true
+              airflow connections add spark_default --conn-type spark --conn-host "spark://spark-master-service:7077" || true
+          envFrom:
+            - configMapRef:
+                name: social-pipeline-config
+            - secretRef:
+                name: social-pipeline-secrets
+          env:
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: "LocalExecutor"
+      restartPolicy: OnFailure
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-webserver
+  namespace: social-pipeline
+  labels:
+    app: airflow-webserver
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: airflow-webserver
+  template:
+    metadata:
+      labels:
+        app: airflow-webserver
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for Postgres..."
+              until nc -z postgres-service 5432; do sleep 2; done
+              echo "Postgres ready, sleeping 15s for migrations..."
+              sleep 15
+      containers:
+        - name: webserver
+          image: social-pipeline-airflow-webserver:latest
+          imagePullPolicy: IfNotPresent
+          args: ["webserver"]
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: social-pipeline-config
+            - secretRef:
+                name: social-pipeline-secrets
+          env:
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: "LocalExecutor"
+          volumeMounts:
+            - name: dags-volume
+              mountPath: /opt/airflow/dags
+            - name: code-volume
+              mountPath: /opt/social_pipeline
+              readOnly: true
+            - name: logs-volume
+              mountPath: /opt/airflow/logs
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: dags-volume
+          hostPath:
+            path: /social-pipeline/orchestration/dags
+            type: Directory
+        - name: code-volume
+          hostPath:
+            path: /social-pipeline
+            type: Directory
+        - name: logs-volume
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-webserver-service
+  namespace: social-pipeline
+spec:
+  ports:
+    - port: 8080
+      targetPort: 8080
+  selector:
+    app: airflow-webserver
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-scheduler
+  namespace: social-pipeline
+  labels:
+    app: airflow-scheduler
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: airflow-scheduler
+  template:
+    metadata:
+      labels:
+        app: airflow-scheduler
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for Postgres..."
+              until nc -z postgres-service 5432; do sleep 2; done
+              echo "Postgres ready, sleeping 15s for migrations..."
+              sleep 15
+      containers:
+        - name: scheduler
+          image: social-pipeline-airflow-scheduler:latest
+          imagePullPolicy: IfNotPresent
+          args: ["scheduler"]
+          envFrom:
+            - configMapRef:
+                name: social-pipeline-config
+            - secretRef:
+                name: social-pipeline-secrets
+          env:
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: "LocalExecutor"
+          volumeMounts:
+            - name: dags-volume
+              mountPath: /opt/airflow/dags
+            - name: code-volume
+              mountPath: /opt/social_pipeline
+              readOnly: true
+            - name: logs-volume
+              mountPath: /opt/airflow/logs
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+      volumes:
+        - name: dags-volume
+          hostPath:
+            path: /social-pipeline/orchestration/dags
+            type: Directory
+        - name: code-volume
+          hostPath:
+            path: /social-pipeline
+            type: Directory
+        - name: logs-volume
+          emptyDir: {}

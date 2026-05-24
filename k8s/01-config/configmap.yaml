@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: social-pipeline-config
+  namespace: social-pipeline
+data:
+  ENV: "dev"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"
+  S3_ENDPOINT: "http://minio-service:9000"
+  S3_BUCKET: "social-lake"
+  S3_REGION: "us-east-1"
+  S3_PATH_STYLE_ACCESS: "true"
+  STORAGE_RAW_BASE: "s3a://social-lake/data/raw"
+  STORAGE_DISCARDED_BASE: "s3a://social-lake/data/discarded"
+  STORAGE_BATCH_VIEWS_BASE: "s3a://social-lake/data/batch_views"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  CASSANDRA_HOSTS: "cassandra-service"
+  CASSANDRA_KEYSPACE: "social_lambda"
+  ES_HOST: "http://elasticsearch-service:9200"
+  ES_BATCH_INDEX: "social_batch_views"
+  ES_REALTIME_INDEX: "social_realtime_views"
+  ES_BATCH_ALIAS: "batch_current"
+  CLICKHOUSE_HOST: "http://clickhouse-service:8123"
+  CLICKHOUSE_DATABASE: "social_warehouse"
+  CLICKHOUSE_USER: "social"
+  STREAM_STARTING_OFFSETS: "latest"
+  STREAM_TRIGGER_SECS: "5"
+  SPEED_WRITE_BATCH_SIZE: "500"
+  BATCH_INPUT_PARTITIONS: "64"
+  BATCH_SHUFFLE_PARTITIONS: "64"
+  SPARK_MASTER: "spark://spark-master-service:7077"
+  AIRFLOW_SPARK_MASTER: "spark://spark-master-service:7077"
+  PYTHONPATH: "/app"
+  PYTHONUNBUFFERED: "1"
+  PIPELINE_DIR: "/opt/social_pipeline"

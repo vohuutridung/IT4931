@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-worker
+  namespace: social-pipeline
+  labels:
+    app: spark-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-worker
+  template:
+    metadata:
+      labels:
+        app: spark-worker
+    spec:
+      containers:
+        - name: spark-worker
+          image: social-spark:3.5.3
+          command:
+            - /opt/spark/bin/spark-class
+            - org.apache.spark.deploy.worker.Worker
+            - spark://spark-master-service:7077
+          ports:
+            - containerPort: 8081
+              name: ui
+          envFrom:
+            - configMapRef:
+                name: social-pipeline-config
+          env:
+            - name: SPARK_NO_DAEMONIZE
+              value: "true"
+            - name: SPARK_WORKER_CORES
+              value: "2"
+            - name: SPARK_WORKER_MEMORY
+              value: "2G"
+            - name: SPARK_LOCAL_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              cpu: 1000m
+              memory: 3Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-worker-service
+  namespace: social-pipeline
+spec:
+  ports:
+    - port: 8081
+      targetPort: 8081
+      name: ui
+  selector:
+    app: spark-worker

@@ -2,20 +2,18 @@
 
 Pipeline xử lý dữ liệu mạng xã hội theo mô hình Lambda Architecture. Nhận dữ liệu từ Reddit, Facebook và Instagram, chuẩn hóa về canonical schema, ghi raw data vào MinIO, tạo batch views bằng Spark, xử lý realtime bằng Spark Structured Streaming, lưu serving data vào Elasticsearch/Redis và expose qua FastAPI + dashboard tĩnh.
 
+Dự án sử dụng **Kubernetes (k8s) local** bằng Minikube làm hạ tầng chính.
+
 ## Mục Lục
 
 - [Kiến trúc hệ thống](#kiến-trúc-hệ-thống)
-- [Service và cổng](#service-và-cổng)
+- [Cấu hình các dịch vụ k8s](#cấu-hình-các-dịch-vụ-k8s)
 - [Yêu cầu môi trường](#yêu-cầu-môi-trường)
-- [Chạy dự án từ đầu](#chạy-dự-án-từ-đầu)
-- [Replay và pipeline thủ công](#replay-và-pipeline-thủ-công)
+- [Chạy dự án từ đầu (Kubernetes)](#chạy-dự-án-từ-đầu-kubernetes)
 - [Kiểm tra kết quả](#kiểm-tra-kết-quả)
-- [Reset và chạy lại từ đầu](#reset-và-chạy-lại-từ-đầu)
-- [Tắt dự án](#tắt-dự-án)
+- [Makefile Reference](#makefile-reference)
 - [Luồng dữ liệu chi tiết](#luồng-dữ-liệu-chi-tiết)
-- [Cấu hình](#cấu-hình)
-- [Debug thường gặp](#debug-thường-gặp)
-- [Test](#test)
+- [Cấu hình môi trường](#cấu-hình-môi-trường)
 
 ---
 
@@ -23,25 +21,25 @@ Pipeline xử lý dữ liệu mạng xã hội theo mô hình Lambda Architectur
 
 ```text
 data/*
-  → ingestion.simulator
+  → ingestion.simulator (replay-simulators)
   → Kafka  social.<platform>.posts
-  → batch.object_store_writer
+  → batch.object_store_writer (object-store-writer pod)
   → MinIO  s3a://social-lake/data/raw/<platform>/...
-  → batch.spark_batch_job
+  → batch.spark_batch_job (Spark Job)
   → MinIO  s3a://social-lake/data/batch_views/...
-  → batch.index_batch_views
+  → batch.index_batch_views (Spark Job)
   → Elasticsearch  social_batch_views
 
 Kafka  social.<platform>.posts
-  → speed.streaming_job  +  speed.nlp_pipeline
+  → speed.streaming_job (speed-streaming pod)
   → Redis       rt:stats:* / rt:hashtags:*
   → Elasticsearch  social_realtime_views
   → Kafka       social.enriched.posts
 
 Elasticsearch + Redis
-  → serving.merge_service
+  → serving.merge_service (api pod)
   → api.main  (FastAPI)
-  → dashboard/index.html
+  → dashboard/index.html (dashboard pod)
 ```
 
 | Layer | Thành phần | Vai trò |
@@ -54,265 +52,119 @@ Elasticsearch + Redis
 
 ---
 
-## Service Và Cổng
+## Cấu Hình Các Dịch Vụ K8s
 
-### Core stack (mặc định)
+Khi kích hoạt Port-forward (`make forward`), các dịch vụ sẽ được mapping ra máy Host tại các cổng sau:
 
-| Service | Vai trò | URL / Cổng |
-|---|---|---|
-| Kafka | Message broker | `localhost:9092` |
-| MinIO Console | Object storage UI | http://localhost:9001 |
-| Spark Master | Cluster UI | http://localhost:8081 |
-| Spark Worker | Worker UI | http://localhost:8083 |
-| Redis | Realtime cache | `localhost:6379` |
-| Elasticsearch | Serving indexes | http://localhost:9200 |
-| FastAPI | Serving API | http://localhost:8000 |
-| Dashboard | UI tĩnh | http://localhost:8084 |
-
-MinIO mặc định: `minioadmin` / `minioadmin`
-
-### Profile bổ sung
-
-| Profile | Service | URL / Cổng |
-|---|---|---|
-| `debug` | Kafka UI | http://localhost:8080 |
-| `debug` | Kibana | http://localhost:5601 |
-| `orchestration` | Airflow | http://localhost:8082 |
-| `warehouse` | ClickHouse | http://localhost:8123 (Native: 9002) |
-| `monitoring` | Prometheus | http://localhost:9090 |
-| `monitoring` | Grafana | http://localhost:3000 |
-| `enrichment` | Cassandra | `localhost:9042` |
-| `anomaly` | Cassandra + anomaly detector | `localhost:9042` |
+| Service | Vai trò | URL / Cổng Host | Cổng k8s Service |
+|---|---|---|---|
+| Kafka | Message broker | `localhost:9092` | `kafka-service:9092` |
+| MinIO Console | Object storage UI | http://localhost:9001 | `minio-service:9001` |
+| Spark Master | Cluster UI | http://localhost:8080 | `spark-master-service:8080` |
+| Redis | Realtime cache | `localhost:6379` | `redis-service:6379` |
+| Elasticsearch | Serving indexes | http://localhost:9200 | `elasticsearch-service:9200` |
+| FastAPI | Serving API | http://localhost:8000 | `api-service:8000` |
+| Dashboard | UI tĩnh | http://localhost:8084 | `dashboard-service:80` |
 
 ---
 
 ## Yêu Cầu Môi Trường
 
-- Docker Engine và Docker Compose plugin (`docker compose`, không phải `docker-compose` cũ)
-- RAM trống: tối thiểu **6 GB** cho core stack, **8 GB+** khi bật thêm profile
-- Port chưa bị chiếm: `8000`, `8081`, `8083`, `8084`, `9000`, `9001`, `9200`, `9092`, `6379`
+- **Minikube** (hoặc cụm k8s local tương đương)
+- Tài nguyên khuyến nghị cho Minikube: Tối thiểu **8 GB RAM** và **4 CPU** (Ví dụ: `minikube start --memory=8192 --cpus=4`).
+- CLI **kubectl** đã kết nối thành công tới cluster.
+- **Docker Engine** (được sử dụng làm driver cho Minikube).
 
 ---
 
-## Chạy Dự Án Từ Đầu
+## Chạy Dự Án Từ Đầu (Kubernetes)
 
-### 1. Chuẩn bị
-
+### 1. Khởi động Minikube & Mount thư mục
 ```bash
-git clone <repo-url>
-cd social-pipeline
-cp .env.example .env   # tùy chọn — giữ default nếu không cần đổi port/credential
+# 1. Khởi động Minikube với giới hạn tài nguyên tối ưu
+minikube start --memory=8192 --cpus=4
 
-# Tải và giải nén tự động toàn bộ dữ liệu mẫu lớn từ Google Drive
-make download-data
+# 2. Mount thư mục dự án từ host vào VM (giữ terminal này chạy ở background)
+minikube mount .:/social-pipeline
 ```
 
-### 2. Build image
-
+### 2. Nạp và Build Docker Images cục bộ
+Để Minikube có thể nhận dạng các images custom của dự án mà không cần kéo từ Docker Hub:
 ```bash
-docker compose build
+# Trỏ Docker CLI hiện tại vào Docker daemon của Minikube
+eval $(minikube docker-env)
+
+# Build các images
+make build
 ```
 
-Chỉ build service cụ thể khi sửa code:
-
+### 3. Triển khai các Manifests lên k8s
 ```bash
-# Sửa API/serving code
-docker compose build api serving-init
-
-# Sửa Spark/batch/speed code
-docker compose build spark-master spark-worker speed
+# Áp dụng tất cả manifests (Namespace, Configs, Storage, Apps, Simulators...)
+make apply
 ```
-
-### 3. Khởi động hạ tầng lõi
-
-```bash
-make core-up
-```
-
-Lệnh này start: Zookeeper, Kafka, Kafka-init, MinIO, MinIO-init, Redis, Elasticsearch, serving-init.
-
-Kiểm tra tất cả đã `healthy`:
-
+Kiểm tra trạng thái các Pod cho tới khi tất cả đều ở trạng thái `Running`:
 ```bash
 make ps
 ```
+*(Lưu ý: Một số dịch vụ phụ trợ như Airflow, Cassandra, Prometheus, Grafana mặc định được cấu hình scale về 0 replicas trong k8s manifests để tiết kiệm bộ nhớ RAM của cụm local. Quá trình kiểm thử chính sẽ trigger Spark batch jobs thủ công).*
 
-Kiểm tra Elasticsearch index đã được tạo:
-
+### 4. Thiết lập Port-forward ra máy Host
 ```bash
-docker compose exec -T elasticsearch \
-  curl -fsS http://localhost:9200/_cat/indices?v
+# Giữ terminal này chạy ở background
+make forward
 ```
 
-### 4. Khởi động Spark, speed layer, API và dashboard
-
-```bash
-make app-up
-```
-
-Kiểm tra API:
-
-```bash
-curl -fsS http://localhost:8000/health
-# {"status":"ok"}
-```
-
-### 5. Bật Airflow orchestration
-
-Airflow là orchestrator chính điều phối batch pipeline. **Khuyến nghị bật Airflow** thay vì chạy Spark thủ công.
-
-```bash
-make orchestration
-```
-
-Truy cập Airflow UI: http://localhost:8082 — `admin` / `admin`
-
-### 6. Replay dữ liệu mẫu
-
-```bash
-make replay
-```
-
-Lệnh này start các container replay để publish sample messages vào Kafka. Đợi **30–60 giây** để `object-store-writer` và `speed` consume và flush dữ liệu.
-
-### 7. Trigger batch pipeline
-
-Vào Airflow UI, **unpause** DAG `social_lambda_batch_pipeline` rồi bấm **Trigger DAG** (▶).
-
-Hoặc trigger bằng CLI:
-
-```bash
-docker compose exec airflow-scheduler \
-  airflow dags trigger social_lambda_batch_pipeline
-```
-
-DAG sẽ:
-1. Kiểm tra raw data mới trên MinIO
-2. Chạy Spark batch job
-3. Index batch views lên Elasticsearch
-4. Đánh dấu dữ liệu đã xử lý
-5. Gửi Slack alert (nếu cấu hình)
-
-### 8. Xem kết quả
-
-Mở dashboard: http://localhost:8084
-
-Kiểm tra nhanh qua API:
-
-```bash
-curl -fsS "http://localhost:8000/api/v1/posts?limit=5&start=2023-01-01T00:00:00Z"
-curl -fsS "http://localhost:8000/api/v1/stats/realtime"
-```
-
-> **Lưu ý:** Dữ liệu mẫu có timestamp trong quá khứ. Luôn truyền `start=2023-01-01T00:00:00Z` khi query posts/trend để chắc chắn thấy data.
-
-### 9. Nạp dữ liệu vào ClickHouse Data Warehouse (Tùy chọn)
-
-Nếu bạn muốn phân tích dữ liệu qua kho lưu trữ ClickHouse:
-
-1. Khởi động ClickHouse server:
+### 5. Chạy các tác vụ Batch và kiểm tra kết quả
+1. Đợi các simulators phát dữ liệu khoảng 30-60 giây để `object-store-writer` ghi Parquet vào MinIO.
+2. Chạy Spark Batch Job để recompute dữ liệu lô:
    ```bash
-   make warehouse-stack
+   make batch
    ```
-2. Chạy Spark job nạp dữ liệu tổng hợp từ MinIO sang ClickHouse:
+3. Đồng bộ hóa batch views đã xử lý vào Elasticsearch:
+   ```bash
+   make index-batch
+   ```
+4. Nạp dữ liệu vào ClickHouse Data Warehouse:
    ```bash
    make warehouse
    ```
 
+---
+
+## Kiểm Kiểm Tra Kết Quả
+
+Bạn có thể truy cập các UI hoặc kiểm tra nhanh qua API:
+- **Dashboard:** http://localhost:8084
+- **API Health:** http://localhost:8000/health
+- **Kiểm tra API dữ liệu:**
+  ```bash
+  # Lấy danh sách post đã chuẩn hóa (chứa cả batch và realtime)
+  curl -fsS "http://localhost:8000/api/v1/posts?limit=5&start=2025-01-01T00:00:00Z" | python3 -m json.tool
+
+  # Xem thống kê realtime
+  curl -fsS "http://localhost:8000/api/v1/stats/realtime" | python3 -m json.tool
+  ```
 
 ---
 
-## Replay Và Pipeline Thủ Công
+## Makefile Reference
 
-### Replay qua Docker (khuyến nghị)
-
-```bash
-make replay
-```
-
-### Replay trực tiếp trên host (dev)
-
-```bash
-make replay-raw
-```
-
-Mỗi platform dùng port Prometheus riêng (9101/9102/9103) để tránh conflict. Dừng khi cần:
-
-```bash
-make kill-simulators
-```
-
-### Chạy batch thủ công (fallback, không khuyến nghị trong production)
-
-Dùng khi debug hoặc Airflow chưa bật:
-
-```bash
-# Spark batch job
-make spark-batch
-
-# Index batch views vào Elasticsearch
-make index-batch-docker
-```
-
----
-
-## Kiểm Tra Kết Quả
-
-```bash
-# Health check
-curl -fsS http://localhost:8000/health
-
-# Elasticsearch indices
-docker compose exec -T elasticsearch \
-  curl -fsS http://localhost:9200/_cat/indices?v
-
-# API endpoints
-curl -fsS "http://localhost:8000/api/v1/posts?limit=5&start=2023-01-01T00:00:00Z" | python3 -m json.tool
-curl -fsS "http://localhost:8000/api/v1/sentiment/trend?start=2023-01-01T00:00:00Z" | python3 -m json.tool
-curl -fsS "http://localhost:8000/api/v1/hashtags/top?window_hours=24&top_n=10" | python3 -m json.tool
-curl -fsS "http://localhost:8000/api/v1/stats/realtime" | python3 -m json.tool
-
-# Raw data trên MinIO
-make minio-ls-raw
-
-# Log service chính
-make logs
-make logs-all
-```
-
----
-
-## Reset Và Chạy Lại Từ Đầu
-
-Xóa toàn bộ dữ liệu volume rồi khởi động lại từ đầu:
-
-```bash
-# 1. Dừng và xóa volume
-make clean
-
-# 2. Khởi động lại hạ tầng
-make core-up
-make app-up
-make orchestration
-
-# 3. Replay dữ liệu mẫu
-make replay
-
-# 4. Đợi 30-60 giây, sau đó chạy batch
-make spark-batch && make index-batch-docker
-```
-
----
-
-## Tắt Dự Án
-
-```bash
-# Dừng sạch tất cả các container của mọi profiles (giữ lại dữ liệu volume)
-make down
-
-# Dừng sạch container của mọi profiles và xóa toàn bộ dữ liệu volume
-make clean
-```
+| Lệnh | Mô tả |
+|---|---|
+| `make build` | Build các custom Docker images trong registry hiện tại |
+| `make test` | Chạy unit tests cục bộ |
+| `make download-data` | Tải và giải nén dữ liệu mẫu lớn từ Drive |
+| `make apply` | Apply toàn bộ manifests lên Kubernetes |
+| `make delete` | Xóa sạch namespace `social-pipeline` trên k8s |
+| `make forward` | Port-forward các dịch vụ UI chính ra host |
+| `make batch` | Chạy Spark batch job trên k8s |
+| `make index-batch` | Chạy Index batch views lên Elasticsearch trên k8s |
+| `make warehouse` | Chạy Spark job nạp ClickHouse trên k8s |
+| `make ps` | Xem trạng thái các Pods trong namespace `social-pipeline` |
+| `make logs` | Xem logs của Serving API pod |
+| `make logs-writer` | Xem logs của Object Store Writer pod |
+| `make logs-speed` | Xem logs của Speed Streaming pod |
 
 ---
 
@@ -330,8 +182,7 @@ make clean
 
 ### Raw data (MinIO)
 
-`batch.object_store_writer` ghi Parquet partition theo platform/ngày:
-
+`object-store-writer` ghi Parquet partition theo platform/ngày:
 ```
 s3a://social-lake/data/raw/<platform>/year=YYYY/month=MM/day=DD/
 ```
@@ -359,190 +210,12 @@ Speed layer ghi:
 | Redis | `rt:hashtags:<platform>:<hour>` | Sorted set hashtag count |
 | Elasticsearch | `social_realtime_views` | Post với enrichment fields |
 
-### Serving merge
-
-| Endpoint | Logic |
-|---|---|
-| `/api/v1/posts` | Realtime nếu query chạm window 24h, batch nếu ngoài window; dedupe theo `post_id` |
-| `/api/v1/sentiment/trend` | Merge batch/realtime theo time bucket UTC |
-| `/api/v1/hashtags/top` | Ưu tiên Redis trong window, fallback batch ES |
-| `/api/v1/stats/realtime` | Đọc Redis, tính `avg_sentiment` |
-
 ---
 
-## Cấu Hình
+## Cấu Hình Môi Trường
 
-Biến môi trường trong `.env.example` và `docker-compose.yml`:
-
-| Biến | Mặc định | Ý nghĩa |
-|---|---|---|
-| `API_HOST_PORT` | `8000` | Port FastAPI trên host |
-| `DASHBOARD_HOST_PORT` | `8084` | Port dashboard |
-| `MINIO_API_HOST_PORT` | `9000` | Port MinIO S3 API |
-| `MINIO_CONSOLE_HOST_PORT` | `9001` | Port MinIO Console |
-| `ES_HOST_PORT` | `9200` | Port Elasticsearch |
-| `SPARK_MASTER_UI_HOST_PORT` | `8081` | Spark master UI |
-| `REPLAY_RATE_PER_SEC` | `20` | Tốc độ replay (records/s) |
-| `REPLAY_DEDUPE` | `true` | Dedupe khi replay |
-| `STREAM_STARTING_OFFSETS` | `latest` | Offset bắt đầu streaming |
-| `STREAM_TRIGGER_SECS` | `5` | Trigger interval Spark Streaming (giây) |
-| `SPEED_WRITE_BATCH_SIZE` | `500` | Số record ghi mỗi micro-batch |
-| `CONSUMER_FLUSH_SIZE` | `500` | Số record flush raw Parquet |
-| `CONSUMER_FLUSH_INTERVAL` | `30` | Flush interval raw writer (giây) |
-| `BATCH_INPUT_PARTITIONS` | `64` | Partition input batch job |
-| `BATCH_SHUFFLE_PARTITIONS` | `64` | Shuffle partition Spark SQL |
-| `REALTIME_WINDOW_HOURS` | `24` | Window realtime khi serving merge |
-| `NLP_MODEL_NAME` | `distilbert-base-uncased-finetuned-sst-2-english` | Sentiment model |
-
----
-
-## Debug Thường Gặp
-
-### API trả về rỗng
-
-```bash
-# Kiểm tra index ES có data không
-docker compose exec -T elasticsearch \
-  curl -fsS http://localhost:9200/_cat/indices?v
-
-# Nếu social_batch_views rỗng → chạy lại batch
-make spark-batch && make index-batch-docker
-
-# Nếu social_realtime_views rỗng → kiểm tra speed layer
-docker compose logs --tail=200 speed
-make replay
-```
-
-### Batch job báo không có raw data
-
-```bash
-# Kiểm tra object-store-writer đã flush chưa
-docker compose logs --tail=200 object-store-writer
-
-# Kiểm tra MinIO
-make minio-ls-raw
-```
-
-Nguyên nhân thường gặp: replay chưa chạy, hoặc writer chưa đủ thời gian flush (cần 30–60 giây sau replay).
-
-### Simulator không dừng được (port conflict)
-
-```bash
-make kill-simulators
-```
-
-### Dashboard hiện dữ liệu cũ
-
-```bash
-docker compose build api serving-init
-docker compose up -d --force-recreate serving-init api
-```
-
-Nếu vẫn cũ → xóa browser cache hoặc thử incognito.
-
-### Elasticsearch status yellow
-
-Bình thường với single-node local — replica không được assign. Index vẫn query được, không cần xử lý.
-
-### Spark batch chậm
-
-Giảm partition cho máy yếu:
-
-```bash
-docker compose exec -T spark-master \
-  /opt/spark/bin/spark-submit \
-  --master spark://spark-master:7077 \
-  /app/batch/spark_batch_job.py \
-  --input-partitions 32 \
-  --shuffle-partitions 32
-```
-
-### Airflow DAG không tìm thấy
-
-```bash
-# Kiểm tra DAG đã load chưa
-docker compose exec airflow-scheduler airflow dags list | grep social
-
-# Xem import errors
-docker compose exec airflow-scheduler airflow dags list-import-errors
-```
-
----
-
-## Test
-
-### Chạy Unit Tests
-
-```bash
-.venv/bin/pytest tests/unit
-```
-
-Chạy theo file unit test cụ thể:
-
-```bash
-.venv/bin/pytest tests/unit/test_anomaly_detector.py
-.venv/bin/pytest tests/unit/test_serving_merge.py
-.venv/bin/pytest tests/unit/test_realtime_stores.py
-```
-
-### Chạy Integration & E2E Tests (Yêu cầu Docker stack đang chạy)
-
-Để chạy kiểm thử tích hợp (Integration) và E2E trên local, sử dụng lệnh:
-
-```bash
-RUN_INTEGRATION=1 RUN_E2E=1 API_URL=http://localhost:8000 .venv/bin/pytest
-```
-
-Hoặc chạy integration/e2e qua Docker:
-
-```bash
-docker compose run --rm --no-deps \
-  -e RUN_E2E=1 \
-  -e API_URL=http://api:8000 \
-  -v "$PWD:/app" \
-  api \
-  python -m pytest tests/e2e/test_pipeline_contract.py
-```
-
-Compile nhanh kiểm tra syntax:
-
-```bash
-python3 -m py_compile \
-  batch/spark_batch_job.py \
-  batch/index_batch_views.py \
-  serving/merge_service.py \
-  serving/es_indexer.py \
-  speed/realtime_stores.py \
-  speed/streaming_job.py
-```
-
----
-
-## Makefile Reference
-
-| Lệnh | Mô tả |
-|---|---|
-| `make up` | Build và start toàn bộ core stack |
-| `make core-up` | Start hạ tầng lõi (không có Spark/speed/API) |
-| `make app-up` | Start Spark, speed layer, API và dashboard |
-| `make orchestration` | Start Airflow |
-| `make monitoring` | Start Prometheus + Grafana |
-| `make debug` | Start Kafka UI + Kibana |
-| `make warehouse-stack` | Start ClickHouse |
-| `make warehouse` | Chạy Spark job nạp dữ liệu từ MinIO vào ClickHouse |
-| `make enrichment` | Start Cassandra |
-| `make anomaly` | Start Cassandra + anomaly detector |
-| `make replay` | Replay qua Docker container |
-| `make replay-raw` | Replay trực tiếp trên host (dev) |
-| `make kill-simulators` | Dừng tất cả simulator đang chạy |
-| `make spark-batch` | Chạy Spark batch job |
-| `make index-batch-docker` | Index batch views vào Elasticsearch |
-| `make minio-ls-raw` | Liệt kê raw data trên MinIO |
-| `make logs` | Xem log object-store-writer, speed, api |
-| `make logs-all` | Xem log chi tiết tất cả service |
-| `make ps` | Trạng thái container |
-| `make down` | Tắt container, giữ volume |
-| `make clean` | Tắt container và xóa toàn bộ volume |
-| `make test` | Chạy unit tests |
-| `make build` | Build image |
-| `make download-data` | Tải và giải nén tự động dữ liệu mẫu lớn từ Drive |
+Các thông số điều chỉnh thông qua ConfigMap ở [k8s/01-config/configmap.yaml](k8s/01-config/configmap.yaml):
+- `CONSUMER_FLUSH_SIZE`: Số lượng record flush raw Parquet (Mặc định: 500)
+- `CONSUMER_FLUSH_INTERVAL`: Thời gian tối đa flush raw writer (Mặc định: 30 giây)
+- `STREAM_TRIGGER_SECS`: Thời gian trigger Spark Streaming (Mặc định: 5 giây)
+- `NLP_MODEL_NAME`: HuggingFace Sentiment analysis model sử dụng ở speed-streaming.

@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: social-pipeline
+  labels:
+    app: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
+          args:
+            - server
+            - /data
+            - --console-address
+            - :9001
+          ports:
+            - containerPort: 9000
+              name: api
+            - containerPort: 9001
+              name: console
+          envFrom:
+            - secretRef:
+                name: social-pipeline-secrets
+          volumeMounts:
+            - mountPath: /data
+              name: minio-storage
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: minio-storage
+          persistentVolumeClaim:
+            claimName: minio-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-service
+  namespace: social-pipeline
+spec:
+  ports:
+    - port: 9000
+      targetPort: 9000
+      name: api
+    - port: 9001
+      targetPort: 9001
+      name: console
+  selector:
+    app: minio
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  namespace: social-pipeline
+spec:
+  template:
+    spec:
+      containers:
+        - name: minio-init
+          image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+          envFrom:
+            - secretRef:
+                name: social-pipeline-secrets
+            - configMapRef:
+                name: social-pipeline-config
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for MinIO api to be ready..."
+              until mc alias set local http://minio-service:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" > /dev/null 2>&1; do
+                echo "MinIO not ready yet, sleeping..."
+                sleep 2
+              done
+              echo "Creating bucket social-lake..."
+              mc mb --ignore-existing "local/$S3_BUCKET"
+              mc ls "local/$S3_BUCKET"
+      restartPolicy: OnFailure

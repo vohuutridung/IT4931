@@ -58,8 +58,8 @@ def create_spark() -> SparkSession:
         SparkSession.builder
         .appName("SocialLambdaSpeedLayer")
         .master(SPARK_MASTER)
-        .config("spark.executor.cores", "2")
-        .config("spark.cores.max", "2")
+        .config("spark.executor.cores", "1")
+        .config("spark.cores.max", "1")
     )
     return configure_s3a(builder).getOrCreate()
 

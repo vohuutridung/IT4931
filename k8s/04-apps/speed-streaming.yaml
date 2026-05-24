@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: speed-streaming
+  namespace: social-pipeline
+  labels:
+    app: speed-streaming
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: speed-streaming
+  template:
+    metadata:
+      labels:
+        app: speed-streaming
+    spec:
+      initContainers:
+        - name: wait-for-infra
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for Redis, Elasticsearch, and Spark Master..."
+              until nc -z redis-service 6379; do sleep 2; done
+              until nc -z elasticsearch-service 9200; do sleep 2; done
+              until nc -z spark-master-service 7077; do sleep 2; done
+              echo "Infra ready!"
+      containers:
+        - name: speed
+          image: social-spark:3.5.3
+          command:
+            - /opt/spark/bin/spark-submit
+            - --master
+            - spark://spark-master-service:7077
+            - --total-executor-cores
+            - "1"
+            - --conf
+            - spark.driver.host=$(SPARK_LOCAL_IP)
+            - /app/speed/streaming_job.py
+          envFrom:
+            - configMapRef:
+                name: social-pipeline-config
+            - secretRef:
+                name: social-pipeline-secrets
+          env:
+            - name: SPARK_LOCAL_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 800m
+              memory: 1Gi
