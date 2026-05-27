@@ -18,14 +18,19 @@ spec:
       containers:
         - name: simulator
           image: social-python:0.1.0
+          imagePullPolicy: Never
           command:
             - python
             - -m
             - ingestion.simulator
             - --platform
             - reddit
+            - --source
+            - data/reddit_data/sample_data
             - --rate
             - "20"
+            - --loop
+            - "true"
             - --dedupe
             - "true"
             - --kafka-bootstrap
@@ -36,6 +41,13 @@ spec:
           envFrom:
             - configMapRef:
                 name: social-pipeline-config
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
           volumeMounts:
             - name: data-volume
               mountPath: /app/data
@@ -79,14 +91,19 @@ spec:
       containers:
         - name: simulator
           image: social-python:0.1.0
+          imagePullPolicy: Never
           command:
             - python
             - -m
             - ingestion.simulator
             - --platform
             - facebook
+            - --source
+            - data/facebook_data/sample_data
             - --rate
             - "20"
+            - --loop
+            - "true"
             - --dedupe
             - "true"
             - --kafka-bootstrap
@@ -97,6 +114,13 @@ spec:
           envFrom:
             - configMapRef:
                 name: social-pipeline-config
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
           volumeMounts:
             - name: data-volume
               mountPath: /app/data
@@ -140,14 +164,19 @@ spec:
       containers:
         - name: simulator
           image: social-python:0.1.0
+          imagePullPolicy: Never
           command:
             - python
             - -m
             - ingestion.simulator
             - --platform
             - instagram
+            - --source
+            - data/instagram_data/sample_data
             - --rate
             - "20"
+            - --loop
+            - "true"
             - --dedupe
             - "true"
             - --kafka-bootstrap
@@ -158,6 +187,13 @@ spec:
           envFrom:
             - configMapRef:
                 name: social-pipeline-config
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
           volumeMounts:
             - name: data-volume
               mountPath: /app/data

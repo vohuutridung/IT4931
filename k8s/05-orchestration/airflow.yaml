@@ -19,7 +19,7 @@ spec:
       containers:
         - name: airflow-init
           image: social-pipeline-airflow-init:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Never
           command:
             - bash
             - -c
@@ -45,7 +45,7 @@ metadata:
   labels:
     app: airflow-webserver
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: airflow-webserver
@@ -68,7 +68,7 @@ spec:
       containers:
         - name: webserver
           image: social-pipeline-airflow-webserver:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Never
           args: ["webserver"]
           ports:
             - containerPort: 8080
@@ -133,7 +133,7 @@ metadata:
   labels:
     app: airflow-scheduler
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: airflow-scheduler
@@ -156,7 +156,7 @@ spec:
       containers:
         - name: scheduler
           image: social-pipeline-airflow-scheduler:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Never
           args: ["scheduler"]
           envFrom:
             - configMapRef:

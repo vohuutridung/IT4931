@@ -74,6 +74,7 @@ metadata:
   name: minio-init
   namespace: social-pipeline
 spec:
+  backoffLimit: 5
   template:
     spec:
       containers:

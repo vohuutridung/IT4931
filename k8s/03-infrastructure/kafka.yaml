@@ -66,6 +66,7 @@ metadata:
   name: kafka-init
   namespace: social-pipeline
 spec:
+  backoffLimit: 5
   template:
     spec:
       containers:

@@ -18,6 +18,7 @@ spec:
       containers:
         - name: spark-worker
           image: social-spark:3.5.3
+          imagePullPolicy: Never
           command:
             - /opt/spark/bin/spark-class
             - org.apache.spark.deploy.worker.Worker

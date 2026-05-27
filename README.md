@@ -65,6 +65,8 @@ Khi kích hoạt Port-forward (`make forward`), các dịch vụ sẽ được m
 | Elasticsearch | Serving indexes | http://localhost:9200 | `elasticsearch-service:9200` |
 | FastAPI | Serving API | http://localhost:8000 | `api-service:8000` |
 | Dashboard | UI tĩnh | http://localhost:8084 | `dashboard-service:80` |
+| Grafana | Metrics dashboard | http://localhost:3000 | `grafana-service:3000` |
+| Airflow | Workflow orchestration | http://localhost:8082 | `airflow-webserver-service:8080` |
 
 ---
 
@@ -80,23 +82,34 @@ Khi kích hoạt Port-forward (`make forward`), các dịch vụ sẽ được m
 ## Chạy Dự Án Từ Đầu (Kubernetes)
 
 ### 1. Khởi động Minikube & Mount thư mục
-```bash
-# 1. Khởi động Minikube với giới hạn tài nguyên tối ưu
-minikube start --memory=8192 --cpus=4
 
-# 2. Mount thư mục dự án từ host vào VM (giữ terminal này chạy ở background)
-minikube mount .:/social-pipeline
+> **Lưu ý (Docker driver trên Linux):** Minikube với Docker driver không hỗ trợ `minikube mount` sau khi đã start. Cần truyền `--mount` ngay lúc khởi động.
+
+```bash
+# Khởi động Minikube và mount thư mục dự án vào /social-pipeline trong cluster
+# Thay /path/to/IT4931 bằng đường dẫn tuyệt đối đến thư mục dự án
+minikube start --memory=8192 --cpus=4 \
+  --mount --mount-string="/path/to/IT4931:/social-pipeline"
 ```
 
-### 2. Nạp và Build Docker Images cục bộ
-Để Minikube có thể nhận dạng các images custom của dự án mà không cần kéo từ Docker Hub:
+Giữ tiến trình `minikube` đang chạy (không Ctrl+C) trong suốt quá trình sử dụng để mount luôn active.
+
+### 2. Build Docker Images vào Minikube
+
+Tất cả custom images phải được build **bên trong Docker daemon của Minikube** (không phải Docker host) vì các manifest dùng `imagePullPolicy: Never`.
+
 ```bash
-# Trỏ Docker CLI hiện tại vào Docker daemon của Minikube
+# Trỏ Docker CLI vào daemon của Minikube
 eval $(minikube docker-env)
 
-# Build các images
-make build
+# Build các core images (social-python, social-spark, social-ml)
+make build-core
+
+# (Tùy chọn) Build Airflow image nếu cần orchestration
+make build-airflow
 ```
+
+> **Lưu ý:** `make build-airflow` mất 5–10 phút do tải JAR Spark và cài pyspark. Bỏ qua nếu không cần Airflow.
 
 ### 3. Triển khai các Manifests lên k8s
 ```bash
@@ -107,7 +120,16 @@ Kiểm tra trạng thái các Pod cho tới khi tất cả đều ở trạng th
 ```bash
 make ps
 ```
-*(Lưu ý: Một số dịch vụ phụ trợ như Airflow, Cassandra, Prometheus, Grafana mặc định được cấu hình scale về 0 replicas trong k8s manifests để tiết kiệm bộ nhớ RAM của cụm local. Quá trình kiểm thử chính sẽ trigger Spark batch jobs thủ công).*
+
+Thứ tự khởi động dự kiến (mỗi bước có thể mất 1–3 phút):
+
+1. `kafka`, `zookeeper`, `minio`, `redis`, `elasticsearch`, `cassandra` — Infrastructure
+2. `kafka-init`, `minio-init` — Init Jobs (chuyển sang `Completed`)
+3. `object-store-writer`, `speed-streaming`, `api`, `dashboard` — Apps
+4. `replay-reddit`, `replay-facebook`, `replay-instagram` — Simulators bắt đầu publish dữ liệu
+5. `prometheus`, `grafana`, `airflow-*` — Monitoring & Orchestration
+
+> Simulators dùng `--loop true` để chạy liên tục trong môi trường k8s. Dữ liệu realtime xuất hiện trên dashboard ngay sau khi simulators ở trạng thái `Running`.
 
 ### 4. Thiết lập Port-forward ra máy Host
 ```bash
@@ -132,7 +154,7 @@ make forward
 
 ---
 
-## Kiểm Kiểm Tra Kết Quả
+## Kiểm Tra Kết Quả
 
 Bạn có thể truy cập các UI hoặc kiểm tra nhanh qua API:
 - **Dashboard:** http://localhost:8084
@@ -146,25 +168,35 @@ Bạn có thể truy cập các UI hoặc kiểm tra nhanh qua API:
   curl -fsS "http://localhost:8000/api/v1/stats/realtime" | python3 -m json.tool
   ```
 
+Kiểm tra logs simulator để xác nhận dữ liệu đang được publish:
+```bash
+make logs-simulator
+```
+
+> **Hành vi đã biết:** Dashboard hiển thị `post_count` lấy từ Redis (counter cộng dồn). Do simulator chạy `--loop true` với sample data nhỏ (6 bài), con số này sẽ tăng liên tục. Elasticsearch và Cassandra sử dụng `post_id` làm document ID → upsert → không bị ảnh hưởng, số lượng unique posts phản ánh đúng dữ liệu thực.
+
 ---
 
 ## Makefile Reference
 
 | Lệnh | Mô tả |
 |---|---|
-| `make build` | Build các custom Docker images trong registry hiện tại |
+| `make build-core` | Build core images: `social-python`, `social-spark`, `social-ml` |
+| `make build-airflow` | Build Airflow image (tùy chọn, mất ~5–10 phút) |
+| `make build` | Build tất cả images (core + airflow) |
 | `make test` | Chạy unit tests cục bộ |
 | `make download-data` | Tải và giải nén dữ liệu mẫu lớn từ Drive |
 | `make apply` | Apply toàn bộ manifests lên Kubernetes |
 | `make delete` | Xóa sạch namespace `social-pipeline` trên k8s |
-| `make forward` | Port-forward các dịch vụ UI chính ra host |
+| `make forward` | Port-forward 8 dịch vụ ra host (Dashboard, API, MinIO, Spark, ES, Redis, Grafana, Airflow) |
 | `make batch` | Chạy Spark batch job trên k8s |
-| `make index-batch` | Chạy Index batch views lên Elasticsearch trên k8s |
+| `make index-batch` | Đồng bộ batch views vào Elasticsearch trên k8s |
 | `make warehouse` | Chạy Spark job nạp ClickHouse trên k8s |
 | `make ps` | Xem trạng thái các Pods trong namespace `social-pipeline` |
 | `make logs` | Xem logs của Serving API pod |
 | `make logs-writer` | Xem logs của Object Store Writer pod |
 | `make logs-speed` | Xem logs của Speed Streaming pod |
+| `make logs-simulator` | Xem logs của cả 3 simulator pods (reddit, facebook, instagram) |
 
 ---
 

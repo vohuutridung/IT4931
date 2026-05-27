@@ -28,6 +28,7 @@ spec:
               echo "Infra ready!"
         - name: serving-init
           image: social-python:0.1.0
+          imagePullPolicy: Never
           command: ["python", "-m", "serving.es_indexer", "--ensure"]
           envFrom:
             - configMapRef:
@@ -37,6 +38,7 @@ spec:
       containers:
         - name: api
           image: social-python:0.1.0
+          imagePullPolicy: Never
           command:
             - uvicorn
             - api.main:app

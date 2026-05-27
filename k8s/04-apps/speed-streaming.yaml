@@ -22,14 +22,16 @@ spec:
             - /bin/sh
             - -c
             - |
-              echo "Waiting for Redis, Elasticsearch, and Spark Master..."
+              echo "Waiting for Redis, Elasticsearch, Spark Master, and Cassandra..."
               until nc -z redis-service 6379; do sleep 2; done
               until nc -z elasticsearch-service 9200; do sleep 2; done
               until nc -z spark-master-service 7077; do sleep 2; done
+              until nc -z cassandra-service 9042; do sleep 2; done
               echo "Infra ready!"
       containers:
         - name: speed
           image: social-spark:3.5.3
+          imagePullPolicy: Never
           command:
             - /opt/spark/bin/spark-submit
             - --master

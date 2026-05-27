@@ -1,11 +1,11 @@
 FROM apache/airflow:2.9.3-python3.11
 
 ARG AIRFLOW_VERSION=2.9.3
-ARG PYTHON_VERSION=3.11
 ARG SPARK_VERSION=3.5.3
 ARG HADOOP_AWS_VERSION=3.3.4
 ARG AWS_SDK_BUNDLE_VERSION=1.12.262
-ARG AIRFLOW_CONSTRAINTS_URL=https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt
+# Hardcode URL thay vì dùng ${PYTHON_VERSION} — base image set ENV PYTHON_VERSION=3.11.9 override ARG
+ARG AIRFLOW_CONSTRAINTS_URL=https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt
 
 USER root
 
@@ -18,8 +18,8 @@ RUN apt-get update \
 
 USER airflow
 
-# Cài pyspark riêng (constraints ghim 3.5.1)
-RUN pip install --no-cache-dir "pyspark==${SPARK_VERSION}"
+# Cài pyspark riêng — bỏ qua constraint file của base image (hash conflict với 3.5.3)
+RUN pip install --no-cache-dir --constraint /dev/null "pyspark==${SPARK_VERSION}"
 
 # Để constraint file tự chọn version provider tương thích
 RUN pip install --no-cache-dir \
@@ -28,19 +28,19 @@ RUN pip install --no-cache-dir \
 
 USER root
 
-# Trỏ SPARK_HOME thẳng vào thư mục pyspark đã cài — không copy, không symlink
-# Đây là cách đúng: toàn bộ JAR của Spark đã có sẵn trong thư mục này
-ENV SPARK_HOME=/home/airflow/.local/lib/python${PYTHON_VERSION}/site-packages/pyspark
-
-# Thêm JAR S3/MinIO vào đúng thư mục jars của pyspark
-RUN curl --fail --show-error --silent --location --retry 3 \
-        -o "${SPARK_HOME}/jars/hadoop-aws-${HADOOP_AWS_VERSION}.jar" \
-        "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_AWS_VERSION}/hadoop-aws-${HADOOP_AWS_VERSION}.jar" \
+# Tìm path pyspark thực tế, tạo symlink tại /opt/pyspark (path cố định, không phụ thuộc Python version)
+RUN REAL_SPARK=$(python3 -c "import pyspark, os; print(os.path.dirname(pyspark.__file__))") \
+    && echo "pyspark found at: ${REAL_SPARK}" \
+    && ln -sfn "${REAL_SPARK}" /opt/pyspark \
     && curl --fail --show-error --silent --location --retry 3 \
-        -o "${SPARK_HOME}/jars/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VERSION}.jar" \
-        "https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_BUNDLE_VERSION}/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VERSION}.jar" \
-    && chown -R airflow: "${SPARK_HOME}/jars"
+           -o "${REAL_SPARK}/jars/hadoop-aws-${HADOOP_AWS_VERSION}.jar" \
+           "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_AWS_VERSION}/hadoop-aws-${HADOOP_AWS_VERSION}.jar" \
+    && curl --fail --show-error --silent --location --retry 3 \
+           -o "${REAL_SPARK}/jars/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VERSION}.jar" \
+           "https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_BUNDLE_VERSION}/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VERSION}.jar" \
+    && chown -R airflow: "${REAL_SPARK}/jars"
 
-ENV PATH="${SPARK_HOME}/bin:${PATH}"
+ENV SPARK_HOME=/opt/pyspark
+ENV PATH="/opt/pyspark/bin:${PATH}"
 
 USER airflow

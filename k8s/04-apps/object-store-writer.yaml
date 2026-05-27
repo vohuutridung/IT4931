@@ -29,6 +29,7 @@ spec:
       containers:
         - name: writer
           image: social-python:0.1.0
+          imagePullPolicy: Never
           command:
             - python
             - -m
