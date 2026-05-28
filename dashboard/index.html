@@ -1782,7 +1782,7 @@
           // Inner dot: sentiment color; stroke hue shifts with velocity
           ctx.beginPath();
           ctx.arc(x, y, 2, 0, Math.PI * 2);
-          ctx.fillStyle = v >= 0.15 ? '#10b981' : (v <= -0.15 ? '#ef4444' : '#f59e0b');
+          ctx.fillStyle = value >= 0.15 ? '#10b981' : (value <= -0.15 ? '#ef4444' : '#f59e0b');
           ctx.fill();
 
           // Tiny velocity arrow above/below dot when significant
@@ -1846,6 +1846,8 @@
       }
 
       function renderPosts(rows) {
+        window._lastPostsData = rows;
+        _sentimentRendered = false;
         const posts = [...(rows || [])];
 
         // Overview tab table
@@ -2015,6 +2017,18 @@
             : '';
           const postsStr = trendMeta.total_posts ? ` · ${trendMeta.total_posts} posts` : '';
           els.trendMeta.textContent = `${trend.length} points${postsStr}${velStr}`;
+          // Refresh dependent tabs if already loaded
+          if (_sentimentRendered) {
+            renderSentimentTab(window._lastPostsData, window.lastTrendData);
+          }
+          if (_topicsLoaded) {
+            _topicsLoaded = false;
+            loadTopicsTab().then(() => { _topicsLoaded = true; });
+          }
+          if (_netLoaded) {
+            _netLoaded = false;
+            loadNetworkTab().then(() => { _netLoaded = true; });
+          }
           setStatus(health.status === 'ok' ? 'ok' : '', `Updated ${new Date().toLocaleTimeString()}`);
         } catch (error) {
           setStatus('err', `API error: ${error.message}`);
@@ -2329,6 +2343,8 @@
         });
       }
 
+      let _sentimentRendered = false;
+
       function renderSentimentTab(postsData, trendData) {
         if (!postsData) return;
         const posts = postsData || [];
@@ -2403,6 +2419,7 @@
       let _topicHeatmap = null;
       let _selectedTopic = null;
       let _topicTrendChart = null;
+      let _topicsLoaded = false;
 
       async function loadTopicsTab() {
         const platform = els.platform.value;
@@ -3123,31 +3140,6 @@
         }
         if (_netData) renderNetworkGraph();
       });
-
-      /* ── Patch loadAll: refresh dependent tabs after data reload ─────────── */
-      const _origLoadAll = loadAll;
-      async function loadAll() {
-        await _origLoadAll();
-        if (_sentimentRendered) {
-          renderSentimentTab(window._lastPostsData, window.lastTrendData);
-        }
-        if (_topicsLoaded) {
-          _topicsLoaded = false;
-          loadTopicsTab().then(() => { _topicsLoaded = true; });
-        }
-        if (_netLoaded) {
-          _netLoaded = false;
-          loadNetworkTab().then(() => { _netLoaded = true; });
-        }
-      }
-
-      /* ── Patch renderPosts: store data for Tab 2 ─────────────────────────── */
-      const _origRenderPosts = renderPosts;
-      function renderPosts(rows) {
-        window._lastPostsData = rows;
-        _origRenderPosts(rows);
-        _sentimentRendered = false;
-      }
 
       /* ── Init ────────────────────────────────────────────────────────────── */
       initTheme();

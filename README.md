@@ -108,10 +108,21 @@ docker compose build
 make core-up                # Khởi động hạ tầng lõi
 make app-up                 # Khởi động Spark, speed layer, API, dashboard
 make orchestration          # Khởi động Airflow
-make replay                 # Phát lại dữ liệu mẫu vào Kafka
+make replay                 # Phát lại dữ liệu mẫu vào Kafka (chỉ chạy 1 lần!)
 # Đợi 30–60 giây, sau đó trigger DAG trong Airflow UI: http://localhost:8082
 # Xem kết quả tại: http://localhost:8084
 ```
+
+> ⚠️ **Lưu ý — Tránh chạy `make replay` nhiều lần:**
+> Speed Layer dùng `HINCRBY` để cộng dồn counter vào Redis (key `rt:stats:*`).
+> Mỗi lần replay cùng một bộ data sẽ **cộng thêm** vào số đếm cũ, khiến
+> "Realtime Posts" trên dashboard bị **tăng** so với thực tế.
+>
+> Nếu chạy replay nhiều lần, reset Redis trước khi replay lại:
+> ```bash
+> docker compose exec redis redis-cli FLUSHDB
+> make replay
+> ```
 
 ---
 
