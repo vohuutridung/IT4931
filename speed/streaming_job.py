@@ -114,6 +114,7 @@ def main() -> None:
         .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
         .option("subscribe", ",".join(KAFKA_ALL_SOURCE_TOPICS))
         .option("startingOffsets", STREAM_STARTING_OFFSETS)
+        .option("failOnDataLoss", "false")
         .load()
     )
     parsed = (
