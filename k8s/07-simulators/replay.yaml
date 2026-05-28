@@ -1,20 +1,18 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: batch/v1
+kind: Job
 metadata:
   name: replay-reddit
   namespace: social-pipeline
   labels:
     app: replay-reddit
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: replay-reddit
+  backoffLimit: 0
   template:
     metadata:
       labels:
         app: replay-reddit
     spec:
+      restartPolicy: Never
       containers:
         - name: simulator
           image: social-python:0.1.0
@@ -29,15 +27,8 @@ spec:
             - data/reddit_data/sample_data
             - --rate
             - "20"
-            - --loop
-            - "true"
-            - --dedupe
-            - "true"
             - --kafka-bootstrap
             - kafka-service:9092
-          ports:
-            - containerPort: 9101
-              name: metrics
           envFrom:
             - configMapRef:
                 name: social-pipeline-config
@@ -59,35 +50,21 @@ spec:
             path: /social-pipeline/data
             type: Directory
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: replay-reddit-service
-  namespace: social-pipeline
-spec:
-  ports:
-    - port: 9101
-      targetPort: 9101
-  selector:
-    app: replay-reddit
----
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: batch/v1
+kind: Job
 metadata:
   name: replay-facebook
   namespace: social-pipeline
   labels:
     app: replay-facebook
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: replay-facebook
+  backoffLimit: 0
   template:
     metadata:
       labels:
         app: replay-facebook
     spec:
+      restartPolicy: Never
       containers:
         - name: simulator
           image: social-python:0.1.0
@@ -102,15 +79,8 @@ spec:
             - data/facebook_data/sample_data
             - --rate
             - "20"
-            - --loop
-            - "true"
-            - --dedupe
-            - "true"
             - --kafka-bootstrap
             - kafka-service:9092
-          ports:
-            - containerPort: 9101
-              name: metrics
           envFrom:
             - configMapRef:
                 name: social-pipeline-config
@@ -132,35 +102,21 @@ spec:
             path: /social-pipeline/data
             type: Directory
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: replay-facebook-service
-  namespace: social-pipeline
-spec:
-  ports:
-    - port: 9101
-      targetPort: 9101
-  selector:
-    app: replay-facebook
----
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: batch/v1
+kind: Job
 metadata:
   name: replay-instagram
   namespace: social-pipeline
   labels:
     app: replay-instagram
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: replay-instagram
+  backoffLimit: 0
   template:
     metadata:
       labels:
         app: replay-instagram
     spec:
+      restartPolicy: Never
       containers:
         - name: simulator
           image: social-python:0.1.0
@@ -175,15 +131,8 @@ spec:
             - data/instagram_data/sample_data
             - --rate
             - "20"
-            - --loop
-            - "true"
-            - --dedupe
-            - "true"
             - --kafka-bootstrap
             - kafka-service:9092
-          ports:
-            - containerPort: 9101
-              name: metrics
           envFrom:
             - configMapRef:
                 name: social-pipeline-config
@@ -204,15 +153,3 @@ spec:
           hostPath:
             path: /social-pipeline/data
             type: Directory
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: replay-instagram-service
-  namespace: social-pipeline
-spec:
-  ports:
-    - port: 9101
-      targetPort: 9101
-  selector:
-    app: replay-instagram

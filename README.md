@@ -129,7 +129,7 @@ Thứ tự khởi động dự kiến (mỗi bước có thể mất 1–3 phút
 4. `replay-reddit`, `replay-facebook`, `replay-instagram` — Simulators bắt đầu publish dữ liệu
 5. `prometheus`, `grafana`, `airflow-*` — Monitoring & Orchestration
 
-> Simulators dùng `--loop true` để chạy liên tục trong môi trường k8s. Dữ liệu realtime xuất hiện trên dashboard ngay sau khi simulators ở trạng thái `Running`.
+> Simulators chạy dưới dạng **Job** (một lần duy nhất). Sau khi publish xong dữ liệu, Pod chuyển sang `Completed`. Muốn chạy lại: `kubectl delete job -n social-pipeline -l app=replay-reddit && make apply`.
 
 ### 4. Thiết lập Port-forward ra máy Host
 ```bash
@@ -173,7 +173,7 @@ Kiểm tra logs simulator để xác nhận dữ liệu đang được publish:
 make logs-simulator
 ```
 
-> **Hành vi đã biết:** Dashboard hiển thị `post_count` lấy từ Redis (counter cộng dồn). Do simulator chạy `--loop true` với sample data nhỏ (6 bài), con số này sẽ tăng liên tục. Elasticsearch và Cassandra sử dụng `post_id` làm document ID → upsert → không bị ảnh hưởng, số lượng unique posts phản ánh đúng dữ liệu thực.
+> Simulators chạy một lần duy nhất (Job), nên `post_count` trên dashboard phản ánh đúng số bài thực tế. Redis stats key có TTL 2 giờ — sau đó cần chạy lại Job để refresh dữ liệu realtime.
 
 ---
 
