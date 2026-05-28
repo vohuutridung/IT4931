@@ -107,6 +107,14 @@ Desktop.ini
 .aider*
 .continue/
 
+# Claude Code
+.claude/
+.agents/
+CLAUDE.md
+*.claude
+claude.json
+skills-lock.json
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  SECRETS & CONFIGURATION

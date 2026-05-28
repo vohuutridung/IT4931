@@ -259,7 +259,18 @@ def author_activity(df: DataFrame) -> DataFrame:
 
 
 def sentiment_time_series(df: DataFrame) -> DataFrame:
-    return df.groupBy("platform", "event_hour").agg(F.avg("sentiment_score").alias("avg_sentiment"))
+    eng = F.sum(F.col("engagement_score").cast("double"))
+    weighted = F.sum(F.col("sentiment_score").cast("double") * F.col("engagement_score").cast("double"))
+    return df.groupBy("platform", "event_hour").agg(
+        F.avg("sentiment_score").alias("avg_sentiment"),
+        F.count("*").alias("post_count"),
+        F.sum(F.when(F.col("sentiment_score") > 0.03, 1).otherwise(0)).alias("positive_count"),
+        F.sum(F.when(F.col("sentiment_score") < -0.03, 1).otherwise(0)).alias("negative_count"),
+        F.sum(F.when(
+            (F.col("sentiment_score") >= -0.03) & (F.col("sentiment_score") <= 0.03), 1
+        ).otherwise(0)).alias("neutral_count"),
+        F.when(eng > 0, weighted / eng).otherwise(F.avg("sentiment_score")).alias("weighted_sentiment"),
+    )
 
 
 def top_posts(df: DataFrame) -> DataFrame:

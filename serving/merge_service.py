@@ -164,10 +164,11 @@ class ServeQuery:
                     "calendar_interval": granularity,
                 },
                 "aggs": {
-                    "avg_sentiment": {
-                        "avg": {"field": "sentiment_score"}
-                    }
-                }
+                    "avg_sentiment": {"avg": {"field": "sentiment_score"}},
+                    "post_count": {"value_count": {"field": "sentiment_score"}},
+                    "positive_count": {"filter": {"range": {"sentiment_score": {"gt": 0.03}}}},
+                    "negative_count": {"filter": {"range": {"sentiment_score": {"lt": -0.03}}}},
+                },
             }
         }
 
@@ -183,11 +184,18 @@ class ServeQuery:
             for b in buckets:
                 val = b.get("avg_sentiment", {}).get("value")
                 if val is not None:
+                    pc = int(b.get("post_count", {}).get("value") or 0)
+                    pos = int(b.get("positive_count", {}).get("doc_count") or 0)
+                    neg = int(b.get("negative_count", {}).get("doc_count") or 0)
                     rt_results.append({
                         "event_hour": b["key_as_string"],
                         "avg_sentiment": val,
                         "platform": platform or "all",
-                        "view": "sentiment_time_series"
+                        "view": "sentiment_time_series",
+                        "post_count": pc,
+                        "positive_count": pos,
+                        "negative_count": neg,
+                        "neutral_count": max(0, pc - pos - neg),
                     })
         except requests.RequestException as exc:
             logger.error("Failed to fetch realtime sentiment aggregation from Elasticsearch: %s", exc)
@@ -212,7 +220,36 @@ class ServeQuery:
             key = (str(platform or row.get("platform") or "all"), bucket) if platform else ("all", bucket)
             merged[key] = row
 
-        return sorted(merged.values(), key=lambda row: str(row.get("event_hour") or ""))
+        # 4. Enrich each bucket with percentage breakdown and inter-bucket velocity.
+        for row in merged.values():
+            pc = int(row.get("post_count") or 0)
+            pos = int(row.get("positive_count") or 0)
+            neg = int(row.get("negative_count") or 0)
+            neu = int(row.get("neutral_count") or max(0, pc - pos - neg))
+            if pc > 0:
+                row["positive_pct"] = round(pos / pc * 100, 1)
+                row["negative_pct"] = round(neg / pc * 100, 1)
+                row["neutral_pct"] = round(neu / pc * 100, 1)
+
+        sorted_rows = sorted(merged.values(), key=lambda r: str(r.get("event_hour") or ""))
+        for i, row in enumerate(sorted_rows):
+            prev = float(sorted_rows[i - 1].get("avg_sentiment") or 0) if i > 0 else None
+            curr = float(row.get("avg_sentiment") or 0)
+            row["velocity"] = round(curr - prev, 4) if prev is not None else 0.0
+
+        return sorted_rows
+
+    @staticmethod
+    def trend_direction(data: list[dict]) -> str:
+        if len(data) < 2:
+            return "neutral"
+        recent = [float(r.get("avg_sentiment") or 0) for r in data[-6:]]
+        slope = recent[-1] - recent[0]
+        if slope > 0.05:
+            return "bullish"
+        if slope < -0.05:
+            return "bearish"
+        return "neutral"
 
     def query_hashtag_weeks(self, platform: str | None = None) -> list[str]:
         filters: list[dict[str, Any]] = [{"term": {"view": "top_hashtags_weekly"}}]
