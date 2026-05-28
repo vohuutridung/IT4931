@@ -87,6 +87,6 @@ logs-speed:
 	kubectl logs -n social-pipeline deployments/speed-streaming --tail=100
 
 logs-simulator:
-	kubectl logs -n social-pipeline deployments/replay-reddit --tail=50
-	kubectl logs -n social-pipeline deployments/replay-facebook --tail=50
-	kubectl logs -n social-pipeline deployments/replay-instagram --tail=50
+	kubectl logs -n social-pipeline job/replay-reddit --tail=50
+	kubectl logs -n social-pipeline job/replay-facebook --tail=50
+	kubectl logs -n social-pipeline job/replay-instagram --tail=50
