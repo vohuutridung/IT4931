@@ -7,6 +7,8 @@ metadata:
     app: elasticsearch
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: elasticsearch
@@ -39,7 +41,7 @@ spec:
               memory: 768Mi
             limits:
               cpu: 1000m
-              memory: 1Gi
+              memory: 1536Mi
           readinessProbe:
             httpGet:
               path: /_cluster/health?wait_for_status=yellow&timeout=5s
