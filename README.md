@@ -1,202 +1,286 @@
 # Social Media Lambda Pipeline
 
-Pipeline xử lý dữ liệu mạng xã hội theo mô hình Lambda Architecture. Nhận dữ liệu từ Reddit, Facebook và Instagram, chuẩn hóa về canonical schema, ghi raw data vào MinIO, tạo batch views bằng Spark, xử lý realtime bằng Spark Structured Streaming, lưu serving data vào Elasticsearch/Redis và expose qua FastAPI + dashboard tĩnh.
+Pipeline xử lý dữ liệu mạng xã hội theo kiến trúc Lambda. Thu thập bài đăng từ Reddit, Facebook và Instagram; chuẩn hóa về canonical schema; lưu raw data vào MinIO; xử lý batch bằng Spark; xử lý realtime bằng Spark Structured Streaming; phục vụ dữ liệu qua FastAPI và dashboard tĩnh.
 
-Dự án sử dụng **Kubernetes (k8s) local** bằng Minikube làm hạ tầng chính.
+Nhánh này triển khai trên **Kubernetes local** bằng Minikube.
 
 ## Mục Lục
 
 - [Kiến trúc hệ thống](#kiến-trúc-hệ-thống)
-- [Cấu hình các dịch vụ k8s](#cấu-hình-các-dịch-vụ-k8s)
+- [Danh sách service](#danh-sách-service)
 - [Yêu cầu môi trường](#yêu-cầu-môi-trường)
-- [Chạy dự án từ đầu (Kubernetes)](#chạy-dự-án-từ-đầu-kubernetes)
+- [Khởi động nhanh](#khởi-động-nhanh)
+- [Hướng dẫn chi tiết](#hướng-dẫn-chi-tiết)
+- [Replay và chạy pipeline thủ công](#replay-và-chạy-pipeline-thủ-công)
 - [Kiểm tra kết quả](#kiểm-tra-kết-quả)
-- [Makefile Reference](#makefile-reference)
+- [Reset hệ thống](#reset-hệ-thống)
+- [Tắt dự án](#tắt-dự-án)
 - [Luồng dữ liệu chi tiết](#luồng-dữ-liệu-chi-tiết)
-- [Cấu hình môi trường](#cấu-hình-môi-trường)
+- [Cấu hình biến môi trường](#cấu-hình-biến-môi-trường)
+- [Xử lý lỗi thường gặp](#xử-lý-lỗi-thường-gặp)
+- [Makefile Reference](#makefile-reference)
 
 ---
 
 ## Kiến Trúc Hệ Thống
 
-```text
-data/*
-  → ingestion.simulator (replay-simulators)
-  → Kafka  social.<platform>.posts
-  → batch.object_store_writer (object-store-writer pod)
-  → MinIO  s3a://social-lake/data/raw/<platform>/...
-  → batch.spark_batch_job (Spark Job)
-  → MinIO  s3a://social-lake/data/batch_views/...
-  → batch.index_batch_views (Spark Job)
-  → Elasticsearch  social_batch_views
+```mermaid
+flowchart LR
+    DATA["📁 data/*"]
+    SIM["ingestion.simulator"]
+    KAFKA[["Kafka\nsocial.&lt;platform&gt;.posts"]]
 
-Kafka  social.<platform>.posts
-  → speed.streaming_job (speed-streaming pod)
-  → Redis       rt:stats:* / rt:hashtags:*
-  → Elasticsearch  social_realtime_views
-  → Kafka       social.enriched.posts
+    subgraph batch["⬛ Batch Layer"]
+        OSW["object_store_writer"]
+        RAW[("MinIO\ndata/raw/")]
+        SPARK["spark_batch_job"]
+        BV[("MinIO\ndata/batch_views/")]
+        IDX["index_batch_views"]
+        ES_B[("Elasticsearch\nsocial_batch_views")]
+    end
 
-Elasticsearch + Redis
-  → serving.merge_service (api pod)
-  → api.main  (FastAPI)
-  → dashboard/index.html (dashboard pod)
+    subgraph speed["⚡ Speed Layer"]
+        STREAM["streaming_job\n+ nlp_pipeline"]
+        REDIS[("Redis\nrt:stats:*\nrt:hashtags:*")]
+        ES_RT[("Elasticsearch\nsocial_realtime_views")]
+    end
+
+    subgraph serving["🔗 Serving Layer"]
+        MERGE["merge_service"]
+        API["FastAPI :8000"]
+        DASH["Dashboard :8084"]
+    end
+
+    DATA --> SIM --> KAFKA
+    KAFKA --> OSW --> RAW --> SPARK --> BV --> IDX --> ES_B
+    KAFKA --> STREAM --> REDIS & ES_RT
+    ES_B & ES_RT & REDIS --> MERGE --> API --> DASH
 ```
-
-| Layer | Thành phần | Vai trò |
-|---|---|---|
-| Ingestion | `ingestion.simulator` | Đọc sample data, normalize, publish Kafka |
-| Raw/Object | `batch.object_store_writer` | Consume Kafka → raw Parquet → MinIO |
-| Batch | `batch.spark_batch_job` | Đọc raw Parquet, tạo batch views |
-| Speed | `speed.streaming_job` | Consume Kafka, enrich NLP, ghi Redis + ES |
-| Serving | `serving.merge_service` | Merge batch + realtime cho API |
 
 ---
 
-## Cấu Hình Các Dịch Vụ K8s
+## Danh Sách Service
 
-Khi kích hoạt Port-forward (`make forward`), các dịch vụ sẽ được mapping ra máy Host tại các cổng sau:
+| Service | Vai trò | URL / Cổng Host |
+|---|---|---|
+| Kafka | Message broker | `localhost:9092` |
+| MinIO Console | Object storage UI | http://localhost:9001 |
+| Spark Master | Cluster UI | http://localhost:8080 |
+| Redis | Cache realtime | `localhost:6379` |
+| Elasticsearch | Serving indexes | http://localhost:9200 |
+| FastAPI | Serving API | http://localhost:8000 |
+| Dashboard | UI tĩnh | http://localhost:8084 |
+| Grafana | Metrics | http://localhost:3000 |
+| Airflow | Orchestration | http://localhost:8082 |
 
-| Service | Vai trò | URL / Cổng Host | Cổng k8s Service |
-|---|---|---|---|
-| Kafka | Message broker | `localhost:9092` | `kafka-service:9092` |
-| MinIO Console | Object storage UI | http://localhost:9001 | `minio-service:9001` |
-| Spark Master | Cluster UI | http://localhost:8080 | `spark-master-service:8080` |
-| Redis | Realtime cache | `localhost:6379` | `redis-service:6379` |
-| Elasticsearch | Serving indexes | http://localhost:9200 | `elasticsearch-service:9200` |
-| FastAPI | Serving API | http://localhost:8000 | `api-service:8000` |
-| Dashboard | UI tĩnh | http://localhost:8084 | `dashboard-service:80` |
-| Grafana | Metrics dashboard | http://localhost:3000 | `grafana-service:3000` |
-| Airflow | Workflow orchestration | http://localhost:8082 | `airflow-webserver-service:8080` |
+MinIO mặc định: `minioadmin` / `minioadmin`
 
 ---
 
 ## Yêu Cầu Môi Trường
 
-- **Minikube** (hoặc cụm k8s local tương đương)
-- Tài nguyên khuyến nghị cho Minikube: Tối thiểu **8 GB RAM** và **4 CPU** (Ví dụ: `minikube start --memory=8192 --cpus=4`).
-- CLI **kubectl** đã kết nối thành công tới cluster.
-- **Docker Engine** (được sử dụng làm driver cho Minikube).
+- **Minikube** với Docker driver
+- **kubectl** đã kết nối tới cluster
+- **Docker Engine**
+- RAM trống: tối thiểu **8 GB**, khuyến nghị **12 GB**
+- CPU: tối thiểu **4 cores**
 
 ---
 
-## Chạy Dự Án Từ Đầu (Kubernetes)
-
-### 1. Khởi động Minikube & Mount thư mục
-
-> **Lưu ý (Docker driver trên Linux):** Minikube với Docker driver không hỗ trợ `minikube mount` sau khi đã start. Cần truyền `--mount` ngay lúc khởi động.
+## Khởi Động Nhanh
 
 ```bash
-# Khởi động Minikube và mount thư mục dự án vào /social-pipeline trong cluster
-# Thay /path/to/IT4931 bằng đường dẫn tuyệt đối đến thư mục dự án
+git clone <repo-url>
+cd IT4931
+make download-data                         # Tải dữ liệu mẫu từ Google Drive
+
+# Khởi động Minikube với mount thư mục dự án
+minikube start --memory=8192 --cpus=4 \
+  --mount --mount-string="$(pwd):/social-pipeline"
+
+eval $(minikube docker-env)                # Trỏ Docker CLI vào daemon Minikube
+make build-core                            # Build các image cần thiết
+
+make apply                                 # Deploy toàn bộ lên k8s
+make forward                               # Mở port-forward ra host (giữ terminal này)
+
+# Đợi ~2 phút để simulators chạy xong, sau đó:
+make batch                                 # Chạy Spark batch job (~20 phút)
+make index-batch                           # Index batch views vào Elasticsearch
+# Xem kết quả tại: http://localhost:8084
+```
+
+---
+
+## Hướng Dẫn Chi Tiết
+
+### 1. Chuẩn bị dữ liệu
+
+```bash
+make download-data
+```
+
+Tải và giải nén tự động toàn bộ dữ liệu mẫu từ Google Drive vào `data/`.
+
+### 2. Khởi động Minikube
+
+> **Quan trọng (Docker driver trên Linux):** `minikube mount` không hoạt động sau khi đã start. Phải truyền `--mount` ngay lúc khởi động và **giữ terminal chạy** trong suốt quá trình dùng.
+
+```bash
 minikube start --memory=8192 --cpus=4 \
   --mount --mount-string="/path/to/IT4931:/social-pipeline"
 ```
 
-Giữ tiến trình `minikube` đang chạy (không Ctrl+C) trong suốt quá trình sử dụng để mount luôn active.
+Thay `/path/to/IT4931` bằng đường dẫn tuyệt đối đến thư mục dự án.
 
-### 2. Build Docker Images vào Minikube
+### 3. Build Docker Images
 
-Tất cả custom images phải được build **bên trong Docker daemon của Minikube** (không phải Docker host) vì các manifest dùng `imagePullPolicy: Never`.
+Các manifest dùng `imagePullPolicy: Never` nên image phải được build **bên trong daemon của Minikube**.
 
 ```bash
-# Trỏ Docker CLI vào daemon của Minikube
-eval $(minikube docker-env)
+eval $(minikube docker-env)    # Trỏ Docker CLI vào daemon Minikube
 
-# Build các core images (social-python, social-spark, social-ml)
-make build-core
-
-# (Tùy chọn) Build Airflow image nếu cần orchestration
-make build-airflow
+make build-core                # Build: social-python, social-spark, social-ml
+make build-airflow             # (Tùy chọn) Build Airflow image (~5–10 phút)
 ```
 
-> **Lưu ý:** `make build-airflow` mất 5–10 phút do tải JAR Spark và cài pyspark. Bỏ qua nếu không cần Airflow.
+### 4. Deploy lên Kubernetes
 
-### 3. Triển khai các Manifests lên k8s
 ```bash
-# Áp dụng tất cả manifests (Namespace, Configs, Storage, Apps, Simulators...)
 make apply
 ```
-Kiểm tra trạng thái các Pod cho tới khi tất cả đều ở trạng thái `Running`:
+
+Kiểm tra các Pod cho đến khi tất cả ở trạng thái `Running` hoặc `Completed`:
+
 ```bash
 make ps
 ```
 
-Thứ tự khởi động dự kiến (mỗi bước có thể mất 1–3 phút):
+Thứ tự khởi động dự kiến (mỗi bước mất 1–3 phút):
 
-1. `kafka`, `zookeeper`, `minio`, `redis`, `elasticsearch`, `cassandra` — Infrastructure
-2. `kafka-init`, `minio-init` — Init Jobs (chuyển sang `Completed`)
-3. `object-store-writer`, `speed-streaming`, `api`, `dashboard` — Apps
-4. `replay-reddit`, `replay-facebook`, `replay-instagram` — Simulators bắt đầu publish dữ liệu
-5. `prometheus`, `grafana`, `airflow-*` — Monitoring & Orchestration
+| Bước | Pod | Trạng thái cuối |
+|---|---|---|
+| 1 | `kafka`, `zookeeper`, `minio`, `redis`, `elasticsearch`, `cassandra` | `Running` |
+| 2 | `kafka-init`, `minio-init` | `Completed` |
+| 3 | `object-store-writer`, `speed-streaming`, `api`, `dashboard` | `Running` |
+| 4 | `replay-reddit`, `replay-facebook`, `replay-instagram` | `Completed` |
+| 5 | `prometheus`, `grafana`, `airflow-*` | `Running` |
 
-> Simulators chạy dưới dạng **Job** (một lần duy nhất). Sau khi publish xong dữ liệu, Pod chuyển sang `Completed`. Muốn chạy lại: `kubectl delete job -n social-pipeline -l app=replay-reddit && make apply`.
+### 5. Mở port-forward
 
-### 4. Thiết lập Port-forward ra máy Host
 ```bash
-# Giữ terminal này chạy ở background
 make forward
 ```
 
-### 5. Chạy các tác vụ Batch và kiểm tra kết quả
-1. Đợi các simulators phát dữ liệu khoảng 30-60 giây để `object-store-writer` ghi Parquet vào MinIO.
-2. Chạy Spark Batch Job để recompute dữ liệu lô:
-   ```bash
-   make batch
-   ```
-3. Đồng bộ hóa batch views đã xử lý vào Elasticsearch:
-   ```bash
-   make index-batch
-   ```
-4. Nạp dữ liệu vào ClickHouse Data Warehouse:
-   ```bash
-   make warehouse
-   ```
+Giữ terminal này chạy. Lệnh sẽ forward 9 service ra host.
+
+### 6. Chạy Batch Pipeline
+
+Đợi ~60 giây sau khi simulators `Completed` để `object-store-writer` flush Parquet vào MinIO.
+
+```bash
+make batch          # Spark batch job (~20 phút)
+make index-batch    # Index batch views vào Elasticsearch
+```
+
+### 7. (Tùy chọn) Nạp vào ClickHouse Data Warehouse
+
+```bash
+make warehouse
+```
+
+---
+
+## Replay Và Chạy Pipeline Thủ Công
+
+Simulators chạy dưới dạng **Kubernetes Job** — chạy một lần duy nhất rồi `Completed`. Mỗi lần replay cần xóa Job cũ và tạo lại.
+
+> ⚠️ **Tránh replay nhiều lần liên tiếp:**
+> Speed Layer dùng `HINCRBY` để cộng dồn counter vào Redis (`rt:stats:*`).
+> Replay cùng dữ liệu nhiều lần sẽ **cộng thêm** vào số đếm cũ, khiến
+> "Realtime Posts" trên dashboard bị phình lên so với thực tế.
+>
+> Reset Redis trước khi replay lại:
+> ```bash
+> kubectl exec -n social-pipeline deployment/redis -- redis-cli FLUSHDB
+> ```
+
+### Replay một platform cụ thể
+
+```bash
+kubectl delete job -n social-pipeline replay-instagram
+kubectl apply -f k8s/07-simulators/replay.yaml
+```
+
+### Replay toàn bộ
+
+```bash
+kubectl delete job -n social-pipeline replay-reddit replay-facebook replay-instagram 2>/dev/null
+kubectl apply -f k8s/07-simulators/replay.yaml
+```
+
+### Chạy lại batch pipeline sau khi replay
+
+```bash
+make batch && make index-batch
+```
 
 ---
 
 ## Kiểm Tra Kết Quả
 
-Bạn có thể truy cập các UI hoặc kiểm tra nhanh qua API:
-- **Dashboard:** http://localhost:8084
-- **API Health:** http://localhost:8000/health
-- **Kiểm tra API dữ liệu:**
-  ```bash
-  # Lấy danh sách post đã chuẩn hóa (chứa cả batch và realtime)
-  curl -fsS "http://localhost:8000/api/v1/posts?limit=5&start=2025-01-01T00:00:00Z" | python3 -m json.tool
-
-  # Xem thống kê realtime
-  curl -fsS "http://localhost:8000/api/v1/stats/realtime" | python3 -m json.tool
-  ```
-
-Kiểm tra logs simulator để xác nhận dữ liệu đang được publish:
 ```bash
-make logs-simulator
+# Health check API
+curl -fsS http://localhost:8000/health
+
+# Danh sách posts
+curl -fsS "http://localhost:8000/api/v1/posts?limit=5&start=2026-01-01T00:00:00Z" | python3 -m json.tool
+
+# Sentiment trend
+curl -fsS "http://localhost:8000/api/v1/sentiment/trend?start=2026-01-01T00:00:00Z" | python3 -m json.tool
+
+# Top hashtags
+curl -fsS "http://localhost:8000/api/v1/hashtags/top?window_hours=24&top_n=10" | python3 -m json.tool
+
+# Thống kê realtime
+curl -fsS "http://localhost:8000/api/v1/stats/realtime" | python3 -m json.tool
 ```
 
-> Simulators chạy một lần duy nhất (Job), nên `post_count` trên dashboard phản ánh đúng số bài thực tế. Redis stats key có TTL 2 giờ — sau đó cần chạy lại Job để refresh dữ liệu realtime.
+Kiểm tra logs:
+
+```bash
+make logs-simulator    # Logs 3 simulator Jobs
+make logs-speed        # Logs speed-streaming
+make logs-writer       # Logs object-store-writer
+make logs              # Logs serving API
+```
 
 ---
 
-## Makefile Reference
+## Reset Hệ Thống
 
-| Lệnh | Mô tả |
-|---|---|
-| `make build-core` | Build core images: `social-python`, `social-spark`, `social-ml` |
-| `make build-airflow` | Build Airflow image (tùy chọn, mất ~5–10 phút) |
-| `make build` | Build tất cả images (core + airflow) |
-| `make test` | Chạy unit tests cục bộ |
-| `make download-data` | Tải và giải nén dữ liệu mẫu lớn từ Drive |
-| `make apply` | Apply toàn bộ manifests lên Kubernetes |
-| `make delete` | Xóa sạch namespace `social-pipeline` trên k8s |
-| `make forward` | Port-forward 8 dịch vụ ra host (Dashboard, API, MinIO, Spark, ES, Redis, Grafana, Airflow) |
-| `make batch` | Chạy Spark batch job trên k8s |
-| `make index-batch` | Đồng bộ batch views vào Elasticsearch trên k8s |
-| `make warehouse` | Chạy Spark job nạp ClickHouse trên k8s |
-| `make ps` | Xem trạng thái các Pods trong namespace `social-pipeline` |
-| `make logs` | Xem logs của Serving API pod |
-| `make logs-writer` | Xem logs của Object Store Writer pod |
-| `make logs-speed` | Xem logs của Speed Streaming pod |
-| `make logs-simulator` | Xem logs của cả 3 simulator pods (reddit, facebook, instagram) |
+```bash
+make delete            # Xóa namespace social-pipeline
+make apply             # Deploy lại
+make forward           # Mở port-forward lại
+# Đợi simulators Completed, sau đó:
+make batch && make index-batch
+```
+
+---
+
+## Tắt Dự Án
+
+```bash
+# Tắt port-forward: Ctrl+C tại terminal đang chạy make forward
+minikube stop          # Dừng cluster, giữ nguyên dữ liệu
+```
+
+Xóa hoàn toàn cluster:
+
+```bash
+minikube delete
+```
 
 ---
 
@@ -214,7 +298,8 @@ make logs-simulator
 
 ### Raw data (MinIO)
 
-`object-store-writer` ghi Parquet partition theo platform/ngày:
+`object_store_writer` ghi Parquet partition theo platform/ngày:
+
 ```
 s3a://social-lake/data/raw/<platform>/year=YYYY/month=MM/day=DD/
 ```
@@ -234,8 +319,6 @@ Index: `social_batch_views`
 
 ### Realtime views (Redis + Elasticsearch)
 
-Speed layer ghi:
-
 | Store | Key pattern | Nội dung |
 |---|---|---|
 | Redis | `rt:stats:<platform>:<hour>` | Post count, sentiment sum |
@@ -244,10 +327,99 @@ Speed layer ghi:
 
 ---
 
-## Cấu Hình Môi Trường
+## Cấu Hình Biến Môi Trường
 
-Các thông số điều chỉnh thông qua ConfigMap ở [k8s/01-config/configmap.yaml](k8s/01-config/configmap.yaml):
-- `CONSUMER_FLUSH_SIZE`: Số lượng record flush raw Parquet (Mặc định: 500)
-- `CONSUMER_FLUSH_INTERVAL`: Thời gian tối đa flush raw writer (Mặc định: 30 giây)
-- `STREAM_TRIGGER_SECS`: Thời gian trigger Spark Streaming (Mặc định: 5 giây)
-- `NLP_MODEL_NAME`: HuggingFace Sentiment analysis model sử dụng ở speed-streaming.
+Khai báo trong [k8s/01-config/configmap.yaml](k8s/01-config/configmap.yaml):
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `STREAM_STARTING_OFFSETS` | `latest` | Offset bắt đầu streaming |
+| `STREAM_TRIGGER_SECS` | `5` | Trigger interval Spark Streaming (giây) |
+| `SPEED_WRITE_BATCH_SIZE` | `500` | Số record ghi mỗi micro-batch |
+| `CONSUMER_FLUSH_SIZE` | `500` | Số record flush raw Parquet |
+| `CONSUMER_FLUSH_INTERVAL` | `30` | Flush interval raw writer (giây) |
+| `REALTIME_WINDOW_HOURS` | `24` | Window realtime khi serving merge |
+| `NLP_MODEL_NAME` | `distilbert-base-uncased-finetuned-sst-2-english` | Model sentiment |
+
+---
+
+## Xử Lý Lỗi Thường Gặp
+
+### API trả về rỗng
+
+```bash
+# Kiểm tra ES có data không
+curl -fsS http://localhost:9200/_cat/indices?v
+
+# social_batch_views rỗng → chạy lại batch
+make batch && make index-batch
+```
+
+### Speed-streaming crash sau khi restart Minikube
+
+Checkpoint cũ lưu offset của partitions không còn tồn tại. Xóa checkpoint và rollout lại:
+
+```bash
+kubectl exec -n social-pipeline deployment/minio -- \
+  bash -c "mc alias set l http://localhost:9000 minioadmin minioadmin 2>/dev/null && \
+           mc rm -r --force l/social-lake/checkpoints/speed/"
+kubectl rollout restart deployment/speed-streaming -n social-pipeline
+```
+
+### Elasticsearch bị OOMKill (exit code 137)
+
+ES 8.x cần JVM heap + direct memory + Lucene mmap. Tăng limit trong [k8s/03-infrastructure/elasticsearch.yaml](k8s/03-infrastructure/elasticsearch.yaml):
+
+```yaml
+resources:
+  requests:
+    memory: 768Mi
+  limits:
+    memory: 1536Mi
+```
+
+### Elasticsearch node.lock conflict khi rollout
+
+Đảm bảo Deployment có `strategy.type: Recreate` để dừng pod cũ trước khi khởi pod mới:
+
+```yaml
+spec:
+  strategy:
+    type: Recreate
+```
+
+### Batch job không thấy raw data Instagram
+
+`object-store-writer` chỉ flush khi đủ `CONSUMER_FLUSH_SIZE` records (mặc định 500). Với dữ liệu mẫu ít, cần đợi `CONSUMER_FLUSH_INTERVAL` giây (30s) để auto-flush, hoặc replay thêm.
+
+### Dashboard hiển thị số post bị phình
+
+Xảy ra khi có Deployment simulator cũ (dùng `--loop true`) còn sót. Kiểm tra và xóa:
+
+```bash
+kubectl get deployments -n social-pipeline | grep replay
+kubectl delete deployment -n social-pipeline replay-reddit replay-facebook replay-instagram
+```
+
+---
+
+## Makefile Reference
+
+| Lệnh | Mô tả |
+|---|---|
+| `make build-core` | Build core images: `social-python`, `social-spark`, `social-ml` |
+| `make build-airflow` | Build Airflow image (~5–10 phút) |
+| `make build` | Build tất cả images (core + airflow) |
+| `make download-data` | Tải và giải nén dữ liệu mẫu từ Google Drive |
+| `make apply` | Apply toàn bộ manifests lên Kubernetes |
+| `make delete` | Xóa namespace `social-pipeline` trên k8s |
+| `make forward` | Port-forward 9 service ra host |
+| `make batch` | Chạy Spark batch job trên k8s |
+| `make index-batch` | Index batch views vào Elasticsearch |
+| `make warehouse` | Nạp dữ liệu vào ClickHouse |
+| `make ps` | Trạng thái các Pod trong namespace `social-pipeline` |
+| `make logs` | Logs Serving API pod |
+| `make logs-writer` | Logs Object Store Writer pod |
+| `make logs-speed` | Logs Speed Streaming pod |
+| `make logs-simulator` | Logs 3 simulator Jobs (reddit, facebook, instagram) |
+| `make test` | Chạy unit tests |

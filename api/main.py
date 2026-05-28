@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from serving.merge_service import ServeQuery
+from serving.topic_service import TopicService
+from serving.network_service import NetworkService
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,8 @@ async def add_cache_control_header(request: Request, call_next):
     return response
 
 service = ServeQuery()
+topics = TopicService()
+network_svc = NetworkService()
 
 
 def problem(status: int, title: str, detail: str) -> JSONResponse:
@@ -74,7 +78,19 @@ def sentiment_trend(
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
     end = end or datetime.now(timezone.utc)
     start = start or end - timedelta(days=7)
-    return {"data": service.query_sentiment_trend(platform, granularity, start, end)}
+    data = service.query_sentiment_trend(platform, granularity, start, end)
+    velocities = [float(r.get("velocity") or 0) for r in data[1:]]
+    avg_velocity = round(sum(velocities) / len(velocities), 4) if velocities else 0.0
+    total_posts = sum(int(r.get("post_count") or 0) for r in data)
+    return {
+        "data": data,
+        "meta": {
+            "trend_direction": service.trend_direction(data),
+            "avg_velocity": avg_velocity,
+            "total_posts": total_posts,
+            "buckets": len(data),
+        },
+    }
 
 
 @app.get("/api/v1/hashtags/top")
@@ -104,6 +120,74 @@ def realtime_stats(platform: str | None = None) -> dict:
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
     return service.query_realtime_stats(platform)
 
+
+# ── Topic Modeling endpoints ─────────────────────────────────────────────────
+
+@app.get("/api/v1/topics/distribution")
+def topic_distribution(platform: str | None = None) -> dict:
+    """Per-topic post count, keywords, and UMAP 2-D position."""
+    if platform and platform not in {"reddit", "facebook", "instagram"}:
+        raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
+    return {"data": topics.query_topic_distribution(platform)}
+
+
+@app.get("/api/v1/topics/trend")
+def topic_trend(
+    platform: str | None = None,
+    weeks: int = Query(8, ge=1, le=52),
+) -> dict:
+    """Weekly post count per topic (for line / animated timeline chart)."""
+    if platform and platform not in {"reddit", "facebook", "instagram"}:
+        raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
+    return {"data": topics.query_topic_trend(platform, weeks)}
+
+
+@app.get("/api/v1/topics/sentiment-heatmap")
+def topic_sentiment_heatmap(platform: str | None = None) -> dict:
+    """Average sentiment score per topic × platform (heatmap matrix)."""
+    if platform and platform not in {"reddit", "facebook", "instagram"}:
+        raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
+    return {"data": topics.query_sentiment_heatmap(platform)}
+
+
+@app.get("/api/v1/topics/network")
+def topic_network(platform: str | None = None) -> dict:
+    """Topic co-occurrence graph (nodes + edges) for network visualisation."""
+    if platform and platform not in {"reddit", "facebook", "instagram"}:
+        raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
+    return topics.query_topic_network(platform)
+
+
+# ── Network & Community Analysis endpoints ─────────────────────────────────
+
+@app.get("/api/v1/network/graph")
+def network_graph(platform: str | None = None) -> dict:
+    """User interaction graph (nodes + edges) with community and PageRank."""
+    if platform and platform not in {"reddit", "facebook", "instagram"}:
+        raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
+    return network_svc.query_graph(platform)
+
+
+@app.get("/api/v1/network/communities")
+def network_communities(platform: str | None = None) -> dict:
+    """Community size distribution."""
+    if platform and platform not in {"reddit", "facebook", "instagram"}:
+        raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
+    return {"data": network_svc.query_community_sizes(platform)}
+
+
+@app.get("/api/v1/network/pagerank")
+def network_pagerank(
+    platform: str | None = None,
+    top_n: int = Query(20, ge=1, le=100),
+) -> dict:
+    """Top-N influencers by PageRank score."""
+    if platform and platform not in {"reddit", "facebook", "instagram"}:
+        raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
+    return {"data": network_svc.query_top_influencers(platform, top_n)}
+
+
+# ── Metrics ───────────────────────────────────────────────────────────────────
 
 @app.get("/metrics")
 def metrics() -> Response:

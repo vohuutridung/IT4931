@@ -122,10 +122,22 @@ with DAG(
         trigger_rule="all_done",
     )
 
+    run_network_analysis = BashOperator(
+        task_id="run_network_analysis",
+        bash_command=(
+            "export PYTHONPATH=/opt/social_pipeline && "
+            "cd /opt/social_pipeline && "
+            "python -m batch.network_analysis"
+        ),
+    )
+
     mark_processed = PythonOperator(
         task_id="mark_raw_data_processed",
         python_callable=mark_raw_data_processed,
     )
 
-    check_new_data >> run_spark_batch >> refresh_serving_layer >> mark_processed
-    [check_new_data, run_spark_batch, refresh_serving_layer, mark_processed] >> send_slack_alert
+    # check_new_data >> run_spark_batch >> refresh_serving_layer >> mark_processed
+    # [check_new_data, run_spark_batch, refresh_serving_layer, mark_processed] >> send_slack_alert
+
+    check_new_data >> run_spark_batch >> refresh_serving_layer >> run_network_analysis >> mark_processed
+    [check_new_data, run_spark_batch, refresh_serving_layer, run_network_analysis, mark_processed] >> send_slack_alert
