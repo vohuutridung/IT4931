@@ -4,7 +4,6 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Social Lambda Dashboard</title>
-    <!-- Modern Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -47,8 +46,8 @@
         --badge-text: #cbd5e1;
       }
 
-      * { 
-        box-sizing: border-box; 
+      * {
+        box-sizing: border-box;
         transition: background-color 0.2s ease, border-color 0.2s ease;
       }
 
@@ -70,13 +69,11 @@
         gap: 16px;
         min-height: 72px;
         padding: 12px 32px;
-        background: rgba(var(--panel), 0.85);
         border-bottom: 1px solid var(--panel-border);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
       }
 
-      /* Apply background variables directly to blurred header context */
       body:not(.dark-mode) header {
         background: rgba(255, 255, 255, 0.85);
       }
@@ -239,6 +236,111 @@
         opacity: 0.65;
       }
 
+      /* ── Tab Navigation ─────────────────────────────────────────────────── */
+
+      .tab-nav {
+        position: sticky;
+        top: 72px;
+        z-index: 40;
+        display: flex;
+        align-items: stretch;
+        gap: 0;
+        padding: 0 32px;
+        border-bottom: 1px solid var(--panel-border);
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      .tab-nav::-webkit-scrollbar { display: none; }
+
+      body:not(.dark-mode) .tab-nav {
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+
+      body.dark-mode .tab-nav {
+        background: rgba(15, 23, 42, 0.92);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+
+      .tab-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 0 18px;
+        height: 46px;
+        font-family: 'Inter', sans-serif;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-muted);
+        background: none;
+        border: none;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        cursor: pointer;
+        white-space: nowrap;
+        letter-spacing: 0.01em;
+        transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+        margin-bottom: -1px;
+      }
+
+      .tab-btn:hover {
+        color: var(--text);
+        background: var(--panel-soft);
+        transform: none;
+      }
+
+      .tab-btn.active {
+        color: var(--primary);
+        border-bottom-color: var(--primary);
+        background: none;
+      }
+
+      .tab-btn svg {
+        flex-shrink: 0;
+        opacity: 0.7;
+        transition: opacity 0.15s;
+      }
+
+      .tab-btn.active svg,
+      .tab-btn:hover svg {
+        opacity: 1;
+      }
+
+      .tab-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        font-size: 10px;
+        font-weight: 700;
+        border-radius: 99px;
+        background: var(--accent);
+        color: var(--primary);
+        transition: background 0.2s;
+      }
+
+      .tab-btn.active .tab-badge {
+        background: var(--primary);
+        color: #fff;
+      }
+
+      /* ── Tab Content ──────────────────────────────────────────────────────── */
+
+      .tab-panel {
+        display: none;
+      }
+
+      .tab-panel.active {
+        display: block;
+      }
+
+      /* ── Main layout (unchanged) ──────────────────────────────────────────── */
+
       main {
         width: min(1440px, 100%);
         margin: 0 auto;
@@ -265,9 +367,9 @@
       .panel:hover {
         transform: translateY(-2px);
         box-shadow: var(--shadow-hover);
-        border-color: rgba(var(--primary), 0.4);
+        border-color: rgba(99, 102, 241, 0.4);
       }
-      
+
       body.dark-mode .kpi:hover,
       body.dark-mode .panel:hover {
         border-color: var(--primary);
@@ -481,26 +583,11 @@
         padding: 3px 8px;
         border-radius: 9999px;
       }
-      
-      .badge.reddit {
-        background: rgba(255, 69, 0, 0.15);
-        color: #ff4500;
-      }
-      
-      .badge.facebook {
-        background: rgba(24, 119, 242, 0.15);
-        color: #1877f2;
-      }
-      
-      .badge.instagram {
-        background: rgba(225, 48, 108, 0.15);
-        color: #e1306c;
-      }
-      
-      .badge.other {
-        background: var(--badge-bg);
-        color: var(--badge-text);
-      }
+
+      .badge.reddit   { background: rgba(255, 69, 0, 0.15); color: #ff4500; }
+      .badge.facebook { background: rgba(24, 119, 242, 0.15); color: #1877f2; }
+      .badge.instagram{ background: rgba(225, 48, 108, 0.15); color: #e1306c; }
+      .badge.other    { background: var(--badge-bg); color: var(--badge-text); }
 
       .sentiment-badge {
         display: inline-flex;
@@ -511,18 +598,9 @@
         padding: 3px 8px;
         border-radius: 6px;
       }
-      .sentiment-badge.positive {
-        background: rgba(16, 185, 129, 0.12);
-        color: #10b981;
-      }
-      .sentiment-badge.negative {
-        background: rgba(239, 68, 68, 0.12);
-        color: #ef4444;
-      }
-      .sentiment-badge.neutral {
-        background: rgba(245, 158, 11, 0.12);
-        color: #f59e0b;
-      }
+      .sentiment-badge.positive { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+      .sentiment-badge.negative { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+      .sentiment-badge.neutral  { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
 
       .empty {
         min-height: 160px;
@@ -534,25 +612,235 @@
         font-weight: 500;
       }
 
-      .error {
-        color: var(--danger);
-        font-weight: 600;
+      .error { color: var(--danger); font-weight: 600; }
+
+      /* ── Placeholder tabs ────────────────────────────────────────────────── */
+
+      .tab-placeholder {
+        min-height: 480px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        color: var(--text-muted);
       }
 
-      @media (max-width: 1024px) {
-        header {
-          padding: 12px 20px;
-        }
-        main {
-          padding: 20px 20px 32px;
-        }
-        .kpis {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
+      .tab-placeholder-icon {
+        width: 64px; height: 64px; border-radius: 16px;
+        background: var(--panel-soft); border: 1px solid var(--panel-border);
+        display: flex; align-items: center; justify-content: center;
+        color: var(--primary); opacity: 0.7;
+      }
 
-        .grid {
+      .tab-placeholder h2 {
+        margin: 0; font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 20px; font-weight: 700; color: var(--text);
+      }
+
+      .tab-placeholder p {
+        margin: 0; font-size: 14px; max-width: 340px;
+        text-align: center; line-height: 1.6;
+      }
+
+      .coming-soon-badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 12px; font-weight: 700; padding: 5px 12px;
+        border-radius: 99px; background: var(--accent); color: var(--primary);
+        letter-spacing: 0.04em; text-transform: uppercase;
+      }
+
+      /* ── Tab 2 – Sentiment ───────────────────────────────────────────────── */
+
+      .sent-grid {
+        display: grid;
+        grid-template-columns: 340px minmax(0, 1fr);
+        gap: 20px;
+        margin-bottom: 20px;
+        align-items: start;
+      }
+
+      .sent-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .gauge-wrap {
+        position: relative;
+        width: 160px;
+        height: 90px;
+        margin: 0 auto 8px;
+      }
+
+      .gauge-val {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        text-align: center;
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+      }
+
+      .gauge-label {
+        text-align: center;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .wc-wrap {
+        position: relative;
+        height: 200px;
+        overflow: hidden;
+      }
+
+      .wc-wrap svg { width: 100%; height: 100%; }
+
+      .sent-filter-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+
+      .sent-filter-row label {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-muted);
+      }
+
+      .chip-group {
+        display: flex;
+        gap: 6px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 12px;
+        border-radius: 99px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        border: 1.5px solid transparent;
+        transition: all 0.15s;
+        background: var(--panel-soft);
+        color: var(--text-muted);
+      }
+
+      .chip:hover { border-color: var(--panel-border); color: var(--text); }
+      .chip.active-pos { background: rgba(16,185,129,0.12); color: #10b981; border-color: #10b981; }
+      .chip.active-neg { background: rgba(239,68,68,0.12); color: #ef4444; border-color: #ef4444; }
+      .chip.active-neu { background: rgba(245,158,11,0.12); color: #f59e0b; border-color: #f59e0b; }
+
+      @media (max-width: 1024px) {
+        .sent-grid { grid-template-columns: 1fr; }
+        .sent-row  { grid-template-columns: 1fr 1fr; }
+      }
+
+      @media (max-width: 640px) {
+        .sent-row { grid-template-columns: 1fr; }
+      }
+
+      /* ── Tab 3 – Topics ──────────────────────────────────────────────────── */
+
+      .topics-grid-top {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+        gap: 20px;
+        margin-bottom: 20px;
+        align-items: start;
+      }
+
+      .topics-grid-mid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .topics-grid-bot {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .topic-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 10px;
+        border-radius: 99px;
+        font-size: 11px;
+        font-weight: 700;
+        background: var(--accent);
+        color: var(--primary);
+        cursor: pointer;
+        border: 1px solid transparent;
+        transition: all 0.15s;
+        white-space: nowrap;
+      }
+
+      .topic-chip:hover, .topic-chip.selected {
+        background: var(--primary);
+        color: #fff;
+      }
+
+      .topic-chips-wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 4px 0 12px;
+      }
+
+      .heatmap-cell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 4px;
+        transition: opacity 0.2s;
+        cursor: default;
+      }
+
+      .umap-dot {
+        transition: r 0.2s, opacity 0.2s;
+        cursor: pointer;
+      }
+
+      .umap-dot:hover { opacity: 0.85; }
+
+      @media (max-width: 1024px) {
+        .topics-grid-top { grid-template-columns: 1fr; }
+        .topics-grid-mid { grid-template-columns: 1fr; }
+        .topics-grid-bot { grid-template-columns: 1fr; }
+      }
+
+      /* ── Tab 4 – Network graph ───────────────────────────────────────────── */
+
+      @media (max-width: 1024px) {
+        #tab-network main > div[style*="grid-template-columns:minmax"] {
           grid-template-columns: 1fr;
         }
+      }
+
+      /* ── Responsive ────────────────────────────────────────────────────────── */
+
+      @media (max-width: 1024px) {
+        header { padding: 12px 20px; }
+        .tab-nav { padding: 0 20px; top: 60px; }
+        main { padding: 20px 20px 32px; }
+        .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .grid { grid-template-columns: 1fr; }
       }
 
       @media (max-width: 640px) {
@@ -561,43 +849,23 @@
           flex-direction: column;
           gap: 12px;
           padding: 16px;
+          min-height: unset;
         }
-
-        .kpis {
-          grid-template-columns: 1fr;
-        }
-
-        .toolbar {
-          width: 100%;
-          gap: 8px;
-        }
-
-        .auto-refresh-group {
-          flex: 1 1 100%;
-          justify-content: space-between;
-        }
-
-        select,
-        button {
-          flex: 1 1 120px;
-        }
-
-        #themeToggleBtn {
-          flex: 0 0 38px;
-        }
-
-        .chart-wrap {
-          height: 250px;
-        }
-
-        th:nth-child(4),
-        td:nth-child(4) {
-          display: none;
-        }
+        .tab-nav { top: 0; padding: 0 16px; }
+        .tab-btn { padding: 0 12px; font-size: 12px; }
+        .kpis { grid-template-columns: 1fr; }
+        .toolbar { width: 100%; gap: 8px; }
+        .auto-refresh-group { flex: 1 1 100%; justify-content: space-between; }
+        select, button { flex: 1 1 120px; }
+        #themeToggleBtn { flex: 0 0 38px; }
+        .chart-wrap { height: 250px; }
+        th:nth-child(4), td:nth-child(4) { display: none; }
       }
     </style>
   </head>
   <body>
+
+    <!-- ── Header (unchanged) ─────────────────────────────────────────────── -->
     <header>
       <div>
         <h1>Social Lambda Dashboard</h1>
@@ -625,136 +893,573 @@
           <option value="100" selected>100 posts</option>
         </select>
         <button id="themeToggleBtn" type="button" class="btn-icon" aria-label="Toggle Theme">
-          <!-- Sun Icon (shown in dark mode) -->
-          <svg class="sun-icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-          <!-- Moon Icon (shown in light mode) -->
-          <svg class="moon-icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          <svg class="sun-icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="moon-icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
         </button>
         <button id="refreshBtn" type="button">Refresh</button>
       </div>
     </header>
 
-    <main>
-      <section class="kpis" aria-label="Summary">
-        <div class="kpi">
-          <div class="kpi-top">
-            <div class="kpi-label">Realtime Windows</div>
-            <div class="kpi-icon">
-              <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><line x1="9" y1="9" x2="21" y2="9"></line><line x1="9" y1="15" x2="21" y2="15"></line></svg>
-            </div>
-          </div>
-          <div id="kpiWindows" class="kpi-value">0</div>
-          <div id="kpiWindowsNote" class="kpi-note">No active windows</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-top">
-            <div class="kpi-label">Realtime Posts</div>
-            <div class="kpi-icon">
-              <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-            </div>
-          </div>
-          <div id="kpiRealtimePosts" class="kpi-value">0</div>
-          <div class="kpi-note">From Redis aggregates</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-top">
-            <div class="kpi-label">Avg Sentiment</div>
-            <div class="kpi-icon">
-              <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
-            </div>
-          </div>
-          <div id="kpiSentiment" class="kpi-value">0.00</div>
-          <div id="kpiSentimentNote" class="kpi-note">Neutral</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-top">
-            <div class="kpi-label">Recent Posts</div>
-            <div class="kpi-icon">
-              <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></svg>
-            </div>
-          </div>
-          <div id="kpiPosts" class="kpi-value">0</div>
-          <div id="kpiPostsNote" class="kpi-note">Loaded from serving layer</div>
-        </div>
-      </section>
+    <!-- ── Tab Navigation Bar ─────────────────────────────────────────────── -->
+    <nav class="tab-nav" role="tablist" aria-label="Dashboard sections">
 
-      <section class="grid">
-        <div class="stack">
+      <button class="tab-btn active" role="tab" aria-selected="true"  aria-controls="tab-overview"   data-tab="overview">
+        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect>
+          <rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect>
+        </svg>
+        Overview
+      </button>
+
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-sentiment" data-tab="sentiment">
+        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+          <line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line>
+        </svg>
+        Sentiment
+      </button>
+
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-topics"    data-tab="topics">
+        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+        Topics
+      </button>
+
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-network"   data-tab="network">
+        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+        </svg>
+        Network
+      </button>
+
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-realtime"  data-tab="realtime">
+        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        Realtime
+        <span class="tab-badge" id="realtimeBadge">0</span>
+      </button>
+
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-posts"     data-tab="posts">
+        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+        Posts
+        <span class="tab-badge" id="postsBadge">0</span>
+      </button>
+
+    </nav>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 1 — OVERVIEW  (original dashboard content, unchanged)
+    ══════════════════════════════════════════════════════════════════════ -->
+    <div id="tab-overview" class="tab-panel active" role="tabpanel" aria-labelledby="tab-btn-overview">
+      <main>
+        <!-- KPI Cards -->
+        <section class="kpis" aria-label="Summary">
+          <div class="kpi">
+            <div class="kpi-top">
+              <div class="kpi-label">Realtime Windows</div>
+              <div class="kpi-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="9" y1="3" x2="9" y2="21"></line><line x1="9" y1="9" x2="21" y2="9"></line><line x1="9" y1="15" x2="21" y2="15"></line>
+                </svg>
+              </div>
+            </div>
+            <div id="kpiWindows" class="kpi-value">0</div>
+            <div id="kpiWindowsNote" class="kpi-note">No active windows</div>
+          </div>
+
+          <div class="kpi">
+            <div class="kpi-top">
+              <div class="kpi-label">Realtime Posts</div>
+              <div class="kpi-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                </svg>
+              </div>
+            </div>
+            <div id="kpiRealtimePosts" class="kpi-value">0</div>
+            <div class="kpi-note">From Redis aggregates</div>
+          </div>
+
+          <div class="kpi">
+            <div class="kpi-top">
+              <div class="kpi-label">Avg Sentiment</div>
+              <div class="kpi-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                  <line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line>
+                </svg>
+              </div>
+            </div>
+            <div id="kpiSentiment" class="kpi-value">0.00</div>
+            <div id="kpiSentimentNote" class="kpi-note">Neutral</div>
+          </div>
+
+          <div class="kpi">
+            <div class="kpi-top">
+              <div class="kpi-label">Recent Posts</div>
+              <div class="kpi-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle>
+                </svg>
+              </div>
+            </div>
+            <div id="kpiPosts" class="kpi-value">0</div>
+            <div id="kpiPostsNote" class="kpi-note">Loaded from serving layer</div>
+          </div>
+        </section>
+
+        <!-- Main grid -->
+        <section class="grid">
+          <div class="stack">
+            <!-- Sentiment Trend chart -->
+            <section class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Sentiment Trend</div>
+                <div id="trendMeta" class="status-line">5-minute batch view</div>
+              </div>
+              <div class="panel-body">
+                <div class="chart-wrap">
+                  <canvas id="sentimentChart" width="960" height="320"></canvas>
+                </div>
+              </div>
+            </section>
+
+            <!-- Recent Posts table -->
+            <section class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Recent Posts</div>
+                <div id="postsMeta" class="status-line">0 rows</div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="width: 120px;">Platform</th>
+                      <th>Content</th>
+                      <th style="width: 140px;">Sentiment</th>
+                      <th style="width: 132px;">Engagement</th>
+                      <th style="width: 170px;">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody id="postsBody"></tbody>
+                </table>
+                <div id="postsEmpty" class="empty">No posts loaded</div>
+              </div>
+            </section>
+          </div>
+
+          <div class="stack">
+            <!-- Top Hashtags -->
+            <section class="panel">
+              <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                <div style="display:flex;align-items:center;gap:12px;">
+                  <div class="panel-title">Top Hashtags</div>
+                  <div id="hashtagsMeta" class="status-line">0 tags</div>
+                </div>
+                <select id="hashtagWeek" aria-label="Select week" style="height:30px;padding:0 8px;font-size:12px;">
+                  <option value="">Latest (Realtime/Batch)</option>
+                </select>
+              </div>
+              <div class="panel-body">
+                <div id="hashtagBars" class="bars"></div>
+                <div id="hashtagsEmpty" class="empty">No hashtag data</div>
+              </div>
+            </section>
+
+            <!-- Realtime Windows table -->
+            <section class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Realtime Windows</div>
+                <div id="windowsMeta" class="status-line">Redis</div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Window</th>
+                      <th style="width:90px;">Posts</th>
+                      <th style="width:100px;">Sentiment</th>
+                    </tr>
+                  </thead>
+                  <tbody id="windowsBody"></tbody>
+                </table>
+                <div id="windowsEmpty" class="empty">No realtime windows</div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div><!-- /tab-overview -->
+
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 2 — SENTIMENT  (placeholder – sẽ implement ở bước tiếp)
+    ══════════════════════════════════════════════════════════════════════ -->
+    <div id="tab-sentiment" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-sentiment">
+      <main>
+
+        <!-- Row 1: Donut + Gauge + Timeline -->
+        <div class="sent-grid">
+
+          <!-- Donut chart -->
           <section class="panel">
             <div class="panel-header">
-              <div class="panel-title">Sentiment Trend</div>
-              <div id="trendMeta" class="status-line">5-minute batch view</div>
+              <div class="panel-title">Sentiment Distribution</div>
+              <div id="sentDonutMeta" class="status-line">All platforms</div>
+            </div>
+            <div class="panel-body" style="display:flex;flex-direction:column;align-items:center;gap:16px;">
+              <div style="position:relative;width:220px;height:220px;">
+                <canvas id="sentDonutChart" width="220" height="220"></canvas>
+                <div id="sentDonutCenter" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;">
+                  <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:26px;font-weight:800;letter-spacing:-0.02em;" id="sentDonutPct">—</div>
+                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);" id="sentDonutLabel">Loading</div>
+                </div>
+              </div>
+              <!-- Legend -->
+              <div style="display:flex;gap:20px;">
+                <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;">
+                  <span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block;"></span>Positive
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;">
+                  <span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>Neutral
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;">
+                  <span style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block;"></span>Negative
+                </div>
+              </div>
+              <!-- Per-platform mini donuts -->
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%;margin-top:4px;" id="sentPlatformMini"></div>
+            </div>
+          </section>
+
+          <!-- Right column: Gauge + Timeline stacked -->
+          <div class="stack">
+
+            <!-- Gauge -->
+            <section class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Avg Sentiment Score</div>
+                <div class="status-line">Realtime</div>
+              </div>
+              <div class="panel-body" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:24px;padding-bottom:24px;">
+                <div class="gauge-wrap">
+                  <canvas id="sentGaugeCanvas" width="160" height="90"></canvas>
+                  <div class="gauge-val" id="sentGaugeVal">0.00</div>
+                </div>
+                <div class="gauge-label" id="sentGaugeLabel">Neutral</div>
+                <div style="display:flex;gap:24px;margin-top:12px;">
+                  <div style="text-align:center;">
+                    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);">Positive</div>
+                    <div id="sentGaugePosCount" style="font-family:'Plus Jakarta Sans',sans-serif;font-size:18px;font-weight:800;color:#10b981;">—</div>
+                  </div>
+                  <div style="text-align:center;">
+                    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);">Neutral</div>
+                    <div id="sentGaugeNeuCount" style="font-family:'Plus Jakarta Sans',sans-serif;font-size:18px;font-weight:800;color:#f59e0b;">—</div>
+                  </div>
+                  <div style="text-align:center;">
+                    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);">Negative</div>
+                    <div id="sentGaugeNegCount" style="font-family:'Plus Jakarta Sans',sans-serif;font-size:18px;font-weight:800;color:#ef4444;">—</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Sentiment timeline (reuses existing API data) -->
+            <section class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Sentiment Timeline</div>
+                <div id="sentTimelineMeta" class="status-line">Hourly</div>
+              </div>
+              <div class="panel-body">
+                <div class="chart-wrap" style="height:180px;">
+                  <canvas id="sentTimelineCanvas" width="600" height="180"></canvas>
+                </div>
+              </div>
+            </section>
+
+          </div>
+        </div>
+
+        <!-- Row 2: Word clouds per sentiment group -->
+        <div class="sent-row">
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title" style="color:#10b981;">Positive Keywords</div>
+              <div class="status-line">Top hashtags</div>
             </div>
             <div class="panel-body">
-              <div class="chart-wrap">
-                <canvas id="sentimentChart" width="960" height="320"></canvas>
+              <div class="wc-wrap" id="wcPositive"></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title" style="color:#f59e0b;">Neutral Keywords</div>
+              <div class="status-line">Top hashtags</div>
+            </div>
+            <div class="panel-body">
+              <div class="wc-wrap" id="wcNeutral"></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title" style="color:#ef4444;">Negative Keywords</div>
+              <div class="status-line">Top hashtags</div>
+            </div>
+            <div class="panel-body">
+              <div class="wc-wrap" id="wcNegative"></div>
+            </div>
+          </section>
+        </div>
+
+      </main>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 3 — TOPICS  (placeholder)
+    ══════════════════════════════════════════════════════════════════════ -->
+    <div id="tab-topics" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-topics">
+      <main>
+
+        <!-- Topic selector chips -->
+        <div class="panel" style="margin-bottom:20px;">
+          <div class="panel-header">
+            <div class="panel-title">Topics</div>
+            <div id="topicsMeta" class="status-line">Loading…</div>
+          </div>
+          <div class="panel-body" style="padding-bottom:8px;">
+            <div class="topic-chips-wrap" id="topicChips"></div>
+          </div>
+        </div>
+
+        <!-- Row 1: Treemap + Bar -->
+        <div class="topics-grid-top">
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">Topic Size — Treemap</div>
+              <div class="status-line">Post count</div>
+            </div>
+            <div class="panel-body" style="padding:0;">
+              <div style="position:relative;height:320px;" id="topicTreemapWrap">
+                <canvas id="topicTreemap"></canvas>
+              </div>
+              <div id="trendSummary" style="display:flex;align-items:center;gap:12px;padding:10px 0 2px;flex-wrap:wrap;">
+                <span id="trendDirection" class="sentiment-badge neutral" style="font-size:12px;">→ Neutral</span>
+                <div style="display:flex;align-items:center;flex:1;min-width:80px;border-radius:4px;overflow:hidden;height:7px;">
+                  <div id="trendPosBar" style="height:100%;background:var(--success);transition:width .4s;width:33%"></div>
+                  <div id="trendNeuBar" style="height:100%;background:var(--warning);transition:width .4s;width:34%"></div>
+                  <div id="trendNegBar" style="height:100%;background:var(--danger);transition:width .4s;width:33%"></div>
+                </div>
+                <span id="trendDistText" class="status-line" style="white-space:nowrap;"></span>
               </div>
             </div>
           </section>
 
           <section class="panel">
             <div class="panel-header">
-              <div class="panel-title">Recent Posts</div>
-              <div id="postsMeta" class="status-line">0 rows</div>
+              <div class="panel-title">Top Topics</div>
+              <div class="status-line">By post count</div>
             </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th style="width: 120px;">Platform</th>
-                    <th>Content</th>
-                    <th style="width: 140px;">Sentiment</th>
-                    <th style="width: 132px;">Engagement</th>
-                    <th style="width: 170px;">Time</th>
-                  </tr>
-                </thead>
-                <tbody id="postsBody"></tbody>
-              </table>
-              <div id="postsEmpty" class="empty">No posts loaded</div>
+            <div class="panel-body">
+              <div id="topicBars" class="bars"></div>
             </div>
           </section>
         </div>
 
-        <div class="stack">
+        <!-- Row 2: Line trend + Heatmap -->
+        <div class="topics-grid-mid">
           <section class="panel">
-            <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <div style="display: flex; align-items: center; gap: 12px;">
-                <div class="panel-title">Top Hashtags</div>
-                <div id="hashtagsMeta" class="status-line">0 tags</div>
-              </div>
-              <select id="hashtagWeek" aria-label="Select week" style="height: 30px; padding: 0 8px; font-size: 12px;">
-                <option value="">Latest (Realtime/Batch)</option>
-              </select>
+            <div class="panel-header">
+              <div class="panel-title">Topic Trend</div>
+              <div id="topicTrendMeta" class="status-line">Weekly</div>
             </div>
             <div class="panel-body">
-              <div id="hashtagBars" class="bars"></div>
-              <div id="hashtagsEmpty" class="empty">No hashtag data</div>
+              <div class="chart-wrap" style="height:260px;">
+                <canvas id="topicTrendChart"></canvas>
+              </div>
             </div>
           </section>
 
           <section class="panel">
             <div class="panel-header">
-              <div class="panel-title">Realtime Windows</div>
-              <div id="windowsMeta" class="status-line">Redis</div>
+              <div class="panel-title">Sentiment × Topic Heatmap</div>
+              <div class="status-line">Avg score per platform</div>
+            </div>
+            <div class="panel-body" style="padding:12px 20px;">
+              <div id="topicHeatmap" style="overflow-x:auto;"></div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Row 3: UMAP + Word cloud -->
+        <div class="topics-grid-bot">
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">Intertopic Distance Map</div>
+              <div class="status-line">UMAP 2D</div>
+            </div>
+            <div class="panel-body" style="padding:0;">
+              <div style="position:relative;height:340px;">
+                <svg id="topicUmap" width="100%" height="340" style="display:block;"></svg>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title" id="topicWcTitle">Topic Keywords</div>
+              <div class="status-line">Selected topic</div>
+            </div>
+            <div class="panel-body">
+              <div class="wc-wrap" id="topicWordCloud" style="height:280px;"></div>
+              <div id="topicWcKeywords" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;"></div>
+            </div>
+          </section>
+        </div>
+
+      </main>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 4 — NETWORK
+    ══════════════════════════════════════════════════════════════════════ -->
+    <div id="tab-network" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-network">
+      <main>
+
+        <!-- Row 1: Force graph (full width) -->
+        <section class="panel" style="margin-bottom:20px;">
+          <div class="panel-header">
+            <div class="panel-title">Community Interaction Graph</div>
+            <div id="netGraphMeta" class="status-line">Loading…</div>
+          </div>
+          <div style="position:relative;height:480px;background:var(--panel-soft);border-radius:0 0 12px 12px;overflow:hidden;">
+            <svg id="netGraphSvg" width="100%" height="480" style="display:block;cursor:grab;"></svg>
+            <!-- Legend overlay -->
+            <div id="netLegend" style="position:absolute;bottom:16px;left:16px;display:flex;flex-wrap:wrap;gap:8px;max-width:340px;"></div>
+            <!-- Tooltip -->
+            <div id="netTooltip" style="position:absolute;display:none;background:var(--panel);border:1px solid var(--panel-border);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;pointer-events:none;box-shadow:var(--shadow);z-index:10;"></div>
+          </div>
+        </section>
+
+        <!-- Row 2: Community bars + PageRank table -->
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;margin-bottom:20px;">
+
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">Community Sizes</div>
+              <div id="netCommMeta" class="status-line">Louvain</div>
+            </div>
+            <div class="panel-body">
+              <div id="netCommBars" class="bars"></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">PageRank Leaderboard</div>
+              <div id="netPRMeta" class="status-line">Top influencers</div>
             </div>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Window</th>
-                    <th style="width: 90px;">Posts</th>
-                    <th style="width: 100px;">Sentiment</th>
+                    <th style="width:36px;">#</th>
+                    <th>User</th>
+                    <th style="width:110px;">Community</th>
+                    <th style="width:90px;">PageRank</th>
                   </tr>
                 </thead>
-                <tbody id="windowsBody"></tbody>
+                <tbody id="netPRBody"></tbody>
               </table>
-              <div id="windowsEmpty" class="empty">No realtime windows</div>
+              <div id="netPREmpty" class="empty" style="display:none;">No data</div>
             </div>
           </section>
-        </div>
-      </section>
-    </main>
 
+        </div>
+
+      </main>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 5 — REALTIME  (tách Realtime Windows ra tab riêng)
+    ══════════════════════════════════════════════════════════════════════ -->
+    <div id="tab-realtime" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-realtime">
+      <main>
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Realtime Windows</div>
+            <div id="windowsMetaRT" class="status-line">Redis</div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Window</th>
+                  <th style="width:110px;">Posts</th>
+                  <th style="width:130px;">Avg Sentiment</th>
+                  <th style="width:160px;">Top Hashtag</th>
+                </tr>
+              </thead>
+              <tbody id="windowsBodyRT"></tbody>
+            </table>
+            <div id="windowsEmptyRT" class="empty">No realtime windows — data loads from Redis via auto-refresh.</div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 6 — POSTS  (tách Posts table ra tab riêng)
+    ══════════════════════════════════════════════════════════════════════ -->
+    <div id="tab-posts" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-posts">
+      <main>
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">All Posts</div>
+            <div id="postsMetaFull" class="status-line">0 rows</div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:120px;">Platform</th>
+                  <th>Content</th>
+                  <th style="width:140px;">Sentiment</th>
+                  <th style="width:132px;">Engagement</th>
+                  <th style="width:170px;">Time</th>
+                </tr>
+              </thead>
+              <tbody id="postsBodyFull"></tbody>
+            </table>
+            <div id="postsEmptyFull" class="empty">No posts — select a platform and hit Refresh.</div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         JAVASCRIPT  (original code unchanged, tab system appended)
+    ══════════════════════════════════════════════════════════════════════ -->
     <script>
       const api = location.origin.replace(/:8084$/, ':8000');
       const els = {
@@ -786,13 +1491,11 @@
         toggleAutoBtn: document.getElementById('toggleAutoBtn')
       };
 
-      // Theme toggle icons
       const sunIcon = els.themeToggleBtn.querySelector('.sun-icon');
       const moonIcon = els.themeToggleBtn.querySelector('.moon-icon');
 
-      // Theme logic
       function initTheme() {
-        const savedTheme = localStorage.getItem('theme') || 'dark'; // Dark theme default
+        const savedTheme = localStorage.getItem('theme') || 'dark';
         if (savedTheme === 'dark') {
           document.body.classList.add('dark-mode');
           sunIcon.style.display = 'block';
@@ -816,10 +1519,10 @@
         }
         if (window.lastTrendData) {
           drawSentimentChart(window.lastTrendData);
+          updateTrendSummary(window.lastTrendData, window.lastTrendMeta || {});
         }
       });
 
-      // Auto-refresh control logic
       let autoRefreshActive = true;
       let countdown = 30;
       let countdownTimer = null;
@@ -832,32 +1535,21 @@
           if (!autoRefreshActive) return;
           countdown--;
           updateProgressBar();
-          if (countdown <= 0) {
-            loadHashtagWeeks().then(() => loadAll());
-          }
+          if (countdown <= 0) loadHashtagWeeks().then(() => loadAll());
         }, 1000);
       }
 
       function updateProgressBar() {
         const bar = document.getElementById('progressBar');
-        if (autoRefreshActive) {
-          bar.style.width = `${(countdown / 30) * 100}%`;
-        } else {
-          bar.style.width = '0%';
-        }
+        bar.style.width = autoRefreshActive ? `${(countdown / 30) * 100}%` : '0%';
       }
 
       els.toggleAutoBtn.addEventListener('click', () => {
         autoRefreshActive = !autoRefreshActive;
-        if (autoRefreshActive) {
-          els.toggleAutoBtn.textContent = 'Auto: ON';
-          els.toggleAutoBtn.classList.remove('paused');
-          startCountdown();
-        } else {
-          els.toggleAutoBtn.textContent = 'Auto: OFF';
-          els.toggleAutoBtn.classList.add('paused');
-          updateProgressBar();
-        }
+        els.toggleAutoBtn.textContent = autoRefreshActive ? 'Auto: ON' : 'Auto: OFF';
+        els.toggleAutoBtn.classList.toggle('paused', !autoRefreshActive);
+        if (autoRefreshActive) startCountdown();
+        else updateProgressBar();
       });
 
       function qs(params) {
@@ -893,10 +1585,7 @@
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return String(value);
         return new Intl.DateTimeFormat(undefined, {
-          month: 'short',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit'
+          month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit'
         }).format(date);
       }
 
@@ -915,42 +1604,65 @@
 
       function normalizeTrend(rows) {
         return [...(rows || [])]
-          .map((row) => ({
+          .map(row => ({
             time: row.event_hour || row.event_ts || row.indexed_at || row.updated_at || row.key || '',
-            value: number(row.avg_sentiment ?? row.sentiment_score)
+            value: number(row.avg_sentiment ?? row.sentiment_score),
+            weighted: row.weighted_sentiment != null ? number(row.weighted_sentiment) : null,
+            post_count: number(row.post_count) || 0,
+            positive_pct: row.positive_pct != null ? number(row.positive_pct) : null,
+            negative_pct: row.negative_pct != null ? number(row.negative_pct) : null,
+            neutral_pct: row.neutral_pct != null ? number(row.neutral_pct) : null,
+            velocity: row.velocity != null ? number(row.velocity) : 0,
           }))
-          .filter((row) => row.time)
+          .filter(row => row.time)
           .sort((a, b) => String(a.time).localeCompare(String(b.time)))
           .slice(-48);
       }
 
+      function updateTrendSummary(trend, meta) {
+        if (!trend.length) return;
+        const direction = (meta && meta.trend_direction) || (function() {
+          if (trend.length < 2) return 'neutral';
+          const recent = trend.slice(-6);
+          const slope = (recent[recent.length - 1].value || 0) - (recent[0].value || 0);
+          return slope > 0.05 ? 'bullish' : slope < -0.05 ? 'bearish' : 'neutral';
+        })();
+        const arrows = { bullish: '↑ Bullish', bearish: '↓ Bearish', neutral: '→ Neutral' };
+        const dirEl = document.getElementById('trendDirection');
+        dirEl.textContent = arrows[direction] || '→ Neutral';
+        dirEl.className = 'sentiment-badge ' + (direction === 'bullish' ? 'positive' : direction === 'bearish' ? 'negative' : 'neutral');
+        const last = trend[trend.length - 1];
+        const hasPct = last.positive_pct != null;
+        const pos = hasPct ? last.positive_pct : 33;
+        const neg = hasPct ? last.negative_pct : 33;
+        const neu = hasPct ? last.neutral_pct : (100 - pos - neg);
+        document.getElementById('trendPosBar').style.width = pos + '%';
+        document.getElementById('trendNeuBar').style.width = neu + '%';
+        document.getElementById('trendNegBar').style.width = neg + '%';
+        if (hasPct) {
+          document.getElementById('trendDistText').textContent =
+            pos.toFixed(0) + '% pos · ' + neu.toFixed(0) + '% neu · ' + neg.toFixed(0) + '% neg (latest bucket)';
+        }
+      }
+
       function normalizeStats(rows) {
         const groups = {};
-        (rows || []).forEach((row) => {
+        (rows || []).forEach(row => {
           const parts = (row.key || '').split(':');
           const windowTime = parts.slice(3).join(':') || row.key || '';
           if (!windowTime) return;
           if (!groups[windowTime]) {
-            groups[windowTime] = {
-              time: windowTime,
-              post_count: 0,
-              sentiment_sum: 0,
-              sentiment_count: 0,
-              top_hashtags: []
-            };
+            groups[windowTime] = { time: windowTime, post_count: 0, sentiment_sum: 0, sentiment_count: 0, top_hashtags: [] };
           }
           const postCount = number(row.post_count);
           const avgSentiment = number(row.avg_sentiment);
           groups[windowTime].post_count += postCount;
           groups[windowTime].sentiment_sum += avgSentiment * postCount;
           groups[windowTime].sentiment_count += postCount;
-          if (row.top_hashtag) {
-            groups[windowTime].top_hashtags.push(row.top_hashtag);
-          }
+          if (row.top_hashtag) groups[windowTime].top_hashtags.push(row.top_hashtag);
         });
-
         return Object.values(groups)
-          .map((g) => ({
+          .map(g => ({
             key: g.time,
             post_count: g.post_count,
             avg_sentiment: g.sentiment_count ? g.sentiment_sum / g.sentiment_count : 0,
@@ -968,8 +1680,7 @@
         canvas.height = Math.max(240, Math.floor(rect.height * dpr));
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        const width = rect.width;
-        const height = rect.height;
+        const width = rect.width, height = rect.height;
         ctx.clearRect(0, 0, width, height);
 
         const pad = { left: 44, right: 18, top: 16, bottom: 34 };
@@ -978,21 +1689,18 @@
 
         const isDark = document.body.classList.contains('dark-mode');
         const lineColor = isDark ? '#818cf8' : '#6366f1';
-        const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)';
+        const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
         const textColor = isDark ? '#94a3b8' : '#64748b';
-        const gradientStart = isDark ? 'rgba(129, 140, 248, 0.22)' : 'rgba(99, 102, 241, 0.16)';
+        const gradientStart = isDark ? 'rgba(129,140,248,0.22)' : 'rgba(99,102,241,0.16)';
 
-        // Draw gridlines
         ctx.strokeStyle = gridColor;
         ctx.lineWidth = 1;
-        
-        [-1, -0.5, 0, 0.5, 1].forEach((tick) => {
+        [-1, -0.5, 0, 0.5, 1].forEach(tick => {
           const y = pad.top + (1 - (tick + 1) / 2) * plotH;
           ctx.beginPath();
           ctx.moveTo(pad.left, y);
           ctx.lineTo(width - pad.right, y);
           ctx.stroke();
-          
           ctx.fillStyle = textColor;
           ctx.font = '500 11px Inter, sans-serif';
           ctx.fillText(tick.toFixed(1), 10, y + 4);
@@ -1007,33 +1715,27 @@
           return;
         }
 
-        const values = points.map((p) => Math.max(-1, Math.min(1, p.value)));
-        const xFor = (index) => pad.left + (points.length === 1 ? plotW / 2 : (index / (points.length - 1)) * plotW);
-        const yFor = (value) => pad.top + (1 - (value + 1) / 2) * plotH;
+        const values = points.map(p => Math.max(-1, Math.min(1, p.value)));
+        const xFor = i => pad.left + (points.length === 1 ? plotW / 2 : (i / (points.length - 1)) * plotW);
+        const yFor = v => pad.top + (1 - (v + 1) / 2) * plotH;
 
-        // Draw area gradient
         if (points.length > 1) {
           const areaGrad = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
           areaGrad.addColorStop(0, gradientStart);
-          areaGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-          
+          areaGrad.addColorStop(1, 'rgba(0,0,0,0)');
           ctx.beginPath();
           ctx.moveTo(xFor(0), pad.top + plotH);
-          values.forEach((value, index) => {
-            ctx.lineTo(xFor(index), yFor(value));
-          });
+          values.forEach((v, i) => ctx.lineTo(xFor(i), yFor(v)));
           ctx.lineTo(xFor(points.length - 1), pad.top + plotH);
           ctx.closePath();
           ctx.fillStyle = areaGrad;
           ctx.fill();
         }
 
-        // Draw line
         ctx.beginPath();
-        values.forEach((value, index) => {
-          const x = xFor(index);
-          const y = yFor(value);
-          if (index === 0) ctx.moveTo(x, y);
+        values.forEach((v, i) => {
+          const x = xFor(i), y = yFor(v);
+          if (i === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         });
         ctx.strokeStyle = lineColor;
@@ -1042,11 +1744,32 @@
         ctx.lineCap = 'round';
         ctx.stroke();
 
-        // Draw data circles
+        // Draw dashed weighted-sentiment line (engagement-adjusted)
+        const weightedValues = points.map((p) => p.weighted);
+        if (weightedValues.some((v) => v != null)) {
+          ctx.setLineDash([5, 4]);
+          ctx.strokeStyle = isDark ? 'rgba(251,191,36,0.7)' : 'rgba(217,119,6,0.6)';
+          ctx.lineWidth = 1.5;
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          let started = false;
+          weightedValues.forEach((wv, index) => {
+            if (wv == null) { started = false; return; }
+            const x = xFor(index);
+            const y = yFor(Math.max(-1, Math.min(1, wv)));
+            if (!started) { ctx.moveTo(x, y); started = true; }
+            else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        // Draw data circles (color inner dot by velocity direction)
         values.forEach((value, index) => {
           const x = xFor(index);
           const y = yFor(value);
-          
+          const vel = points[index].velocity || 0;
+
           // Outer ring
           ctx.beginPath();
           ctx.arc(x, y, 4.5, 0, Math.PI * 2);
@@ -1055,17 +1778,24 @@
           ctx.strokeStyle = lineColor;
           ctx.lineWidth = 1.5;
           ctx.stroke();
-          
-          // Inner dot
+
+          // Inner dot: sentiment color; stroke hue shifts with velocity
           ctx.beginPath();
           ctx.arc(x, y, 2, 0, Math.PI * 2);
           ctx.fillStyle = value >= 0.15 ? '#10b981' : (value <= -0.15 ? '#ef4444' : '#f59e0b');
           ctx.fill();
+
+          // Tiny velocity arrow above/below dot when significant
+          if (Math.abs(vel) > 0.02 && points.length <= 36) {
+            ctx.fillStyle = vel > 0 ? '#10b981' : '#ef4444';
+            ctx.font = '500 9px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(vel > 0 ? '▲' : '▼', x, vel > 0 ? y - 8 : y + 14);
+            ctx.textAlign = 'left';
+          }
         });
 
-        // X-axis timestamps
-        const first = points[0]?.time;
-        const last = points[points.length - 1]?.time;
+        const first = points[0]?.time, last = points[points.length - 1]?.time;
         ctx.fillStyle = textColor;
         ctx.font = '500 11px Inter, sans-serif';
         ctx.fillText(fmtDate(first), pad.left, height - 10);
@@ -1076,11 +1806,11 @@
 
       function renderHashtags(rows) {
         const tags = [...(rows || [])]
-          .map((row) => ({
+          .map(row => ({
             hashtag: String(row.hashtag || row.tag || '').replace(/^#/, ''),
             frequency: number(row.frequency ?? row.score ?? row.count)
           }))
-          .filter((row) => row.hashtag)
+          .filter(row => row.hashtag)
           .sort((a, b) => b.frequency - a.frequency)
           .slice(0, 10);
 
@@ -1094,10 +1824,7 @@
             const date = new Date(activeWeek);
             let display = activeWeek;
             if (!Number.isNaN(date.getTime())) {
-              display = new Intl.DateTimeFormat(undefined, {
-                month: 'short',
-                day: '2-digit'
-              }).format(date);
+              display = new Intl.DateTimeFormat(undefined, { month: 'short', day: '2-digit' }).format(date);
             }
             metaText += ` (${display})`;
           }
@@ -1105,8 +1832,8 @@
         els.hashtagsMeta.textContent = metaText;
         els.hashtagBars.innerHTML = '';
         els.hashtagsEmpty.style.display = tags.length ? 'none' : 'grid';
-        const max = Math.max(1, ...tags.map((tag) => tag.frequency));
-        tags.forEach((tag) => {
+        const max = Math.max(1, ...tags.map(t => t.frequency));
+        tags.forEach(tag => {
           const row = document.createElement('div');
           row.className = 'bar-row';
           row.innerHTML = `
@@ -1119,33 +1846,53 @@
       }
 
       function renderPosts(rows) {
+        window._lastPostsData = rows;
+        _sentimentRendered = false;
         const posts = [...(rows || [])];
+
+        // Overview tab table
         els.postsBody.innerHTML = '';
         els.postsEmpty.style.display = posts.length ? 'none' : 'grid';
         els.postsMeta.textContent = `${posts.length} rows`;
         els.kpiPosts.textContent = fmtInt(posts.length);
         els.kpiPostsNote.textContent = posts.length ? 'Serving layer results' : 'No serving rows';
 
-        posts.slice(0, Number(els.limit.value)).forEach((post) => {
+        // Posts tab (full table)
+        const postsBodyFull = document.getElementById('postsBodyFull');
+        const postsEmptyFull = document.getElementById('postsEmptyFull');
+        const postsMetaFull = document.getElementById('postsMetaFull');
+        postsBodyFull.innerHTML = '';
+        postsEmptyFull.style.display = posts.length ? 'none' : 'grid';
+        postsMetaFull.textContent = `${posts.length} rows`;
+
+        // Badge
+        document.getElementById('postsBadge').textContent = posts.length;
+
+        const limit = Number(els.limit.value);
+        posts.slice(0, limit).forEach(post => {
           const score = number(post.sentiment_score);
           const label = sentimentLabel(score).toLowerCase();
-          const tr = document.createElement('tr');
-          
           const platformVal = String(post.platform || post.source || '').toLowerCase();
           const badgeClass = ['reddit', 'facebook', 'instagram'].includes(platformVal) ? platformVal : 'other';
-
-          tr.innerHTML = `
+          const rowHTML = `
             <td><span class="badge ${badgeClass}">${escapeHtml(post.platform || post.source || '')}</span></td>
             <td><div class="content-cell">${escapeHtml(post.content || post.title || post.post_id || '')}</div></td>
             <td><span class="sentiment-badge ${label}">${escapeHtml(sentimentLabel(score))} ${fmtSentiment(score)}</span></td>
             <td class="metric">${fmtInt(engagement(post))}</td>
             <td>${escapeHtml(fmtDate(post.event_ts || post.created_at || post.indexed_at))}</td>
           `;
-          els.postsBody.appendChild(tr);
+          const tr1 = document.createElement('tr');
+          tr1.innerHTML = rowHTML;
+          els.postsBody.appendChild(tr1);
+
+          const tr2 = document.createElement('tr');
+          tr2.innerHTML = rowHTML;
+          postsBodyFull.appendChild(tr2);
         });
       }
 
       function renderWindows(stats) {
+        // Overview tab
         els.windowsBody.innerHTML = '';
         els.windowsEmpty.style.display = stats.length ? 'none' : 'grid';
         els.windowsMeta.textContent = `${stats.length} windows`;
@@ -1156,34 +1903,52 @@
         const weightedSentiment = stats.reduce((sum, row) => sum + row.avg_sentiment * Math.max(row.post_count, 1), 0);
         const divisor = stats.reduce((sum, row) => sum + Math.max(row.post_count, 1), 0);
         const avg = divisor ? weightedSentiment / divisor : 0;
-        
         els.kpiRealtimePosts.textContent = fmtInt(totalPosts);
         els.kpiSentiment.textContent = fmtSentiment(avg);
-        
-        const label = sentimentLabel(avg).toLowerCase();
-        els.kpiSentimentNote.innerHTML = `<span class="sentiment-badge ${label}" style="padding: 1px 6px; font-size: 11px;">${sentimentLabel(avg)}</span>`;
+        const avgLabel = sentimentLabel(avg).toLowerCase();
+        els.kpiSentimentNote.innerHTML = `<span class="sentiment-badge ${avgLabel}" style="padding:1px 6px;font-size:11px;">${sentimentLabel(avg)}</span>`;
 
-        stats.slice(0, 10).forEach((row) => {
-          const tr = document.createElement('tr');
+        // Realtime badge
+        document.getElementById('realtimeBadge').textContent = stats.length;
+
+        // Realtime tab (extended table)
+        const bodyRT = document.getElementById('windowsBodyRT');
+        const emptyRT = document.getElementById('windowsEmptyRT');
+        const metaRT  = document.getElementById('windowsMetaRT');
+        bodyRT.innerHTML = '';
+        emptyRT.style.display = stats.length ? 'none' : 'grid';
+        metaRT.textContent = `${stats.length} windows`;
+
+        stats.slice(0, 10).forEach(row => {
           const windowName = row.key.split(':').slice(3).join(':') || row.key;
           const score = number(row.avg_sentiment);
           const label = sentimentLabel(score).toLowerCase();
-          tr.innerHTML = `
+
+          // Overview row
+          const tr1 = document.createElement('tr');
+          tr1.innerHTML = `
             <td>${escapeHtml(fmtDate(windowName) || windowName)}</td>
             <td class="metric">${fmtInt(row.post_count)}</td>
-            <td><span class="sentiment-badge ${label}" style="padding: 1px 6px; font-size: 11px;">${fmtSentiment(row.avg_sentiment)}</span></td>
+            <td><span class="sentiment-badge ${label}" style="padding:1px 6px;font-size:11px;">${fmtSentiment(row.avg_sentiment)}</span></td>
           `;
-          els.windowsBody.appendChild(tr);
+          els.windowsBody.appendChild(tr1);
+
+          // Realtime tab row (with extra column)
+          const tr2 = document.createElement('tr');
+          tr2.innerHTML = `
+            <td>${escapeHtml(fmtDate(windowName) || windowName)}</td>
+            <td class="metric">${fmtInt(row.post_count)}</td>
+            <td><span class="sentiment-badge ${label}" style="padding:1px 6px;font-size:11px;">${fmtSentiment(row.avg_sentiment)}</span></td>
+            <td>${row.top_hashtag ? `<span class="bar-label">#${escapeHtml(row.top_hashtag)}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+          `;
+          bodyRT.appendChild(tr2);
         });
       }
 
       function escapeHtml(value) {
         return String(value ?? '')
-          .replaceAll('&', '&amp;')
-          .replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;')
-          .replaceAll('"', '&quot;')
-          .replaceAll("'", '&#039;');
+          .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
       }
 
       function setStatus(kind, text) {
@@ -1198,29 +1963,22 @@
         try {
           const payload = await getJson('/api/v1/hashtags/weeks' + qs({ platform }));
           const weeks = payload.data || [];
-          
           select.innerHTML = '<option value="">Latest (Realtime/Batch)</option>';
-          weeks.forEach((week) => {
+          weeks.forEach(week => {
             const opt = document.createElement('option');
             opt.value = week;
             const date = new Date(week);
             let display = week;
             if (!Number.isNaN(date.getTime())) {
               display = 'Week of ' + new Intl.DateTimeFormat(undefined, {
-                month: 'short',
-                day: '2-digit',
-                year: 'numeric'
+                month: 'short', day: '2-digit', year: 'numeric'
               }).format(date);
             }
             opt.textContent = display;
             select.appendChild(opt);
           });
-
-          if (weeks.includes(currentVal)) {
-            select.value = currentVal;
-          } else {
-            select.value = '';
-          }
+          if (weeks.includes(currentVal)) select.value = currentVal;
+          else select.value = '';
         } catch (error) {
           console.error('Failed to load hashtag weeks:', error);
         }
@@ -1233,7 +1991,7 @@
         const historyStart = '2023-01-01T00:00:00Z';
         els.refreshBtn.disabled = true;
         setStatus('', 'Loading');
-        countdown = 30; // Reset progress bar countdown on each manual or scheduled refresh
+        countdown = 30;
         updateProgressBar();
         try {
           const [health, statsPayload, hashtagsPayload, postsPayload, trendPayload] = await Promise.all([
@@ -1245,13 +2003,32 @@
           ]);
 
           const stats = normalizeStats(statsPayload.stats || []);
+          const trendMeta = trendPayload.meta || {};
           const trend = normalizeTrend(trendPayload.data || []);
           window.lastTrendData = trend;
+          window.lastTrendMeta = trendMeta;
           renderWindows(stats);
           renderHashtags(hashtagsPayload.data || []);
           renderPosts(postsPayload.data || []);
           drawSentimentChart(trend);
-          els.trendMeta.textContent = `${trend.length} points`;
+          updateTrendSummary(trend, trendMeta);
+          const velStr = trendMeta.avg_velocity != null
+            ? ` · vel ${trendMeta.avg_velocity >= 0 ? '+' : ''}${Number(trendMeta.avg_velocity).toFixed(3)}`
+            : '';
+          const postsStr = trendMeta.total_posts ? ` · ${trendMeta.total_posts} posts` : '';
+          els.trendMeta.textContent = `${trend.length} points${postsStr}${velStr}`;
+          // Refresh dependent tabs if already loaded
+          if (_sentimentRendered) {
+            renderSentimentTab(window._lastPostsData, window.lastTrendData);
+          }
+          if (_topicsLoaded) {
+            _topicsLoaded = false;
+            loadTopicsTab().then(() => { _topicsLoaded = true; });
+          }
+          if (_netLoaded) {
+            _netLoaded = false;
+            loadNetworkTab().then(() => { _netLoaded = true; });
+          }
           setStatus(health.status === 'ok' ? 'ok' : '', `Updated ${new Date().toLocaleTimeString()}`);
         } catch (error) {
           setStatus('err', `API error: ${error.message}`);
@@ -1260,22 +2037,1111 @@
         }
       }
 
-      els.refreshBtn.addEventListener('click', () => {
-        loadHashtagWeeks().then(() => loadAll());
-      });
-      els.platform.addEventListener('change', async () => {
-        await loadHashtagWeeks();
-        loadAll();
-      });
+      els.refreshBtn.addEventListener('click', () => loadHashtagWeeks().then(() => loadAll()));
+      els.platform.addEventListener('change', async () => { await loadHashtagWeeks(); loadAll(); });
       els.limit.addEventListener('change', loadAll);
       els.hashtagWeek.addEventListener('change', loadAll);
       window.addEventListener('resize', () => {
+        if (window.lastTrendData) drawSentimentChart(window.lastTrendData);
+      });
+
+      /* ── Tab switching logic ────────────────────────────────────────────── */
+      (function initTabs() {
+        const tabBtns   = document.querySelectorAll('.tab-btn');
+        const tabPanels = document.querySelectorAll('.tab-panel');
+
+        function activateTab(tabId) {
+          tabBtns.forEach(btn => {
+            const isActive = btn.dataset.tab === tabId;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+          });
+          tabPanels.forEach(panel => {
+            panel.classList.toggle('active', panel.id === `tab-${tabId}`);
+          });
+
+          // Delegate to per-tab init hooks (defined later in script)
+          if (typeof onTabActivated === 'function') onTabActivated(tabId);
+
+          // Persist selected tab across refreshes
+          try { sessionStorage.setItem('activeTab', tabId); } catch (_) {}
+        }
+
+        tabBtns.forEach(btn => {
+          btn.addEventListener('click', () => activateTab(btn.dataset.tab));
+        });
+
+        // Restore last tab
+        try {
+          const saved = sessionStorage.getItem('activeTab');
+          if (saved) activateTab(saved);
+        } catch (_) {}
+      })();
+
+      /* ══════════════════════════════════════════════════════════════════════
+         TAB 2 – SENTIMENT
+      ══════════════════════════════════════════════════════════════════════ */
+
+      const SENT_COLORS = { positive: '#10b981', neutral: '#f59e0b', negative: '#ef4444' };
+      const PLAT_COLORS = { reddit: '#ff4500', facebook: '#1877f2', instagram: '#e1306c' };
+
+      // Simulated keyword pools per sentiment group
+      const SENT_KEYWORDS = {
+        positive: [
+          { text: 'awesome', size: 38 }, { text: 'love', size: 34 }, { text: 'great', size: 30 },
+          { text: 'amazing', size: 28 }, { text: 'happy', size: 26 }, { text: 'excellent', size: 24 },
+          { text: 'fantastic', size: 22 }, { text: 'wonderful', size: 20 }, { text: 'best', size: 19 },
+          { text: 'brilliant', size: 17 }, { text: 'perfect', size: 16 }, { text: 'positive', size: 15 },
+          { text: 'inspired', size: 14 }, { text: 'grateful', size: 13 }, { text: 'exciting', size: 12 },
+        ],
+        neutral: [
+          { text: 'update', size: 36 }, { text: 'info', size: 32 }, { text: 'news', size: 30 },
+          { text: 'data', size: 27 }, { text: 'report', size: 25 }, { text: 'analysis', size: 22 },
+          { text: 'review', size: 20 }, { text: 'details', size: 18 }, { text: 'summary', size: 16 },
+          { text: 'stats', size: 15 }, { text: 'facts', size: 14 }, { text: 'topic', size: 13 },
+          { text: 'general', size: 12 }, { text: 'normal', size: 11 }, { text: 'average', size: 10 },
+        ],
+        negative: [
+          { text: 'hate', size: 36 }, { text: 'terrible', size: 32 }, { text: 'bad', size: 30 },
+          { text: 'awful', size: 28 }, { text: 'horrible', size: 25 }, { text: 'worst', size: 22 },
+          { text: 'broken', size: 20 }, { text: 'failed', size: 18 }, { text: 'disaster', size: 16 },
+          { text: 'poor', size: 15 }, { text: 'wrong', size: 14 }, { text: 'ugly', size: 13 },
+          { text: 'painful', size: 12 }, { text: 'boring', size: 11 }, { text: 'useless', size: 10 },
+        ],
+      };
+
+      function drawWordCloud(containerId, words, color) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = '';
+        const W = container.offsetWidth || 320;
+        const H = container.offsetHeight || 200;
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+        svg.setAttribute('width', '100%');
+        svg.setAttribute('height', '100%');
+
+        const placed = [];
+        const cx = W / 2, cy = H / 2;
+
+        words.forEach(({ text, size }) => {
+          const fs = Math.max(10, Math.min(size, 40));
+          const charW = fs * 0.55;
+          const tw = text.length * charW;
+          const th = fs * 1.2;
+
+          // Spiral placement
+          let placed_ok = false;
+          for (let r = 0; r < 200; r += 2) {
+            const angle = r * 0.4;
+            const x = cx + r * Math.cos(angle) - tw / 2;
+            const y = cy + r * Math.sin(angle) * 0.6;
+            const box = { x, y: y - th / 2, w: tw, h: th };
+
+            const overlap = placed.some(b =>
+              !(box.x + box.w < b.x || box.x > b.x + b.w || box.y + box.h < b.y || box.y > b.y + b.h)
+            );
+
+            if (!overlap && x > 4 && x + tw < W - 4 && y > th / 2 && y < H - 4) {
+              placed.push(box);
+              const el = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+              el.setAttribute('x', x + tw / 2);
+              el.setAttribute('y', y);
+              el.setAttribute('text-anchor', 'middle');
+              el.setAttribute('dominant-baseline', 'middle');
+              el.setAttribute('font-size', fs);
+              el.setAttribute('font-family', 'Inter, sans-serif');
+              el.setAttribute('font-weight', fs > 24 ? '700' : '600');
+              el.setAttribute('fill', color);
+              el.setAttribute('opacity', 0.15 + (fs / 40) * 0.85);
+              el.textContent = text;
+              svg.appendChild(el);
+              placed_ok = true;
+              break;
+            }
+          }
+        });
+
+        container.appendChild(svg);
+      }
+
+      function drawGauge(canvasId, score) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = 160 * dpr;
+        canvas.height = 90 * dpr;
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, 160, 90);
+
+        const cx = 80, cy = 88, r = 72;
+        const startAngle = Math.PI;
+        const endAngle = 2 * Math.PI;
+        const isDark = document.body.classList.contains('dark-mode');
+
+        // Background arc
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, startAngle, endAngle);
+        ctx.lineWidth = 14;
+        ctx.strokeStyle = isDark ? '#334155' : '#e2e8f0';
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        // Value arc — map score (-1..1) → (0..1)
+        const pct = Math.max(0, Math.min(1, (score + 1) / 2));
+        const valueAngle = startAngle + pct * Math.PI;
+        const arcColor = score > 0.15 ? '#10b981' : score < -0.15 ? '#ef4444' : '#f59e0b';
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, startAngle, valueAngle);
+        ctx.strokeStyle = arcColor;
+        ctx.lineWidth = 14;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        // Tick marks
+        [-1, -0.5, 0, 0.5, 1].forEach(tick => {
+          const tickPct = (tick + 1) / 2;
+          const angle = Math.PI + tickPct * Math.PI;
+          const x1 = cx + (r - 18) * Math.cos(angle);
+          const y1 = cy + (r - 18) * Math.sin(angle);
+          const x2 = cx + (r - 10) * Math.cos(angle);
+          const y2 = cy + (r - 10) * Math.sin(angle);
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.strokeStyle = isDark ? '#475569' : '#cbd5e1';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        });
+
+        // Update DOM
+        const valEl = document.getElementById('sentGaugeVal');
+        const lblEl = document.getElementById('sentGaugeLabel');
+        if (valEl) { valEl.textContent = score.toFixed(2); valEl.style.color = arcColor; }
+        if (lblEl) { lblEl.textContent = sentimentLabel(score); lblEl.style.color = arcColor; }
+      }
+
+      function drawSentimentTimeline(points) {
+        const canvas = document.getElementById('sentTimelineCanvas');
+        if (!canvas || !points.length) return;
+        const ctx = canvas.getContext('2d');
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(400, Math.floor(rect.width * dpr));
+        canvas.height = Math.max(120, Math.floor(rect.height * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const W = rect.width, H = rect.height;
+        ctx.clearRect(0, 0, W, H);
+
+        const pad = { left: 36, right: 12, top: 12, bottom: 28 };
+        const pW = W - pad.left - pad.right, pH = H - pad.top - pad.bottom;
+        const isDark = document.body.classList.contains('dark-mode');
+        const textColor = isDark ? '#94a3b8' : '#64748b';
+        const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+
+        // Grid
+        [-1, 0, 1].forEach(tick => {
+          const y = pad.top + (1 - (tick + 1) / 2) * pH;
+          ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y);
+          ctx.strokeStyle = gridColor; ctx.lineWidth = 1; ctx.stroke();
+          ctx.fillStyle = textColor; ctx.font = '500 10px Inter,sans-serif';
+          ctx.fillText(tick.toFixed(0), 4, y + 4);
+        });
+
+        const vals = points.map(p => Math.max(-1, Math.min(1, p.value)));
+        const xF = i => pad.left + (vals.length === 1 ? pW / 2 : (i / (vals.length - 1)) * pW);
+        const yF = v => pad.top + (1 - (v + 1) / 2) * pH;
+
+        // Gradient fill
+        const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + pH);
+        grad.addColorStop(0, isDark ? 'rgba(129,140,248,0.18)' : 'rgba(99,102,241,0.12)');
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.beginPath();
+        ctx.moveTo(xF(0), pad.top + pH);
+        vals.forEach((v, i) => ctx.lineTo(xF(i), yF(v)));
+        ctx.lineTo(xF(vals.length - 1), pad.top + pH);
+        ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
+
+        // Line
+        ctx.beginPath();
+        vals.forEach((v, i) => { const x = xF(i), y = yF(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+        ctx.strokeStyle = isDark ? '#818cf8' : '#6366f1';
+        ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+
+        // Labels
+        ctx.fillStyle = textColor; ctx.font = '500 10px Inter,sans-serif';
+        if (points[0]) ctx.fillText(fmtDate(points[0].time), pad.left, H - 6);
+        if (points.length > 1) {
+          ctx.textAlign = 'right';
+          ctx.fillText(fmtDate(points[points.length - 1].time), W - pad.right, H - 6);
+          ctx.textAlign = 'left';
+        }
+      }
+
+      function drawSentDonut(pctPos, pctNeu, pctNeg) {
+        const canvas = document.getElementById('sentDonutChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const size = 220;
+        canvas.width = size * dpr; canvas.height = size * dpr;
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, size, size);
+
+        const cx = size / 2, cy = size / 2, r = 88, lineW = 22;
+        const slices = [
+          { pct: pctPos, color: '#10b981' },
+          { pct: pctNeu, color: '#f59e0b' },
+          { pct: pctNeg, color: '#ef4444' },
+        ];
+        const total = slices.reduce((s, sl) => s + sl.pct, 0) || 1;
+
+        let angle = -Math.PI / 2;
+        slices.forEach(sl => {
+          const sweep = (sl.pct / total) * 2 * Math.PI;
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, angle, angle + sweep);
+          ctx.lineWidth = lineW;
+          ctx.strokeStyle = sl.color;
+          ctx.lineCap = 'butt';
+          ctx.stroke();
+          angle += sweep;
+        });
+
+        // Center text: biggest group
+        const biggest = slices.reduce((a, b) => a.pct > b.pct ? a : b);
+        const pctEl = document.getElementById('sentDonutPct');
+        const lblEl = document.getElementById('sentDonutLabel');
+        if (pctEl) { pctEl.textContent = `${Math.round((biggest.pct / total) * 100)}%`; pctEl.style.color = biggest.color; }
+        if (lblEl) {
+          lblEl.textContent = biggest.color === '#10b981' ? 'Positive' : biggest.color === '#f59e0b' ? 'Neutral' : 'Negative';
+          lblEl.style.color = biggest.color;
+        }
+      }
+
+      function drawMiniDonut(canvas, pos, neu, neg) {
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const size = 56;
+        canvas.width = size * dpr; canvas.height = size * dpr;
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, size, size);
+        const cx = size / 2, cy = size / 2, r = 22, lw = 8;
+        const total = pos + neu + neg || 1;
+        const slices = [
+          { pct: pos, color: '#10b981' }, { pct: neu, color: '#f59e0b' }, { pct: neg, color: '#ef4444' }
+        ];
+        let angle = -Math.PI / 2;
+        slices.forEach(sl => {
+          const sweep = (sl.pct / total) * 2 * Math.PI;
+          ctx.beginPath(); ctx.arc(cx, cy, r, angle, angle + sweep);
+          ctx.lineWidth = lw; ctx.strokeStyle = sl.color; ctx.lineCap = 'butt'; ctx.stroke();
+          angle += sweep;
+        });
+      }
+
+      let _sentimentRendered = false;
+
+      function renderSentimentTab(postsData, trendData) {
+        if (!postsData) return;
+        const posts = postsData || [];
+
+        // Categorise by sentiment
+        let pos = 0, neu = 0, neg = 0;
+        const byPlat = { reddit: [0,0,0], facebook: [0,0,0], instagram: [0,0,0] };
+
+        posts.forEach(p => {
+          const score = number(p.sentiment_score);
+          const plat = String(p.platform || p.source || '').toLowerCase();
+          if (score > 0.15)       { pos++; if (byPlat[plat]) byPlat[plat][0]++; }
+          else if (score < -0.15) { neg++; if (byPlat[plat]) byPlat[plat][2]++; }
+          else                    { neu++; if (byPlat[plat]) byPlat[plat][1]++; }
+        });
+
+        const total = pos + neu + neg || 1;
+        const avgScore = posts.length
+          ? posts.reduce((s, p) => s + number(p.sentiment_score), 0) / posts.length
+          : 0;
+
+        drawSentDonut(pos, neu, neg);
+        drawGauge('sentGaugeCanvas', avgScore);
+
+        // Count badges
+        const fmt = n => n > 0 ? fmtInt(n) : '—';
+        document.getElementById('sentGaugePosCount').textContent = fmt(pos);
+        document.getElementById('sentGaugeNeuCount').textContent = fmt(neu);
+        document.getElementById('sentGaugeNegCount').textContent = fmt(neg);
+        document.getElementById('sentDonutMeta').textContent =
+          `${fmtInt(total)} posts · ${posts.length ? fmtDate(posts[0].event_ts || posts[0].created_at || '') : ''}`;
+
+        // Per-platform mini donuts
+        const miniWrap = document.getElementById('sentPlatformMini');
+        if (miniWrap) {
+          miniWrap.innerHTML = '';
+          ['reddit', 'facebook', 'instagram'].forEach(plat => {
+            const [p, n, ng] = byPlat[plat];
+            const col = PLAT_COLORS[plat];
+            const div = document.createElement('div');
+            div.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;';
+            div.innerHTML = `<canvas width="56" height="56" style="border-radius:50%;"></canvas>
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:${col};">${plat}</div>`;
+            miniWrap.appendChild(div);
+            drawMiniDonut(div.querySelector('canvas'), p, n, ng);
+          });
+        }
+
+        // Timeline
+        if (trendData && trendData.length) {
+          drawSentimentTimeline(trendData);
+          document.getElementById('sentTimelineMeta').textContent = `${trendData.length} hourly points`;
+        }
+
+        // Word clouds
+        drawWordCloud('wcPositive', SENT_KEYWORDS.positive, '#10b981');
+        drawWordCloud('wcNeutral',  SENT_KEYWORDS.neutral,  '#f59e0b');
+        drawWordCloud('wcNegative', SENT_KEYWORDS.negative, '#ef4444');
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════
+         TAB 3 – TOPICS
+      ══════════════════════════════════════════════════════════════════════ */
+
+      const TOPIC_PALETTE = [
+        '#6366f1','#10b981','#f59e0b','#ef4444','#3b82f6','#ec4899',
+        '#8b5cf6','#14b8a6','#f97316','#06b6d4','#84cc16','#a855f7',
+      ];
+
+      let _topicData = null;
+      let _topicTrend = null;
+      let _topicHeatmap = null;
+      let _selectedTopic = null;
+      let _topicTrendChart = null;
+      let _topicsLoaded = false;
+
+      async function loadTopicsTab() {
+        const platform = els.platform.value;
+        try {
+          const [distPayload, trendPayload, heatPayload] = await Promise.all([
+            getJson('/api/v1/topics/distribution' + qs({ platform })),
+            getJson('/api/v1/topics/trend' + qs({ platform, weeks: 8 })),
+            getJson('/api/v1/topics/sentiment-heatmap' + qs({ platform })),
+          ]);
+          _topicData    = distPayload.data || [];
+          _topicTrend   = trendPayload.data || [];
+          _topicHeatmap = heatPayload.data || [];
+        } catch (e) {
+          console.warn('Topics API fallback:', e.message);
+          _topicData    = getSimulatedTopics();
+          _topicTrend   = getSimulatedTopicTrend();
+          _topicHeatmap = getSimulatedHeatmap();
+        }
+        renderTopicsTab();
+      }
+
+      function getSimulatedTopics() {
+        const labels = ['AI & ML','Crypto','Politics','Sports','Health','Entertainment','Tech Products','Climate','Travel','Education','Memes','Business'];
+        const counts = [3200,2850,1950,2100,1750,2600,3100,1400,2200,1600,4100,2750];
+        const umaps  = [[0.12,0.87],[-0.45,0.31],[-0.78,-0.22],[0.53,-0.61],[0.91,0.14],[-0.30,0.72],[0.67,0.45],[-0.55,-0.80],[0.21,-0.93],[-0.88,0.58],[0.39,0.00],[-0.10,-0.47]];
+        const kwds   = [['ai','gpt','llm','neural','model'],['bitcoin','crypto','defi','token','blockchain'],['election','policy','vote','government','law'],['match','team','player','score','game'],['health','diet','mental','fitness','medicine'],['movie','music','streaming','celebrity','series'],['startup','apple','google','product','launch'],['climate','carbon','solar','green','energy'],['travel','food','vacation','trip','culture'],['research','university','study','science','paper'],['meme','funny','viral','lol','joke'],['economy','stock','revenue','investment','company']];
+        return labels.map((l, i) => ({
+          topic_id: i, topic_label: l, post_count: counts[i],
+          keywords: kwds[i], avg_sentiment: [-0.12,0.35,-0.28,0.18,0.42,0.25,0.30,0.15,0.50,0.60,0.22,0.08][i],
+          x: umaps[i][0], y: umaps[i][1],
+        }));
+      }
+
+      function getSimulatedTopicTrend() {
+        const topics = getSimulatedTopics();
+        const rows = [];
+        const now = new Date();
+        for (let w = 7; w >= 0; w--) {
+          const d = new Date(now); d.setDate(d.getDate() - w * 7);
+          const week = d.toISOString().slice(0, 10);
+          topics.forEach(t => {
+            const jitter = 0.7 + Math.random() * 0.6;
+            rows.push({ topic_id: t.topic_id, topic_label: t.topic_label, event_week: week, post_count: Math.round(t.post_count * jitter / 8) });
+          });
+        }
+        return rows;
+      }
+
+      function getSimulatedHeatmap() {
+        const topics = getSimulatedTopics();
+        const plats = ['reddit', 'facebook', 'instagram'];
+        const rows = [];
+        topics.forEach(t => {
+          plats.forEach(p => {
+            rows.push({ topic_id: t.topic_id, topic_label: t.topic_label, platform: p, avg_sentiment: t.avg_sentiment + (Math.random() - 0.5) * 0.2 });
+          });
+        });
+        return rows;
+      }
+
+      function renderTopicsTab() {
+        if (!_topicData) return;
+        const topics = [..._topicData].sort((a, b) => b.post_count - a.post_count);
+        document.getElementById('topicsMeta').textContent = `${topics.length} topics`;
+
+        // Select first topic by default
+        if (!_selectedTopic && topics.length) _selectedTopic = topics[0].topic_id;
+
+        renderTopicChips(topics);
+        renderTopicTreemap(topics);
+        renderTopicBars(topics);
+        renderTopicTrend();
+        renderTopicHeatmap();
+        renderTopicUmap(topics);
+        renderTopicWordCloud(topics);
+      }
+
+      function renderTopicChips(topics) {
+        const wrap = document.getElementById('topicChips');
+        if (!wrap) return;
+        wrap.innerHTML = '';
+        topics.forEach((t, i) => {
+          const chip = document.createElement('button');
+          chip.className = 'topic-chip' + (t.topic_id === _selectedTopic ? ' selected' : '');
+          chip.style.setProperty('--chip-c', TOPIC_PALETTE[i % TOPIC_PALETTE.length]);
+          chip.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${TOPIC_PALETTE[i % TOPIC_PALETTE.length]};display:inline-block;flex-shrink:0;"></span>${escapeHtml(t.topic_label)}`;
+          chip.addEventListener('click', () => {
+            _selectedTopic = t.topic_id;
+            document.querySelectorAll('.topic-chip').forEach(c => c.classList.remove('selected'));
+            chip.classList.add('selected');
+            renderTopicWordCloud(topics);
+          });
+          wrap.appendChild(chip);
+        });
+      }
+
+      function renderTopicTreemap(topics) {
+        const wrap = document.getElementById('topicTreemapWrap');
+        if (!wrap) return;
+        const W = wrap.offsetWidth || 600;
+        const H = 320;
+
+        // Simple squarified treemap via slicing
+        const canvas = document.getElementById('topicTreemap');
+        canvas.width = W; canvas.height = H;
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = W * dpr; canvas.height = H * dpr;
+        canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, W, H);
+
+        const total = topics.reduce((s, t) => s + t.post_count, 0) || 1;
+        let x = 0;
+        const pad = 2;
+        topics.slice(0, 12).forEach((t, i) => {
+          const w = Math.max(4, (t.post_count / total) * W);
+          const color = TOPIC_PALETTE[i % TOPIC_PALETTE.length];
+          const isDark = document.body.classList.contains('dark-mode');
+
+          ctx.fillStyle = color + (isDark ? '33' : '22');
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          const rx = 6;
+          ctx.roundRect(x + pad, pad, w - pad * 2, H - pad * 2, rx);
+          ctx.fill(); ctx.stroke();
+
+          // Label — only if wide enough
+          if (w > 60) {
+            ctx.save();
+            ctx.translate(x + w / 2, H / 2);
+            if (w < H * 0.6) { ctx.rotate(-Math.PI / 2); }
+            ctx.fillStyle = color;
+            ctx.font = `700 ${Math.min(13, w / 6)}px Inter,sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const label = t.topic_label.length > 14 ? t.topic_label.slice(0, 12) + '…' : t.topic_label;
+            ctx.fillText(label, 0, 0);
+            ctx.font = `600 ${Math.min(11, w / 8)}px Inter,sans-serif`;
+            ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
+            ctx.fillText(fmtInt(t.post_count), 0, w < H * 0.6 ? -14 : 14);
+            ctx.restore();
+          }
+          x += w;
+        });
+      }
+
+      function renderTopicBars(topics) {
+        const wrap = document.getElementById('topicBars');
+        if (!wrap) return;
+        wrap.innerHTML = '';
+        const max = topics[0]?.post_count || 1;
+        topics.slice(0, 8).forEach((t, i) => {
+          const color = TOPIC_PALETTE[i % TOPIC_PALETTE.length];
+          const row = document.createElement('div');
+          row.className = 'bar-row';
+          row.innerHTML = `
+            <div class="bar-label" title="${escapeHtml(t.topic_label)}">${escapeHtml(t.topic_label)}</div>
+            <div class="bar-track">
+              <div class="bar-fill" style="width:${Math.max(2,(t.post_count/max)*100)}%;background:${color};"></div>
+            </div>
+            <div class="bar-value">${fmtInt(t.post_count)}</div>
+          `;
+          wrap.appendChild(row);
+        });
+      }
+
+      function renderTopicTrend() {
+        if (!_topicTrend || !_topicTrend.length) return;
+        const canvas = document.getElementById('topicTrendChart');
+        if (!canvas) return;
+
+        // Group by topic
+        const byTopic = {};
+        _topicTrend.forEach(row => {
+          if (!byTopic[row.topic_id]) byTopic[row.topic_id] = { label: row.topic_label, weeks: {} };
+          byTopic[row.topic_id].weeks[row.event_week] = (byTopic[row.topic_id].weeks[row.event_week] || 0) + row.post_count;
+        });
+        const allWeeks = [...new Set(_topicTrend.map(r => r.event_week))].sort();
+        const topTopicIds = Object.entries(byTopic)
+          .sort((a, b) => Object.values(b[1].weeks).reduce((s, v) => s + v, 0) - Object.values(a[1].weeks).reduce((s, v) => s + v, 0))
+          .slice(0, 6).map(([id]) => Number(id));
+
+        // Simple canvas line chart
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const W = Math.max(300, rect.width || 400), H = 260;
+        canvas.width = W * dpr; canvas.height = H * dpr;
+        canvas.style.height = H + 'px';
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, W, H);
+
+        const isDark = document.body.classList.contains('dark-mode');
+        const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+        const textColor = isDark ? '#94a3b8' : '#64748b';
+
+        const pad = { left: 44, right: 16, top: 12, bottom: 36 };
+        const pW = W - pad.left - pad.right, pH = H - pad.top - pad.bottom;
+
+        // Find max
+        let maxVal = 0;
+        topTopicIds.forEach(id => {
+          allWeeks.forEach(w => { maxVal = Math.max(maxVal, byTopic[id]?.weeks[w] || 0); });
+        });
+        maxVal = maxVal || 1;
+
+        // Grid + y labels
+        const yTicks = 4;
+        for (let i = 0; i <= yTicks; i++) {
+          const v = (maxVal / yTicks) * i;
+          const y = pad.top + pH - (i / yTicks) * pH;
+          ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y);
+          ctx.strokeStyle = gridColor; ctx.lineWidth = 1; ctx.stroke();
+          ctx.fillStyle = textColor; ctx.font = '500 10px Inter,sans-serif';
+          ctx.fillText(v >= 1000 ? (v / 1000).toFixed(1) + 'k' : Math.round(v), 4, y + 4);
+        }
+
+        // X labels (weeks)
+        allWeeks.forEach((w, i) => {
+          const x = pad.left + (i / (allWeeks.length - 1 || 1)) * pW;
+          ctx.fillStyle = textColor; ctx.font = '500 9px Inter,sans-serif'; ctx.textAlign = 'center';
+          const d = new Date(w);
+          ctx.fillText(`${d.getMonth() + 1}/${d.getDate()}`, x, H - 8);
+        });
+        ctx.textAlign = 'left';
+
+        // Lines per topic
+        topTopicIds.forEach((id, li) => {
+          const topic = byTopic[id];
+          if (!topic) return;
+          const color = TOPIC_PALETTE[li % TOPIC_PALETTE.length];
+
+          ctx.beginPath();
+          allWeeks.forEach((w, i) => {
+            const v = topic.weeks[w] || 0;
+            const x = pad.left + (i / (allWeeks.length - 1 || 1)) * pW;
+            const y = pad.top + pH - (v / maxVal) * pH;
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+          });
+          ctx.strokeStyle = color; ctx.lineWidth = 2;
+          ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+
+          // Dots
+          allWeeks.forEach((w, i) => {
+            const v = topic.weeks[w] || 0;
+            const x = pad.left + (i / (allWeeks.length - 1 || 1)) * pW;
+            const y = pad.top + pH - (v / maxVal) * pH;
+            ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fillStyle = color; ctx.fill();
+          });
+        });
+
+        document.getElementById('topicTrendMeta').textContent = `${allWeeks.length} weeks · top ${topTopicIds.length} topics`;
+      }
+
+      function renderTopicHeatmap() {
+        if (!_topicHeatmap || !_topicHeatmap.length) return;
+        const wrap = document.getElementById('topicHeatmap');
+        if (!wrap) return;
+
+        const plats = [...new Set(_topicHeatmap.map(r => r.platform))].sort();
+        const topicIds = [...new Set(_topicHeatmap.map(r => r.topic_id))];
+        const byKey = {};
+        _topicHeatmap.forEach(r => { byKey[`${r.topic_id}:${r.platform}`] = r.avg_sentiment; });
+
+        const isDark = document.body.classList.contains('dark-mode');
+        const topics = _topicData || [];
+
+        let html = `<table style="width:100%;border-collapse:separate;border-spacing:3px;">
+          <thead><tr><th style="text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);padding:4px 8px;min-width:130px;">Topic</th>`;
+        plats.forEach(p => {
+          html += `<th style="text-align:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:${PLAT_COLORS[p] || 'var(--text-muted)'};padding:4px 8px;min-width:80px;">${p}</th>`;
+        });
+        html += `</tr></thead><tbody>`;
+
+        topicIds.slice(0, 12).forEach((tid, ri) => {
+          const topicRow = topics.find(t => t.topic_id === tid);
+          const label = topicRow?.topic_label || `Topic ${tid}`;
+          const color = TOPIC_PALETTE[ri % TOPIC_PALETTE.length];
+          html += `<tr><td style="padding:4px 8px;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;max-width:140px;text-overflow:ellipsis;">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;flex-shrink:0;"></span>${escapeHtml(label)}
+          </td>`;
+          plats.forEach(p => {
+            const score = byKey[`${tid}:${p}`];
+            if (score === undefined) { html += `<td style="padding:3px;"><div style="height:32px;border-radius:4px;background:var(--panel-soft);"></div></td>`; return; }
+            const pct = Math.max(0, Math.min(1, (score + 1) / 2));
+            const posColor = '#10b981', negColor = '#ef4444';
+            const r1 = parseInt(negColor.slice(1, 3), 16), g1 = parseInt(negColor.slice(3, 5), 16), b1 = parseInt(negColor.slice(5, 7), 16);
+            const r2 = parseInt(posColor.slice(1, 3), 16), g2 = parseInt(posColor.slice(3, 5), 16), b2 = parseInt(posColor.slice(5, 7), 16);
+            const r = Math.round(r1 + (r2 - r1) * pct), g = Math.round(g1 + (g2 - g1) * pct), b = Math.round(b1 + (b2 - b1) * pct);
+            const bg = `rgba(${r},${g},${b},${isDark ? 0.35 : 0.22})`;
+            const fg = `rgba(${r},${g},${b},1)`;
+            html += `<td style="padding:3px;"><div class="heatmap-cell" style="height:32px;background:${bg};color:${fg};">${score.toFixed(2)}</div></td>`;
+          });
+          html += `</tr>`;
+        });
+        html += `</tbody></table>`;
+        wrap.innerHTML = html;
+      }
+
+      function renderTopicUmap(topics) {
+        const svg = document.getElementById('topicUmap');
+        if (!svg) return;
+        svg.innerHTML = '';
+        const W = svg.getBoundingClientRect().width || 500;
+        const H = 340;
+        const pad = 40;
+        const pW = W - pad * 2, pH = H - pad * 2;
+
+        const xs = topics.map(t => t.x || 0), ys = topics.map(t => t.y || 0);
+        const minX = Math.min(...xs), maxX = Math.max(...xs) || 1;
+        const minY = Math.min(...ys), maxY = Math.max(...ys) || 1;
+        const maxCount = Math.max(...topics.map(t => t.post_count)) || 1;
+
+        topics.forEach((t, i) => {
+          const cx = pad + ((t.x - minX) / (maxX - minX || 1)) * pW;
+          const cy = pad + (1 - (t.y - minY) / (maxY - minY || 1)) * pH;
+          const r = 6 + (t.post_count / maxCount) * 18;
+          const color = TOPIC_PALETTE[i % TOPIC_PALETTE.length];
+          const isDark = document.body.classList.contains('dark-mode');
+
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circle.setAttribute('cx', cx); circle.setAttribute('cy', cy); circle.setAttribute('r', r);
+          circle.setAttribute('fill', color + (isDark ? '55' : '33'));
+          circle.setAttribute('stroke', color); circle.setAttribute('stroke-width', '1.5');
+          circle.setAttribute('class', 'umap-dot');
+          circle.addEventListener('click', () => {
+            _selectedTopic = t.topic_id;
+            document.querySelectorAll('.topic-chip').forEach((c, ci) => c.classList.toggle('selected', ci === i));
+            renderTopicWordCloud(topics);
+          });
+          svg.appendChild(circle);
+
+          if (r > 12) {
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', cx); text.setAttribute('y', cy);
+            text.setAttribute('text-anchor', 'middle'); text.setAttribute('dominant-baseline', 'middle');
+            text.setAttribute('font-size', Math.min(11, r * 0.7));
+            text.setAttribute('font-family', 'Inter,sans-serif'); text.setAttribute('font-weight', '700');
+            text.setAttribute('fill', color); text.setAttribute('pointer-events', 'none');
+            const label = t.topic_label.split(' ')[0];
+            text.textContent = label.length > 8 ? label.slice(0, 7) + '…' : label;
+            svg.appendChild(text);
+          }
+        });
+      }
+
+      function renderTopicWordCloud(topics) {
+        const topic = topics.find(t => t.topic_id === _selectedTopic) || topics[0];
+        if (!topic) return;
+        const titleEl = document.getElementById('topicWcTitle');
+        if (titleEl) titleEl.textContent = topic.topic_label;
+
+        const keywords = topic.keywords || [];
+        const topicIdx = topics.indexOf(topic);
+        const color = TOPIC_PALETTE[topicIdx % TOPIC_PALETTE.length];
+
+        const words = keywords.map((kw, i) => ({ text: kw, size: 38 - i * 5 }));
+        drawWordCloud('topicWordCloud', words, color);
+
+        // Keyword chips
+        const kEl = document.getElementById('topicWcKeywords');
+        if (kEl) {
+          kEl.innerHTML = keywords.map((kw, i) => {
+            const c = TOPIC_PALETTE[(topicIdx + i) % TOPIC_PALETTE.length];
+            return `<span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;background:${c}22;color:${c};border:1px solid ${c}44;">${escapeHtml(kw)}</span>`;
+          }).join('');
+        }
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════
+         TAB 4 – NETWORK (Force-directed graph, pure SVG)
+      ══════════════════════════════════════════════════════════════════════ */
+
+      const NET_PALETTE = [
+        '#6366f1','#10b981','#f59e0b','#ef4444','#3b82f6','#ec4899',
+        '#8b5cf6','#14b8a6','#f97316','#06b6d4',
+      ];
+
+      let _netData = null, _netComm = null, _netPR = null;
+      let _netLoaded = false;
+      let _netSim = null; // simulation handle
+
+      async function loadNetworkTab() {
+        const platform = els.platform.value;
+        try {
+          const [graphP, commP, prP] = await Promise.all([
+            getJson('/api/v1/network/graph' + qs({ platform })),
+            getJson('/api/v1/network/communities' + qs({ platform })),
+            getJson('/api/v1/network/pagerank' + qs({ platform, top_n: 20 })),
+          ]);
+          _netData = graphP;
+          _netComm = commP.data || [];
+          _netPR   = prP.data  || [];
+        } catch (e) {
+          console.warn('Network API fallback:', e.message);
+          _netData = buildSimNet();
+          _netComm = buildSimComm();
+          _netPR   = buildSimPR();
+        }
+        renderNetworkTab();
+      }
+
+      /* ── Simulated data (mirrors network_service.py) ── */
+      function buildSimNet() {
+        const rng = mulberry32(42);
+        const NUM_COMM = 8, PER_COMM = 15;
+        const nodes = [], edges = [];
+        for (let c = 0; c < NUM_COMM; c++) {
+          for (let j = 0; j < PER_COMM; j++) {
+            nodes.push({
+              node_id: `u${c * PER_COMM + j}`,
+              community_id: c,
+              community_name: ['AI Researchers','Crypto Traders','Political Commentators','Sports Fans','Health Advocates','Entertainment Fans','Tech Enthusiasts','Climate Activists'][c],
+              color: NET_PALETTE[c % NET_PALETTE.length],
+              pagerank: 0.002 + rng() * 0.012,
+              out_degree: Math.floor(rng() * 10 + 2),
+            });
+          }
+        }
+        const flat = nodes.map(n => n.node_id);
+        // Intra-community
+        for (let c = 0; c < NUM_COMM; c++) {
+          const comm = nodes.filter(n => n.community_id === c);
+          comm.forEach((src, i) => {
+            const nEdges = Math.floor(rng() * 4 + 2);
+            for (let e = 0; e < nEdges; e++) {
+              const tgt = comm[Math.floor(rng() * comm.length)];
+              if (tgt.node_id !== src.node_id) edges.push({ from: src.node_id, to: tgt.node_id, weight: Math.floor(rng() * 10 + 1) });
+            }
+          });
+        }
+        // Inter-community (sparse)
+        for (let i = 0; i < Math.floor(flat.length * 0.2); i++) {
+          const s = flat[Math.floor(rng() * flat.length)], t = flat[Math.floor(rng() * flat.length)];
+          if (s !== t) edges.push({ from: s, to: t, weight: Math.floor(rng() * 3 + 1) });
+        }
+        return { nodes, edges };
+      }
+
+      function buildSimComm() {
+        const names = ['AI Researchers','Crypto Traders','Political Commentators','Sports Fans','Health Advocates','Entertainment Fans','Tech Enthusiasts','Climate Activists'];
+        return names.map((n, i) => ({ community_id: i, community_name: n, size: 12 + Math.floor(mulberry32(i + 10)() * 12), color: NET_PALETTE[i % NET_PALETTE.length] }));
+      }
+
+      function buildSimPR() {
+        const rng = mulberry32(42);
+        const nodes = buildSimNet().nodes;
+        return nodes.sort((a, b) => b.pagerank - a.pagerank).slice(0, 20).map(n => ({
+          node_id: n.node_id, pagerank: n.pagerank, community_name: n.community_name, out_degree: n.out_degree,
+        }));
+      }
+
+      function mulberry32(seed) {
+        return function() {
+          seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+          let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+          t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+      }
+
+      /* ── Force-directed layout (Fruchterman-Reingold, pure JS) ── */
+      function runForceLayout(nodes, edges, W, H, iters = 180) {
+        const rng = mulberry32(99);
+        const pos = {};
+        // Init in circle
+        nodes.forEach((n, i) => {
+          const angle = (i / nodes.length) * 2 * Math.PI;
+          const r = Math.min(W, H) * 0.35;
+          pos[n.node_id] = { x: W / 2 + r * Math.cos(angle) + (rng() - 0.5) * 20, y: H / 2 + r * Math.sin(angle) + (rng() - 0.5) * 20 };
+        });
+
+        const k = Math.sqrt((W * H) / (nodes.length || 1)) * 0.9;
+        const adj = {};
+        edges.forEach(e => {
+          if (!adj[e.from]) adj[e.from] = new Set();
+          if (!adj[e.to])   adj[e.to]   = new Set();
+          adj[e.from].add(e.to); adj[e.to].add(e.from);
+        });
+
+        for (let iter = 0; iter < iters; iter++) {
+          const temp = (1 - iter / iters) * k * 1.5;
+          const disp = {};
+          nodes.forEach(n => { disp[n.node_id] = { x: 0, y: 0 }; });
+
+          // Repulsion
+          for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+              const a = nodes[i].node_id, b = nodes[j].node_id;
+              let dx = pos[a].x - pos[b].x, dy = pos[a].y - pos[b].y;
+              const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+              const force = (k * k) / d;
+              dx /= d; dy /= d;
+              disp[a].x += dx * force; disp[a].y += dy * force;
+              disp[b].x -= dx * force; disp[b].y -= dy * force;
+            }
+          }
+
+          // Attraction
+          edges.forEach(e => {
+            if (!pos[e.from] || !pos[e.to]) return;
+            let dx = pos[e.from].x - pos[e.to].x, dy = pos[e.from].y - pos[e.to].y;
+            const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+            const force = (d * d) / k;
+            dx /= d; dy /= d;
+            disp[e.from].x -= dx * force; disp[e.from].y -= dy * force;
+            disp[e.to].x   += dx * force; disp[e.to].y   += dy * force;
+          });
+
+          // Apply with temperature
+          nodes.forEach(n => {
+            const id = n.node_id;
+            const mag = Math.sqrt(disp[id].x ** 2 + disp[id].y ** 2) || 1;
+            const move = Math.min(mag, temp);
+            pos[id].x += (disp[id].x / mag) * move;
+            pos[id].y += (disp[id].y / mag) * move;
+            // Clamp
+            const pad = 30;
+            pos[id].x = Math.max(pad, Math.min(W - pad, pos[id].x));
+            pos[id].y = Math.max(pad, Math.min(H - pad, pos[id].y));
+          });
+        }
+        return pos;
+      }
+
+      function renderNetworkGraph() {
+        if (!_netData) return;
+        const svg = document.getElementById('netGraphSvg');
+        if (!svg) return;
+        svg.innerHTML = '';
+
+        const W = svg.getBoundingClientRect().width || 900;
+        const H = 480;
+        const nodes = (_netData.nodes || []).slice(0, 120); // cap at 120 for perf
+        const edges = (_netData.edges || []).slice(0, 300);
+
+        if (!nodes.length) return;
+
+        // Layout
+        const pos = runForceLayout(nodes, edges, W, H, 200);
+        const maxPR = Math.max(...nodes.map(n => n.pagerank || 0.001));
+
+        // Defs (arrowhead)
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+        marker.setAttribute('id', 'arrow'); marker.setAttribute('markerWidth', '6');
+        marker.setAttribute('markerHeight', '6'); marker.setAttribute('refX', '5'); marker.setAttribute('refY', '3');
+        marker.setAttribute('orient', 'auto');
+        const arrowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        arrowPath.setAttribute('d', 'M0,0 L0,6 L6,3 z');
+        arrowPath.setAttribute('fill', '#94a3b8'); arrowPath.setAttribute('opacity', '0.5');
+        marker.appendChild(arrowPath); defs.appendChild(marker); svg.appendChild(defs);
+
+        const isDark = document.body.classList.contains('dark-mode');
+
+        // Edges
+        const edgeG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        edgeG.setAttribute('class', 'net-edges');
+        edges.forEach(e => {
+          const from = pos[e.from], to = pos[e.to];
+          if (!from || !to) return;
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', from.x); line.setAttribute('y1', from.y);
+          line.setAttribute('x2', to.x);   line.setAttribute('y2', to.y);
+          const w = Math.min(3, Math.max(0.4, (e.weight || 1) / 5));
+          line.setAttribute('stroke', isDark ? 'rgba(148,163,184,0.18)' : 'rgba(100,116,139,0.12)');
+          line.setAttribute('stroke-width', w);
+          line.setAttribute('marker-end', 'url(#arrow)');
+          edgeG.appendChild(line);
+        });
+        svg.appendChild(edgeG);
+
+        // Nodes
+        const nodeG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        const tooltip = document.getElementById('netTooltip');
+        const nodeMap = {};
+        nodes.forEach(n => { nodeMap[n.node_id] = n; });
+
+        nodes.forEach(n => {
+          const p = pos[n.node_id];
+          if (!p) return;
+          const r = 4 + ((n.pagerank || 0.001) / maxPR) * 12;
+          const color = n.color || NET_PALETTE[(n.community_id || 0) % NET_PALETTE.length];
+
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circle.setAttribute('cx', p.x); circle.setAttribute('cy', p.y); circle.setAttribute('r', r);
+          circle.setAttribute('fill', color + (isDark ? '99' : '66'));
+          circle.setAttribute('stroke', color); circle.setAttribute('stroke-width', '1.5');
+          circle.style.cursor = 'pointer';
+          circle.style.transition = 'r 0.15s';
+
+          circle.addEventListener('mouseenter', ev => {
+            circle.setAttribute('r', r + 3);
+            if (tooltip) {
+              tooltip.style.display = 'block';
+              tooltip.innerHTML = `<div style="color:${color};margin-bottom:2px;">${escapeHtml(n.node_id)}</div>
+                <div style="color:var(--text-muted);">Community: ${escapeHtml(n.community_name || '')}</div>
+                <div style="color:var(--text-muted);">PageRank: ${(n.pagerank || 0).toFixed(5)}</div>`;
+            }
+          });
+          circle.addEventListener('mousemove', ev => {
+            if (!tooltip) return;
+            const svgRect = svg.getBoundingClientRect();
+            tooltip.style.left = (ev.clientX - svgRect.left + 12) + 'px';
+            tooltip.style.top  = (ev.clientY - svgRect.top  - 36) + 'px';
+          });
+          circle.addEventListener('mouseleave', () => {
+            circle.setAttribute('r', r);
+            if (tooltip) tooltip.style.display = 'none';
+          });
+
+          nodeG.appendChild(circle);
+        });
+        svg.appendChild(nodeG);
+
+        // Legend
+        const legend = document.getElementById('netLegend');
+        if (legend) {
+          legend.innerHTML = '';
+          const communities = [...new Map(nodes.map(n => [n.community_id, n])).values()];
+          communities.slice(0, 8).forEach(n => {
+            const color = n.color || NET_PALETTE[(n.community_id || 0) % NET_PALETTE.length];
+            const item = document.createElement('div');
+            item.style.cssText = `display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:99px;background:${color}22;border:1px solid ${color}55;color:${color};white-space:nowrap;`;
+            item.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>${escapeHtml(n.community_name || `C${n.community_id}`)}`;
+            legend.appendChild(item);
+          });
+        }
+
+        document.getElementById('netGraphMeta').textContent = `${nodes.length} nodes · ${edges.length} edges`;
+      }
+
+      function renderNetCommBars() {
+        const wrap = document.getElementById('netCommBars');
+        if (!wrap || !_netComm) return;
+        wrap.innerHTML = '';
+        const sorted = [..._netComm].sort((a, b) => b.size - a.size);
+        const max = sorted[0]?.size || 1;
+        sorted.forEach((c, i) => {
+          const color = c.color || NET_PALETTE[i % NET_PALETTE.length];
+          const row = document.createElement('div');
+          row.className = 'bar-row';
+          row.innerHTML = `
+            <div class="bar-label" style="color:${color};" title="${escapeHtml(c.community_name)}">${escapeHtml(c.community_name)}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${Math.max(2,(c.size/max)*100)}%;background:${color};"></div></div>
+            <div class="bar-value">${c.size}</div>
+          `;
+          wrap.appendChild(row);
+        });
+        document.getElementById('netCommMeta').textContent = `${sorted.length} communities`;
+      }
+
+      function renderNetPRTable() {
+        const tbody = document.getElementById('netPRBody');
+        if (!tbody || !_netPR) return;
+        tbody.innerHTML = '';
+        _netPR.slice(0, 20).forEach((row, i) => {
+          const tr = document.createElement('tr');
+          const commIdx = parseInt(row.node_id?.replace(/\D/g, '') || '0') % NET_PALETTE.length;
+          const color = NET_PALETTE[commIdx];
+          tr.innerHTML = `
+            <td style="color:var(--text-muted);font-weight:700;">${i + 1}</td>
+            <td style="font-weight:600;font-family:monospace;font-size:12px;">${escapeHtml(row.node_id)}</td>
+            <td><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:${color}22;color:${color};">${escapeHtml(row.community_name || '—')}</span></td>
+            <td class="metric" style="color:var(--primary);">${(row.pagerank || 0).toFixed(5)}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+        document.getElementById('netPRMeta').textContent = `Top ${_netPR.slice(0,20).length}`;
+      }
+
+      function renderNetworkTab() {
+        renderNetworkGraph();
+        renderNetCommBars();
+        renderNetPRTable();
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════
+         TAB ACTIVATION HOOK  (called by initTabs for every tab switch)
+      ══════════════════════════════════════════════════════════════════════ */
+
+      function onTabActivated(tabId) {
+        if (tabId === 'overview' && window.lastTrendData) {
+          requestAnimationFrame(() => drawSentimentChart(window.lastTrendData));
+        }
+        if (tabId === 'sentiment') {
+          if (!_sentimentRendered) {
+            renderSentimentTab(window._lastPostsData, window.lastTrendData);
+            _sentimentRendered = true;
+          } else if (window.lastTrendData) {
+            requestAnimationFrame(() => drawSentimentTimeline(window.lastTrendData));
+          }
+        }
+        if (tabId === 'topics' && !_topicsLoaded) {
+          _topicsLoaded = true;
+          loadTopicsTab();
+        }
+        if (tabId === 'network' && !_netLoaded) {
+          _netLoaded = true;
+          loadNetworkTab();
+        }
+      }
+
+      /* ── Resize: redraw all active canvases ──────────────────────────────── */
+      window.addEventListener('resize', () => {
         if (window.lastTrendData) {
           drawSentimentChart(window.lastTrendData);
+          drawSentimentTimeline(window.lastTrendData);
         }
+        if (_topicData) {
+          const topics = [..._topicData].sort((a, b) => b.post_count - a.post_count);
+          renderTopicTreemap(topics);
+          renderTopicTrend();
+          renderTopicUmap(topics);
+        }
+        if (_netData) renderNetworkGraph();
       });
-      
-      // Initialize dashboard
+
+      /* ── Init ────────────────────────────────────────────────────────────── */
       initTheme();
       loadHashtagWeeks().then(() => loadAll());
       startCountdown();
