@@ -106,7 +106,7 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: minio
     ports:
       - "${MINIO_API_HOST_PORT:-9000}:9000"
@@ -124,7 +124,7 @@ services:
       retries: 10
 
   minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     container_name: minio-init
     depends_on:
       minio:
@@ -497,8 +497,13 @@ services:
     restart: "no"
 
   api:
-    # [FIX] Dùng lại social-python:0.1.0 thay vì build thêm image social-api:0.1.0 giống hệt
-    image: social-python:0.1.0
+    # [FIX] Build với requirements.ml.txt vì virality training subprocess cần pandas, lightgbm, torch, v.v.
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        REQUIREMENTS_FILE: requirements.ml.txt
+    image: social-api-ml:0.1.0
     container_name: api
     depends_on:
       # [FIX] Chờ serving-init HOÀN THÀNH (tạo xong ES indices) mới start API
@@ -510,6 +515,10 @@ services:
       - "${API_HOST_PORT:-8000}:8000"
     environment:
       <<: *common-env
+      HF_HOME: /tmp/huggingface
+    volumes:
+      - ./ml/virality/artifacts:/app/ml/virality/artifacts
+      - ./.cache/huggingface:/tmp/huggingface
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     # [FIX] Thêm restart policy — trước đây không có, nếu crash sẽ không tự restart
     restart: unless-stopped

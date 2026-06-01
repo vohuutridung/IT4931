@@ -21,11 +21,12 @@ ARG REQUIREMENTS_FILE=requirements.runtime.txt
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         librdkafka1 \
+        libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # [FIX] Chạy với non-root user để giảm attack surface
 RUN groupadd --gid 1001 appgroup \
-    && useradd --uid 1001 --gid appgroup --no-create-home appuser
+    && useradd --uid 1001 --gid appgroup --create-home appuser
 
 WORKDIR /app
 COPY requirements*.txt ./

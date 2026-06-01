@@ -17,7 +17,7 @@ app = FastAPI(title="Social Lambda Pipeline API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -201,3 +201,188 @@ def metrics() -> Response:
     except Exception as exc:
         logger.error("Error generating metrics: %s", exc)
         raise HTTPException(status_code=500, detail="Error generating metrics")
+
+
+# ── Virality Prediction endpoints ─────────────────────────────────────────────
+
+import json as _json
+import os as _os
+import re as _re
+import subprocess as _subprocess
+import threading as _threading
+from pathlib import Path as _Path
+from pydantic import BaseModel
+
+_VIRALITY_ARTIFACTS_DIR = _os.getenv("VIRALITY_ARTIFACTS_DIR", "ml/virality/artifacts")
+_VIRALITY_LOG_FILE      = _os.path.join(_VIRALITY_ARTIFACTS_DIR, "train.log")
+_ENV_FILE               = _os.getenv("ENV_FILE", ".env")
+
+# Global training state (in-process; resets on API restart)
+_train_state: dict = {"running": False, "pid": None, "started_at": None}
+_train_lock = _threading.Lock()
+
+
+def _read_metadata() -> dict:
+    path = _os.path.join(_VIRALITY_ARTIFACTS_DIR, "training_metadata.json")
+    if not _os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as f:
+        return _json.load(f)
+
+
+def _read_retrain_history(n: int = 10) -> list:
+    path = _os.path.join(_VIRALITY_ARTIFACTS_DIR, "retrain_history.jsonl")
+    if not _os.path.exists(path):
+        return []
+    lines = _Path(path).read_text(encoding="utf-8").splitlines()
+    return [_json.loads(line) for line in lines[-n:] if line.strip()]
+
+
+@app.get("/api/v1/virality/status")
+def virality_status() -> dict:
+    """Model status, training metadata, and retrain schedule."""
+    meta = _read_metadata()
+    history = _read_retrain_history(5)
+    cron = _os.getenv("VIRALITY_RETRAIN_CRON", "0 2 * * 1")
+    artifacts_exist = _os.path.exists(_os.path.join(_VIRALITY_ARTIFACTS_DIR, "lgbm_model.pkl"))
+    return {
+        "model_ready":         artifacts_exist,
+        "training_running":    _train_state["running"],
+        "training_pid":        _train_state.get("pid"),
+        "training_started_at": _train_state.get("started_at"),
+        "metadata":            meta,
+        "retrain_history":     history,
+        "retrain_cron":        cron,
+    }
+
+
+class ViralityPredictBody(BaseModel):
+    content:        str
+    url:            str = ""
+    author_id:      str = "unknown"
+    created_at:     int = 0
+    created_at_iso: str | None = None
+
+
+@app.post("/api/v1/virality/predict")
+def virality_predict(body: ViralityPredictBody) -> dict:
+    """Real-time virality prediction for a single Facebook post."""
+    if not _os.path.exists(_os.path.join(_VIRALITY_ARTIFACTS_DIR, "lgbm_model.pkl")):
+        raise HTTPException(
+            status_code=503,
+            detail="Model not ready. Run POST /api/v1/virality/train first."
+        )
+
+    import datetime as _dt
+    created_at = body.created_at
+    if not created_at and body.created_at_iso:
+        try:
+            created_at = int(
+                _dt.datetime.fromisoformat(body.created_at_iso.replace("Z", "+00:00")).timestamp()
+            )
+        except Exception:
+            created_at = 0
+    if not created_at:
+        created_at = int(_dt.datetime.now(_dt.timezone.utc).timestamp())
+
+    try:
+        from ml.virality.predictor import ViralityPredictor
+        predictor = ViralityPredictor(_VIRALITY_ARTIFACTS_DIR)
+        result = predictor.predict({
+            "content":    body.content,
+            "url":        body.url,
+            "author_id":  body.author_id,
+            "created_at": created_at,
+        })
+        return {"ok": True, "result": result}
+    except Exception as exc:
+        logger.error("Virality predict error: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class ViralityTrainBody(BaseModel):
+    local:       bool = True
+    data_dir:    str  = "data/facebook_data/raw_data"
+    tune:        bool = False
+    use_phobert: bool = False
+
+
+@app.post("/api/v1/virality/train")
+def virality_train(body: ViralityTrainBody) -> dict:
+    """Kick off a training job in the background subprocess."""
+    with _train_lock:
+        if _train_state["running"]:
+            return {"ok": False, "message": "Training already running", "pid": _train_state["pid"]}
+
+        import datetime as _dt
+        import sys as _sys
+
+        _Path(_VIRALITY_ARTIFACTS_DIR).mkdir(parents=True, exist_ok=True)
+        log_fh = open(_VIRALITY_LOG_FILE, "w", encoding="utf-8")
+
+        cmd = [_sys.executable, "-m", "ml.virality.train",
+               "--output-dir", _VIRALITY_ARTIFACTS_DIR]
+        if body.local:          cmd += ["--local", "--data-dir", body.data_dir]
+        if body.tune:           cmd += ["--tune"]
+        if not body.use_phobert: cmd += ["--no-phobert"]
+
+        proc = _subprocess.Popen(cmd, stdout=log_fh, stderr=_subprocess.STDOUT, text=True)
+        _train_state["running"]    = True
+        _train_state["pid"]        = proc.pid
+        _train_state["started_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+        def _watch():
+            exit_code = proc.wait()
+            log_fh.close()
+            try:
+                with open(_VIRALITY_LOG_FILE, "a", encoding="utf-8") as f:
+                    f.write(f"\n[API] Subprocess exited with code {exit_code}\n")
+            except Exception:
+                pass
+            with _train_lock:
+                _train_state["running"] = False
+                _train_state["pid"]     = None
+
+        _threading.Thread(target=_watch, daemon=True).start()
+
+    return {"ok": True, "message": "Training started", "pid": proc.pid}
+
+
+@app.get("/api/v1/virality/train/log")
+def virality_train_log(tail: int = 50) -> dict:
+    """Return the last N lines of the training log."""
+    if not _os.path.exists(_VIRALITY_LOG_FILE):
+        return {"ok": True, "lines": [], "running": _train_state["running"]}
+    try:
+        text  = _Path(_VIRALITY_LOG_FILE).read_text(encoding="utf-8", errors="replace")
+        lines = text.splitlines()[-tail:]
+    except Exception as exc:
+        lines = [f"Error reading log: {exc}"]
+    return {"ok": True, "lines": lines, "running": _train_state["running"]}
+
+
+class RetrainScheduleBody(BaseModel):
+    cron: str
+
+
+@app.post("/api/v1/virality/retrain-schedule")
+def set_retrain_schedule(body: RetrainScheduleBody) -> dict:
+    """Update VIRALITY_RETRAIN_CRON in the .env file (takes effect after Airflow restart)."""
+    cron = body.cron.strip()
+    if len(cron.split()) != 5:
+        raise HTTPException(status_code=400, detail="cron must have exactly 5 fields")
+
+    env_path = _Path(_ENV_FILE)
+    if env_path.exists():
+        original = env_path.read_text(encoding="utf-8")
+        pattern  = _re.compile(r"^VIRALITY_RETRAIN_CRON=.*$", _re.MULTILINE)
+        updated  = (pattern.sub(f"VIRALITY_RETRAIN_CRON={cron}", original)
+                    if pattern.search(original)
+                    else original.rstrip("\n") + f"\nVIRALITY_RETRAIN_CRON={cron}\n")
+        env_path.write_text(updated, encoding="utf-8")
+    else:
+        env_path.write_text(f"VIRALITY_RETRAIN_CRON={cron}\n", encoding="utf-8")
+
+    _os.environ["VIRALITY_RETRAIN_CRON"] = cron
+    return {"ok": True, "cron": cron,
+            "message": "Saved to .env. Restart Airflow scheduler to apply."}
