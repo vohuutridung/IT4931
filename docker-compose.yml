@@ -46,7 +46,7 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      test: [ "CMD", "nc", "-z", "localhost", "2181" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -68,7 +68,7 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     healthcheck:
-      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      test: [ "CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092" ]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -95,7 +95,7 @@ services:
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
     container_name: kafka-ui
-    profiles: ["debug"]
+    profiles: [ "debug" ]
     depends_on:
       kafka:
         condition: service_healthy
@@ -106,7 +106,7 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: minio
     ports:
       - "${MINIO_API_HOST_PORT:-9000}:9000"
@@ -114,17 +114,17 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-    command: ["server", "/data", "--console-address", ":9001"]
+    command: [ "server", "/data", "--console-address", ":9001" ]
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 10s
       timeout: 5s
       retries: 10
 
   minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     container_name: minio-init
     depends_on:
       minio:
@@ -154,9 +154,9 @@ services:
     environment:
       <<: *common-env
       SPARK_NO_DAEMONIZE: "true"
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+    command: [ "/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master" ]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8080" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -176,7 +176,7 @@ services:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_WORKER_CORES: 4
       SPARK_WORKER_MEMORY: 4G
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    command: [ "/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077" ]
 
   redis:
     image: redis:7-alpine
@@ -185,7 +185,7 @@ services:
       - "${REDIS_HOST_PORT:-6379}:6379"
     # [FIX] Thêm healthcheck để các service phụ thuộc biết khi nào Redis thực sự sẵn sàng
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -193,7 +193,7 @@ services:
   cassandra:
     image: cassandra:4.1
     container_name: cassandra
-    profiles: ["enrichment", "anomaly"]
+    profiles: [ "enrichment", "anomaly" ]
     ports:
       - "${CASSANDRA_HOST_PORT:-9042}:9042"
     environment:
@@ -203,7 +203,7 @@ services:
     volumes:
       - cassandra_data:/var/lib/cassandra
     healthcheck:
-      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
       interval: 30s
       timeout: 10s
       retries: 10
@@ -223,7 +223,7 @@ services:
     # [FIX] Thêm healthcheck — ES mất 30-60s để sẵn sàng; không có healthcheck
     #       thì speed/serving-init sẽ crash-loop khi ES chưa ready.
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1"]
+      test: [ "CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1" ]
       interval: 15s
       timeout: 10s
       retries: 12
@@ -232,7 +232,7 @@ services:
   kibana:
     image: docker.elastic.co/kibana/kibana:8.12.2
     container_name: kibana
-    profiles: ["debug"]
+    profiles: [ "debug" ]
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -244,7 +244,7 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.8
     container_name: clickhouse
-    profiles: ["warehouse"]
+    profiles: [ "warehouse" ]
     ports:
       - "${CLICKHOUSE_HTTP_HOST_PORT:-8123}:8123"
       - "${CLICKHOUSE_NATIVE_HOST_PORT:-9002}:9000"
@@ -259,7 +259,7 @@ services:
         soft: 262144
         hard: 262144
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -267,7 +267,7 @@ services:
   postgres:
     image: postgres:15
     container_name: postgres
-    profiles: ["orchestration"]
+    profiles: [ "orchestration" ]
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
@@ -275,7 +275,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
+      test: [ "CMD", "pg_isready", "-U", "airflow" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -285,7 +285,7 @@ services:
       context: .
       dockerfile: Dockerfile.airflow
     container_name: airflow-init
-    profiles: ["orchestration"]
+    profiles: [ "orchestration" ]
     depends_on:
       postgres:
         condition: service_healthy
@@ -307,7 +307,7 @@ services:
       context: .
       dockerfile: Dockerfile.airflow
     container_name: airflow-webserver
-    profiles: ["orchestration"]
+    profiles: [ "orchestration" ]
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -327,7 +327,7 @@ services:
       context: .
       dockerfile: Dockerfile.airflow
     container_name: airflow-scheduler
-    profiles: ["orchestration"]
+    profiles: [ "orchestration" ]
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -356,13 +356,13 @@ services:
       KAFKA_CONSUMER_GROUP: batch-consumer
       CONSUMER_FLUSH_SIZE: ${CONSUMER_FLUSH_SIZE:-500}
       CONSUMER_FLUSH_INTERVAL: ${CONSUMER_FLUSH_INTERVAL:-30}
-    command: ["python", "-m", "batch.object_store_writer"]
+    command: [ "python", "-m", "batch.object_store_writer" ]
     restart: unless-stopped
 
   replay-reddit:
     # [FIX] Dùng lại image đã build bởi object-store-writer, không build lại
     image: social-python:0.1.0
-    profiles: ["replay"]
+    profiles: [ "replay" ]
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -392,7 +392,7 @@ services:
 
   replay-facebook:
     image: social-python:0.1.0
-    profiles: ["replay"]
+    profiles: [ "replay" ]
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -422,7 +422,7 @@ services:
 
   replay-instagram:
     image: social-python:0.1.0
-    profiles: ["replay"]
+    profiles: [ "replay" ]
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -493,12 +493,17 @@ services:
         condition: service_started
     environment:
       <<: *common-env
-    command: ["python", "-m", "serving.es_indexer", "--ensure"]
+    command: [ "python", "-m", "serving.es_indexer", "--ensure" ]
     restart: "no"
 
   api:
-    # [FIX] Dùng lại social-python:0.1.0 thay vì build thêm image social-api:0.1.0 giống hệt
-    image: social-python:0.1.0
+    # [FIX] Build với requirements.ml.txt vì virality training subprocess cần pandas, lightgbm, torch, v.v.
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        REQUIREMENTS_FILE: requirements.ml.txt
+    image: social-api-ml:0.1.0
     container_name: api
     depends_on:
       # [FIX] Chờ serving-init HOÀN THÀNH (tạo xong ES indices) mới start API
@@ -510,7 +515,11 @@ services:
       - "${API_HOST_PORT:-8000}:8000"
     environment:
       <<: *common-env
-    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+      HF_HOME: /tmp/huggingface
+    volumes:
+      - ./ml/virality/artifacts:/app/ml/virality/artifacts
+      - ./.cache/huggingface:/tmp/huggingface
+    command: [ "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000" ]
     # [FIX] Thêm restart policy — trước đây không có, nếu crash sẽ không tự restart
     restart: unless-stopped
 
@@ -533,19 +542,19 @@ services:
         REQUIREMENTS_FILE: requirements.ml.txt
     image: social-ml:0.1.0
     container_name: ml-anomaly
-    profiles: ["anomaly"]
+    profiles: [ "anomaly" ]
     depends_on:
       - api
       - cassandra
     environment:
       <<: *common-env
-    command: ["python", "-m", "ml.anomaly_detector"]
+    command: [ "python", "-m", "ml.anomaly_detector" ]
     restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:v2.53.1
     container_name: prometheus
-    profiles: ["monitoring"]
+    profiles: [ "monitoring" ]
     ports:
       - "${PROMETHEUS_HOST_PORT:-9090}:9090"
     volumes:
@@ -554,7 +563,7 @@ services:
   grafana:
     image: grafana/grafana:11.1.0
     container_name: grafana
-    profiles: ["monitoring"]
+    profiles: [ "monitoring" ]
     ports:
       - "${GRAFANA_HOST_PORT:-3000}:3000"
     volumes:

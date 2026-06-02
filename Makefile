@@ -91,7 +91,7 @@ stream:
 	spark-submit speed/streaming_job.py
 
 api:
-	uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+	.venv/bin/uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 
 build:
 	docker compose build
