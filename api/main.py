@@ -326,7 +326,11 @@ def virality_train(body: ViralityTrainBody) -> dict:
         if body.tune:           cmd += ["--tune"]
         if not body.use_phobert: cmd += ["--no-phobert"]
 
-        proc = _subprocess.Popen(cmd, stdout=log_fh, stderr=_subprocess.STDOUT, text=True)
+        env = _os.environ.copy()
+        env["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+        env["OMP_NUM_THREADS"] = "4"
+
+        proc = _subprocess.Popen(cmd, stdout=log_fh, stderr=_subprocess.STDOUT, text=True, env=env)
         _train_state["running"]    = True
         _train_state["pid"]        = proc.pid
         _train_state["started_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
@@ -355,7 +359,8 @@ def virality_train_log(tail: int = 50) -> dict:
         return {"ok": True, "lines": [], "running": _train_state["running"]}
     try:
         text  = _Path(_VIRALITY_LOG_FILE).read_text(encoding="utf-8", errors="replace")
-        lines = text.splitlines()[-tail:]
+        raw_lines = text.split('\n')[-tail:]
+        lines = [line.split('\r')[-1] for line in raw_lines]
     except Exception as exc:
         lines = [f"Error reading log: {exc}"]
     return {"ok": True, "lines": lines, "running": _train_state["running"]}

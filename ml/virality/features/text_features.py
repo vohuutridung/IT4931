@@ -161,12 +161,28 @@ def extract_phobert_embeddings(
         len(texts), len(texts) - len(missing_indices), len(missing_indices),
     )
 
+    if str(device) == "cpu":
+        batch_size = min(batch_size, 8)
+
     if missing_indices:
         tokenizer = AutoTokenizer.from_pretrained(PHOBERT_MODEL_NAME, use_fast=False)
         model = AutoModel.from_pretrained(PHOBERT_MODEL_NAME).to(device)
         model.eval()
 
+        if str(device) == "cpu":
+            try:
+                logger.info("Applying dynamic quantization to PhoBERT model on CPU to save memory...")
+                model = torch.quantization.quantize_dynamic(
+                    model, {torch.nn.Linear}, dtype=torch.qint8
+                )
+            except Exception as exc:
+                logger.warning("Failed to apply dynamic quantization: %s. Continuing with default model.", exc)
+
+        from tqdm import tqdm
         missing_texts = [texts[i] for i in missing_indices]
+
+        total_batches = (len(missing_texts) + batch_size - 1) // batch_size
+        pbar = tqdm(total=total_batches, desc="PhoBERT Embeddings")
 
         for start in range(0, len(missing_texts), batch_size):
             batch_texts = missing_texts[start: start + batch_size]
@@ -190,11 +206,13 @@ def extract_phobert_embeddings(
             for local_i, global_i in enumerate(batch_idxs):
                 cache[keys[global_i]] = embeddings[local_i]
 
-            logger.debug(
-                "PhoBERT batch %d/%d done",
-                start // batch_size + 1,
-                (len(missing_texts) + batch_size - 1) // batch_size,
-            )
+            # Clear memory to prevent OOM on CPU
+            del inputs, outputs, embeddings
+            import gc
+            gc.collect()
+
+            pbar.update(1)
+        pbar.close()
 
         if cache_path:
             _save_cache(cache, cache_path)

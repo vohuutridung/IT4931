@@ -123,8 +123,13 @@ def _read_key(client, key: str) -> pd.DataFrame:
     """Download and read a single Parquet key from MinIO into a DataFrame."""
     obj = client.get_object(Bucket=S3_BUCKET, Key=key)
     buf = io.BytesIO(obj["Body"].read())
-    table = pq.read_table(buf, columns=[c for c in KEEP_COLS if c != "raw_json"] + ["raw_json"])
+    table = pq.read_table(buf, columns=KEEP_COLS)
     df = table.to_pandas()
+    if "raw_json" in df.columns:
+        df["url"] = df["raw_json"].apply(_extract_url)
+        df = df.drop(columns=["raw_json"])
+    else:
+        df["url"] = ""
     return df
 
 
@@ -181,10 +186,6 @@ def load_from_minio(
 
     df = pd.concat(frames, ignore_index=True)
     logger.info("Loaded %d rows from MinIO before cleaning", len(df))
-
-    # ── Extract url from raw_json ──────────────────────────────────────────────
-    df["url"] = df["raw_json"].apply(_extract_url)
-    df = df.drop(columns=["raw_json"])
 
     # ── Normalise types ────────────────────────────────────────────────────────
     df["created_at"] = pd.to_datetime(df["created_at"], utc=True)

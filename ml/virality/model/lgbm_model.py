@@ -53,7 +53,7 @@ DEFAULT_PARAMS: dict = {
     "bagging_freq":     5,
     "reg_alpha":        0.1,
     "reg_lambda":       1.0,
-    "n_jobs":           -1,
+    "n_jobs":           1,
     "verbose":          -1,
     "random_state":     42,
 }
@@ -160,7 +160,7 @@ def tune_hyperparams(
             "n_estimators":      500,
             "verbose":           -1,
             "random_state":      42,
-            "n_jobs":            -1,
+            "n_jobs":            1,
             # Search space
             "num_leaves":        trial.suggest_int("num_leaves", 31, 255),
             "learning_rate":     trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
