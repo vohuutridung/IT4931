@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timedelta, timezone
+
+# Sanitize SSL environment variables if they point to non-existent files/directories
+for var in ["SSL_CERT_FILE", "SSL_CERT_DIR"]:
+    if var in os.environ and not os.path.exists(os.environ[var]):
+        del os.environ[var]
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
@@ -391,3 +397,183 @@ def set_retrain_schedule(body: RetrainScheduleBody) -> dict:
     _os.environ["VIRALITY_RETRAIN_CRON"] = cron
     return {"ok": True, "cron": cron,
             "message": "Saved to .env. Restart Airflow scheduler to apply."}
+
+
+# ── Sentiment Model endpoints ─────────────────────────────────────────────────
+
+_SENTIMENT_ARTIFACTS_DIR = _os.getenv("SENTIMENT_ARTIFACTS_DIR", "ml/sentiment/artifacts")
+_SENTIMENT_LOG_FILE      = _os.path.join(_SENTIMENT_ARTIFACTS_DIR, "train.log")
+
+_sentiment_train_state: dict = {"running": False, "pid": None, "started_at": None}
+_sentiment_train_lock = _threading.Lock()
+
+
+def _read_sentiment_metadata() -> dict:
+    path = _os.path.join(_SENTIMENT_ARTIFACTS_DIR, "training_metadata.json")
+    if not _os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            return _json.load(f)
+    except Exception:
+        return {}
+
+
+def _read_sentiment_retrain_history(n: int = 10) -> list:
+    path = _os.path.join(_SENTIMENT_ARTIFACTS_DIR, "retrain_history.jsonl")
+    if not _os.path.exists(path):
+        return []
+    try:
+        lines = _Path(path).read_text(encoding="utf-8").splitlines()
+        return [_json.loads(line) for line in lines[-n:] if line.strip()]
+    except Exception:
+        return []
+
+
+@app.get("/api/v1/sentiment/model-status")
+def sentiment_model_status() -> dict:
+    """Sentiment model status, training metadata, and retrain schedule."""
+    meta = _read_sentiment_metadata()
+    history = _read_sentiment_retrain_history(5)
+    cron = _os.getenv("SENTIMENT_RETRAIN_CRON", "0 3 * * 1")
+    artifacts_exist = _os.path.exists(_os.path.join(_SENTIMENT_ARTIFACTS_DIR, "fine_tuned_phobert", "config.json"))
+    return {
+        "model_ready":         artifacts_exist,
+        "training_running":    _sentiment_train_state["running"],
+        "training_pid":        _sentiment_train_state.get("pid"),
+        "training_started_at": _sentiment_train_state.get("started_at"),
+        "metadata":            meta,
+        "retrain_history":     history,
+        "retrain_cron":        cron,
+    }
+
+
+class SentimentPredictBody(BaseModel):
+    content: str
+
+
+@app.post("/api/v1/sentiment/predict")
+def sentiment_predict(body: SentimentPredictBody) -> dict:
+    """Real-time sentiment prediction using the custom fine-tuned model (or fallback)."""
+    model_path = _os.path.join(_SENTIMENT_ARTIFACTS_DIR, "fine_tuned_phobert")
+    if _os.path.exists(_os.path.join(model_path, "config.json")):
+        try:
+            from ml.sentiment.predictor import SentimentPredictor
+            predictor = SentimentPredictor(_SENTIMENT_ARTIFACTS_DIR)
+            result = predictor.predict(body.content)
+            return {"ok": True, "result": result, "source": "fine-tuned-phobert"}
+        except Exception as exc:
+            logger.error("Fine-tuned sentiment predict error: %s", exc)
+
+    # Fallback to speed layer analyze_sentiment
+    try:
+        from speed.nlp_pipeline import analyze_sentiment
+        res = analyze_sentiment(body.content)
+        return {
+            "ok": True,
+            "result": {
+                "prediction": 2 if res["label"] == "positive" else 0 if res["label"] == "negative" else 1,
+                "label": res["label"],
+                "score": res["score"],
+                "confidence": abs(res["score"]) if res["label"] != "neutral" else 1.0,
+                "probabilities": {}
+            },
+            "source": "lexicon-fallback"
+        }
+    except Exception as exc:
+        logger.error("Sentiment predict fallback error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class SentimentTrainBody(BaseModel):
+    local:      bool = True
+    data_dir:   str  = "data/facebook_data/raw_data"
+    epochs:     int  = 3
+    batch_size: int  = 8
+    smoke_test: bool = False
+
+
+@app.post("/api/v1/sentiment/train")
+def sentiment_train(body: SentimentTrainBody) -> dict:
+    """Kick off a PhoBERT sentiment training job in the background."""
+    with _sentiment_train_lock:
+        if _sentiment_train_state["running"]:
+            return {"ok": False, "message": "Sentiment training already running", "pid": _sentiment_train_state["pid"]}
+
+        import datetime as _dt
+        import sys as _sys
+
+        _Path(_SENTIMENT_ARTIFACTS_DIR).mkdir(parents=True, exist_ok=True)
+        log_fh = open(_SENTIMENT_LOG_FILE, "w", encoding="utf-8")
+
+        cmd = [_sys.executable, "-m", "ml.sentiment.train",
+               "--output-dir", _SENTIMENT_ARTIFACTS_DIR,
+               "--epochs", str(body.epochs),
+               "--batch-size", str(body.batch_size)]
+        if body.local:      cmd += ["--local", "--data-dir", body.data_dir]
+        if body.smoke_test: cmd += ["--smoke-test"]
+
+        env = _os.environ.copy()
+        env["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+        proc = _subprocess.Popen(cmd, stdout=log_fh, stderr=_subprocess.STDOUT, text=True, env=env)
+        _sentiment_train_state["running"]    = True
+        _sentiment_train_state["pid"]        = proc.pid
+        _sentiment_train_state["started_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+        def _watch():
+            exit_code = proc.wait()
+            log_fh.close()
+            try:
+                with open(_SENTIMENT_LOG_FILE, "a", encoding="utf-8") as f:
+                    f.write(f"\n[API] Subprocess exited with code {exit_code}\n")
+            except Exception:
+                pass
+            with _sentiment_train_lock:
+                _sentiment_train_state["running"] = False
+                _sentiment_train_state["pid"]     = None
+
+        _threading.Thread(target=_watch, daemon=True).start()
+
+    return {"ok": True, "message": "Sentiment training started", "pid": proc.pid}
+
+
+@app.get("/api/v1/sentiment/train/log")
+def sentiment_train_log(tail: int = 50) -> dict:
+    """Return the last N lines of the sentiment training log."""
+    if not _os.path.exists(_SENTIMENT_LOG_FILE):
+        return {"ok": True, "lines": [], "running": _sentiment_train_state["running"]}
+    try:
+        text  = _Path(_SENTIMENT_LOG_FILE).read_text(encoding="utf-8", errors="replace")
+        raw_lines = text.split('\n')[-tail:]
+        lines = [line.split('\r')[-1] for line in raw_lines]
+    except Exception as exc:
+        lines = [f"Error reading log: {exc}"]
+    return {"ok": True, "lines": lines, "running": _sentiment_train_state["running"]}
+
+
+class SentimentRetrainScheduleBody(BaseModel):
+    cron: str
+
+
+@app.post("/api/v1/sentiment/retrain-schedule")
+def set_sentiment_retrain_schedule(body: SentimentRetrainScheduleBody) -> dict:
+    """Update SENTIMENT_RETRAIN_CRON in the .env file."""
+    cron = body.cron.strip()
+    if len(cron.split()) != 5:
+        raise HTTPException(status_code=400, detail="cron must have exactly 5 fields")
+
+    env_path = _Path(_ENV_FILE)
+    if env_path.exists():
+        original = env_path.read_text(encoding="utf-8")
+        pattern  = _re.compile(r"^SENTIMENT_RETRAIN_CRON=.*$", _re.MULTILINE)
+        updated  = (pattern.sub(f"SENTIMENT_RETRAIN_CRON={cron}", original)
+                    if pattern.search(original)
+                    else original.rstrip("\n") + f"\nSENTIMENT_RETRAIN_CRON={cron}\n")
+        env_path.write_text(updated, encoding="utf-8")
+    else:
+        env_path.write_text(f"SENTIMENT_RETRAIN_CRON={cron}\n", encoding="utf-8")
+
+    _os.environ["SENTIMENT_RETRAIN_CRON"] = cron
+    return {"ok": True, "cron": cron, "message": "Saved to .env."}
+

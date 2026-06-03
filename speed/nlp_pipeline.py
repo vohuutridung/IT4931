@@ -11,7 +11,7 @@ import re
 from collections import Counter
 from datetime import datetime, timezone
 
-from config.settings import NLP_MODEL_NAME
+from config.settings import NLP_MODEL_NAME, SENTIMENT_ARTIFACTS_DIR
 
 logger = logging.getLogger(__name__)
 MODEL_VERSION = NLP_MODEL_NAME
@@ -42,7 +42,32 @@ if spacy:
 
 if pipeline:
     try:
-        _sentiment = pipeline("sentiment-analysis", model=NLP_MODEL_NAME)
+        import os
+        import json
+        model_path = os.path.join(SENTIMENT_ARTIFACTS_DIR, "fine_tuned_phobert")
+        meta_path = os.path.join(SENTIMENT_ARTIFACTS_DIR, "training_metadata.json")
+        
+        is_smoke_test = False
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, encoding="utf-8") as f:
+                    meta = json.load(f)
+                is_smoke_test = meta.get("smoke_test", False)
+            except Exception:
+                pass
+
+        if os.path.exists(os.path.join(model_path, "config.json")) and not is_smoke_test:
+            logger.info("Loading fine-tuned PhoBERT sentiment model from %s", model_path)
+            _sentiment = pipeline("sentiment-analysis", model=model_path, tokenizer=model_path)
+            MODEL_VERSION = "local-fine-tuned-phobert"
+        elif "phobert" in NLP_MODEL_NAME.lower():
+            logger.info("PhoBERT base model cannot be loaded directly for sentiment analysis. Using lexicon fallback.")
+            _sentiment = None
+            MODEL_VERSION = NLP_MODEL_NAME
+        else:
+            logger.info("Loading default sentiment model: %s", NLP_MODEL_NAME)
+            _sentiment = pipeline("sentiment-analysis", model=NLP_MODEL_NAME)
+            MODEL_VERSION = NLP_MODEL_NAME
     except Exception as exc:
         logger.warning("Transformer sentiment unavailable, using fallback: %s", exc)
 
@@ -73,8 +98,16 @@ def analyze_sentiment(text: str) -> dict:
     if _sentiment:
         result = _sentiment(text[:512])[0]
         raw_score = float(result["score"])
-        label = result["label"].lower()
-        score = raw_score if "pos" in label else -raw_score
+        raw_label = result["label"].upper()
+        if "POS" in raw_label:
+            score = raw_score
+            label = "positive"
+        elif "NEG" in raw_label:
+            score = -raw_score
+            label = "negative"
+        else:  # NEU or NEUTRAL
+            score = 0.0
+            label = "neutral"
     else:
         score = _lexicon_sentiment(text)
         label = "positive" if score > 0.03 else "negative" if score < -0.03 else "neutral"

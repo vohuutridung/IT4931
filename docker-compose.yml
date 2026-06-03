@@ -518,7 +518,9 @@ services:
       HF_HOME: /tmp/huggingface
     volumes:
       - ./ml/virality/artifacts:/app/ml/virality/artifacts
+      - ./ml/sentiment/artifacts:/app/ml/sentiment/artifacts
       - ./.cache/huggingface:/tmp/huggingface
+      - ./data:/app/data:ro
     command: [ "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000" ]
     # [FIX] Thêm restart policy — trước đây không có, nếu crash sẽ không tự restart
     restart: unless-stopped
