@@ -5,7 +5,7 @@ pandas>=2.1.0
 # ── Virality Prediction System ─────────────────────────────────────────────────
 lightgbm>=4.3.0
 transformers>=4.40.0
-torch>=2.2.0
+torch==2.3.0+cu121
 accelerate>=1.1.0
 sentencepiece>=0.2.0    # required by PhoBERT tokenizer
 optuna>=3.6.0           # hyperparameter tuning
