@@ -1053,6 +1053,13 @@
         Virality
       </button>
 
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-sentiment-model" data-tab="sentiment-model">
+        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+        </svg>
+        Sentiment Model
+      </button>
+
     </nav>
 
     <!-- ══════════════════════════════════════════════════════════════════════
@@ -1721,6 +1728,184 @@
                   <button class="btn-secondary" onclick="vrlSetCron('0 3 * * 0')" style="height:32px;font-size:12px;padding:0 12px;">Every Sunday 03:00</button>
                   <button class="btn-secondary" onclick="vrlSetCron('0 2 1 * *')" style="height:32px;font-size:12px;padding:0 12px;">1st of month</button>
                   <button class="btn-secondary" onclick="vrlSetCron('0 */6 * * *')" style="height:32px;font-size:12px;padding:0 12px;">Every 6 hours</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 8 — SENTIMENT MODEL CONTROL
+    ══════════════════════════════════════════════════════════════════════ -->
+    <div id="tab-sentiment-model" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-sentiment-model">
+      <main>
+
+        <!-- ── A. INFERENCE ────────────────────────────────────────────────── -->
+        <section class="panel" style="margin-bottom:20px;">
+          <div class="panel-header">
+            <div class="panel-title">🎯 Predict Sentiment</div>
+            <div id="sntPredictMeta" class="status-line">Nhập văn bản tiếng Việt và bấm Predict</div>
+          </div>
+          <div class="panel-body">
+            <div class="vrl-grid">
+              <!-- Inputs -->
+              <div>
+                <div class="vrl-field">
+                  <label class="vrl-label" for="sntContent">Văn bản cần phân tích</label>
+                  <textarea id="sntContent" class="vrl-textarea" placeholder="Nhập văn bản (bài đăng hoặc bình luận tiếng Việt) vào đây..."></textarea>
+                </div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                  <button id="sntPredictBtn" onclick="doSentimentPredict()" style="flex:1;min-width:140px;">
+                    <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2" fill="none"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    Predict
+                  </button>
+                  <button class="btn-secondary" onclick="sntClearResult()" style="flex:0 0 auto;">
+                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <!-- Result -->
+              <div>
+                <div id="sntResultEmpty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:180px;color:var(--text-muted);gap:12px;">
+                  <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="1.2" fill="none" opacity="0.3"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+                  <span style="font-size:13px;font-weight:500;">Kết quả hiển thị ở đây</span>
+                </div>
+                <div id="sntResultCard" class="viral-result-card" style="display:none;min-height:180px;">
+                  <div id="sntResultBadge" class="viral-badge viral-Medium">Neutral</div>
+                  <div id="sntScoreText" style="color:var(--text-muted);font-size:14px;font-weight:700;">Score: —</div>
+                  <div id="sntConfidenceText" style="color:var(--text-muted);font-size:12px;font-weight:600;margin-bottom:8px;">Confidence: —</div>
+                  <div id="sntSourceBadge" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:var(--panel-border);color:var(--text-muted);">—</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── B. MODEL STATUS + TRAINING ─────────────────────────────────── -->
+        <div class="vrl-grid" style="margin-bottom:20px;">
+
+          <!-- Model Status -->
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">📊 Model Status</div>
+              <span id="sntModelReadyBadge" style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:99px;background:rgba(100,116,139,.12);color:var(--text-muted);">Not trained</span>
+            </div>
+            <div class="panel-body">
+              <div class="vrl-grid-3" style="margin-bottom:16px;">
+                <div class="kpi" style="min-height:80px;">
+                  <div class="kpi-label">Test Weighted F1</div>
+                  <div class="kpi-value" id="sntTestF1" style="font-size:24px;">—</div>
+                </div>
+                <div class="kpi" style="min-height:80px;">
+                  <div class="kpi-label">Test Accuracy</div>
+                  <div class="kpi-value" id="sntTestAcc" style="font-size:24px;">—</div>
+                </div>
+                <div class="kpi" style="min-height:80px;">
+                  <div class="kpi-label">Training Date</div>
+                  <div class="kpi-value" id="sntTrainDate" style="font-size:16px;line-height:1.2;">—</div>
+                </div>
+              </div>
+              <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Retrain History</div>
+              <div class="table-wrap">
+                <table class="vrl-history-table">
+                  <thead><tr>
+                    <th>Date</th>
+                    <th>Old F1</th>
+                    <th>New F1</th>
+                    <th>Promoted</th>
+                    <th>Duration</th>
+                  </tr></thead>
+                  <tbody id="sntHistoryBody"><tr><td colspan="5" style="color:var(--text-muted);text-align:center;padding:20px;">No retrain history</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- Training Control -->
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">🚀 Training</div>
+              <div id="sntTrainStatusBadge" style="display:none;" class="running-pill">
+                <span class="dot" style="width:7px;height:7px;"></span> Running
+              </div>
+            </div>
+            <div class="panel-body">
+              <!-- Options -->
+              <div class="vrl-grid">
+                <div class="vrl-field">
+                  <label class="vrl-label">Data Source</label>
+                  <select id="sntTrainLocal" class="vrl-input vrl-select">
+                    <option value="minio">MinIO (production)</option>
+                    <option value="local">Local (data/facebook_data/raw_data)</option>
+                  </select>
+                </div>
+                <div class="vrl-field" id="sntDataDirField" style="display:none;">
+                  <label class="vrl-label">Data Directory (local only)</label>
+                  <input id="sntDataDir" class="vrl-input" type="text" value="data/facebook_data/raw_data">
+                </div>
+              </div>
+              <div class="vrl-grid">
+                <div class="vrl-field">
+                  <label class="vrl-label">Training Epochs</label>
+                  <input id="sntTrainEpochs" class="vrl-input" type="number" value="3" min="1" max="10">
+                </div>
+                <div class="vrl-field">
+                  <label class="vrl-label">Batch Size</label>
+                  <input id="sntTrainBatchSize" class="vrl-input" type="number" value="8" min="2" max="64">
+                </div>
+              </div>
+              <div style="margin-bottom:16px;">
+                <label style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;cursor:pointer;">
+                  <input type="checkbox" id="sntSmokeTest" style="accent-color:var(--primary);width:15px;height:15px;">
+                  Smoke Test (runs quickly on tiny dataset)
+                </label>
+              </div>
+              <button id="sntStartTrainBtn" onclick="startSentimentTrain()" style="width:100%;margin-bottom:14px;background:linear-gradient(135deg,var(--primary),var(--success));border:none;">
+                <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M5 3l14 9-14 9V3z"/></svg>
+                Start Training
+              </button>
+              <!-- Live log -->
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                <span class="vrl-label" style="margin:0;">Training Log</span>
+                <span id="sntLogMeta" style="font-size:11px;color:var(--text-muted);">idle</span>
+              </div>
+              <div id="sntTrainLog" class="train-log">No training log yet. Start training to see live output here.</div>
+            </div>
+          </section>
+        </div>
+
+        <!-- ── C. RETRAIN SCHEDULE ─────────────────────────────────────────── -->
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">⏰ Retrain Schedule (Airflow DAG)</div>
+            <div class="status-line" id="sntScheduleMeta">Weekly auto-retrain</div>
+          </div>
+          <div class="panel-body">
+            <div style="max-width:600px;">
+              <p style="color:var(--text-muted);font-size:13px;margin:0 0 20px;">Điều chỉnh lịch retrain tự động cho mô hình sentiment. Cron expression được lưu vào <code style="background:var(--panel-soft);padding:2px 6px;border-radius:4px;font-size:12px;">.env</code> và sẽ có hiệu lực sau khi restart Airflow scheduler.</p>
+              <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+                <div style="flex:1;min-width:220px;">
+                  <label class="vrl-label" for="sntCronInput">Cron Expression</label>
+                  <input id="sntCronInput" class="vrl-input vrl-cron-input" type="text" value="0 3 * * 1" placeholder="0 3 * * 1">
+                </div>
+                <button id="sntSaveScheduleBtn" onclick="saveSentimentSchedule()" style="flex:0 0 auto;height:38px;">
+                  <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                  Save
+                </button>
+              </div>
+              <div id="sntScheduleMsg" style="margin-top:12px;font-size:13px;font-weight:600;display:none;"></div>
+              <div style="margin-top:20px;">
+                <div class="vrl-label" style="margin-bottom:10px;">Quick presets</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button class="btn-secondary" onclick="sntSetCron('0 3 * * 1')" style="height:32px;font-size:12px;padding:0 12px;">Every Monday 03:00</button>
+                  <button class="btn-secondary" onclick="sntSetCron('0 4 * * 0')" style="height:32px;font-size:12px;padding:0 12px;">Every Sunday 04:00</button>
+                  <button class="btn-secondary" onclick="sntSetCron('0 3 1 * *')" style="height:32px;font-size:12px;padding:0 12px;">1st of month</button>
+                  <button class="btn-secondary" onclick="sntSetCron('0 */12 * * *')" style="height:32px;font-size:12px;padding:0 12px;">Every 12 hours</button>
                 </div>
               </div>
             </div>
@@ -3410,6 +3595,12 @@
         } else {
           stopVrlLogPoller();
         }
+
+        if (tabId === 'sentiment-model') {
+          loadSentimentStatus();
+        } else {
+          stopSentimentLogPoller();
+        }
       }
 
       /* ── Resize: redraw all active canvases ──────────────────────────────── */
@@ -3690,6 +3881,245 @@
           }
           if (data.ok) {
             const meta = document.getElementById('vrlScheduleMeta');
+            if (meta) meta.textContent = `Cron: ${cron}`;
+          }
+        } catch (e) {
+          if (msgEl) { msgEl.style.display='block'; msgEl.style.color='var(--danger)'; msgEl.textContent = `Error: ${e.message}`; }
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════
+         TAB 8 — SENTIMENT MODEL  (JavaScript logic)
+      ══════════════════════════════════════════════════════════════════════ */
+
+      let _sntLogPoller = null;
+
+      function startSentimentLogPoller() {
+        stopSentimentLogPoller();
+        _sntLogPoller = setInterval(pollSentimentLog, 2000);
+        pollSentimentLog();
+      }
+
+      function stopSentimentLogPoller() {
+        if (_sntLogPoller) { clearInterval(_sntLogPoller); _sntLogPoller = null; }
+      }
+
+      async function pollSentimentLog() {
+        try {
+          const data = await getJson('/api/v1/sentiment/train/log?tail=60');
+          const logEl = document.getElementById('sntTrainLog');
+          const metaEl = document.getElementById('sntLogMeta');
+          const badgeEl = document.getElementById('sntTrainStatusBadge');
+          const btnEl = document.getElementById('sntStartTrainBtn');
+          if (logEl) {
+            const txt = data.lines.join('\n') || 'No output yet...';
+            const wasAtBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 10;
+            logEl.textContent = txt;
+            if (wasAtBottom) logEl.scrollTop = logEl.scrollHeight;
+          }
+          if (metaEl) metaEl.textContent = data.running ? 'Running…' : `${data.lines.length} lines`;
+          if (badgeEl) badgeEl.style.display = data.running ? 'inline-flex' : 'none';
+          if (btnEl)   btnEl.disabled = data.running;
+          if (!data.running) {
+            stopSentimentLogPoller();
+            loadSentimentStatus();
+          }
+        } catch (e) { console.warn('Log poll error:', e.message); }
+      }
+
+      async function loadSentimentStatus() {
+        try {
+          const data = await getJson('/api/v1/sentiment/model-status');
+
+          // Model ready badge
+          const readyBadge = document.getElementById('sntModelReadyBadge');
+          if (readyBadge) {
+            readyBadge.textContent = data.model_ready ? '✓ Model Ready' : '✗ Not Trained';
+            readyBadge.style.background = data.model_ready
+              ? 'rgba(16,185,129,.15)' : 'rgba(239,68,68,.12)';
+            readyBadge.style.color = data.model_ready ? '#10b981' : '#ef4444';
+          }
+
+          // Metadata KPIs
+          const meta = data.metadata || {};
+          const testF1El = document.getElementById('sntTestF1');
+          const testAccEl = document.getElementById('sntTestAcc');
+          const trainDateEl = document.getElementById('sntTrainDate');
+
+          if (testF1El) testF1El.textContent = meta.test_metrics ? meta.test_metrics.weighted_f1 : '—';
+          if (testAccEl) testAccEl.textContent = meta.test_metrics ? meta.test_metrics.accuracy : '—';
+          if (trainDateEl) {
+            if (meta.trained_at) {
+              const dt = new Date(meta.trained_at);
+              trainDateEl.textContent = dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            } else {
+              trainDateEl.textContent = '—';
+            }
+          }
+
+          // History
+          const tbody = document.getElementById('sntHistoryBody');
+          if (tbody) {
+            if (data.retrain_history && data.retrain_history.length > 0) {
+              tbody.innerHTML = data.retrain_history.map(row => {
+                const dt = new Date(row.retrained_at);
+                const dtStr = dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                const color = row.promoted ? 'var(--success)' : 'var(--danger)';
+                return `<tr>
+                  <td>${dtStr}</td>
+                  <td>${row.old_weighted_f1 || '—'}</td>
+                  <td>${row.new_weighted_f1 || '—'}</td>
+                  <td style="color:${color};font-weight:700;">${row.promoted ? 'YES' : 'NO'}</td>
+                  <td>${row.duration_sec}s</td>
+                </tr>`;
+              }).join('');
+            } else {
+              tbody.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted);text-align:center;padding:20px;">No retrain history</td></tr>`;
+            }
+          }
+
+          // Cron
+          const cronIn = document.getElementById('sntCronInput');
+          if (cronIn && data.retrain_cron) cronIn.value = data.retrain_cron;
+          const schedMeta = document.getElementById('sntScheduleMeta');
+          if (schedMeta) schedMeta.textContent = `Cron: ${data.retrain_cron || '—'}`;
+
+          // Training running?
+          const badgeEl = document.getElementById('sntTrainStatusBadge');
+          const btnEl   = document.getElementById('sntStartTrainBtn');
+          if (badgeEl) badgeEl.style.display = data.training_running ? 'inline-flex' : 'none';
+          if (btnEl)   btnEl.disabled = data.training_running;
+          if (data.training_running) startSentimentLogPoller();
+        } catch (e) { console.warn('Sentiment status error:', e.message); }
+      }
+
+      async function doSentimentPredict() {
+        const text = document.getElementById('sntContent')?.value?.trim() || '';
+        if (!text) {
+          alert('Vui lòng nhập văn bản cần phân tích!');
+          return;
+        }
+
+        const btn = document.getElementById('sntPredictBtn');
+        if (btn) btn.disabled = true;
+        document.getElementById('sntPredictMeta').textContent = 'Predicting...';
+
+        try {
+          const res = await fetch(api + '/api/v1/sentiment/predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', accept: 'application/json' },
+            body: JSON.stringify({ content: text }),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            const resData = data.result;
+            const badgeEl = document.getElementById('sntResultBadge');
+            if (badgeEl) {
+              badgeEl.textContent = resData.label.charAt(0).toUpperCase() + resData.label.slice(1);
+              badgeEl.className = 'viral-badge'; // reset
+              if (resData.prediction === 2) badgeEl.classList.add('viral-High'); // positive
+              else if (resData.prediction === 0) badgeEl.classList.add('viral-Viral'); // negative
+              else badgeEl.classList.add('viral-Medium'); // neutral
+            }
+
+            const scoreEl = document.getElementById('sntScoreText');
+            if (scoreEl) scoreEl.textContent = `Score: ${resData.score}`;
+            const confEl = document.getElementById('sntConfidenceText');
+            if (confEl) confEl.textContent = `Confidence: ${(resData.confidence * 100).toFixed(1)}%`;
+            const sourceEl = document.getElementById('sntSourceBadge');
+            if (sourceEl) sourceEl.textContent = data.source;
+
+            document.getElementById('sntResultCard').style.display = 'flex';
+            document.getElementById('sntResultEmpty').style.display = 'none';
+            document.getElementById('sntPredictMeta').textContent = 'Prediction complete';
+          } else {
+            document.getElementById('sntPredictMeta').textContent = 'Prediction failed';
+          }
+        } catch (e) {
+          document.getElementById('sntPredictMeta').textContent = `Error: ${e.message}`;
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      }
+
+      function sntClearResult() {
+        document.getElementById('sntResultCard').style.display = 'none';
+        document.getElementById('sntResultEmpty').style.display = 'flex';
+        document.getElementById('sntPredictMeta').textContent = 'Nhập văn bản tiếng Việt và bấm Predict';
+        document.getElementById('sntContent').value = '';
+      }
+
+      async function startSentimentTrain() {
+        const btn = document.getElementById('sntStartTrainBtn');
+        if (btn) btn.disabled = true;
+
+        const isLocal   = document.getElementById('sntTrainLocal')?.value === 'local';
+        const dataDir   = document.getElementById('sntDataDir')?.value?.trim() || 'data/facebook_data/raw_data';
+        const epochs    = parseInt(document.getElementById('sntTrainEpochs')?.value || '3');
+        const batchSize = parseInt(document.getElementById('sntTrainBatchSize')?.value || '8');
+        const smoke     = document.getElementById('sntSmokeTest')?.checked || false;
+
+        document.getElementById('sntTrainLog').textContent = 'Starting training...';
+
+        try {
+          const res = await fetch(api + '/api/v1/sentiment/train', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', accept: 'application/json' },
+            body: JSON.stringify({ local: isLocal, data_dir: dataDir, epochs, batch_size: batchSize, smoke_test: smoke }),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            document.getElementById('sntTrainStatusBadge').style.display = 'inline-flex';
+            startSentimentLogPoller();
+          } else {
+            document.getElementById('sntTrainLog').textContent = `Training already running (PID ${data.pid}). Poll log for updates.`;
+            startSentimentLogPoller();
+          }
+        } catch (e) {
+          document.getElementById('sntTrainLog').textContent = `Error starting training: ${e.message}`;
+          if (btn) btn.disabled = false;
+        }
+      }
+
+      // Show/hide data dir field based on source selection
+      document.getElementById('sntTrainLocal')?.addEventListener('change', function() {
+        const field = document.getElementById('sntDataDirField');
+        if (field) field.style.display = this.value === 'local' ? 'block' : 'none';
+      });
+
+      function sntSetCron(cron) {
+        const inp = document.getElementById('sntCronInput');
+        if (inp) inp.value = cron;
+      }
+
+      async function saveSentimentSchedule() {
+        const cron = document.getElementById('sntCronInput')?.value?.trim() || '';
+        const msgEl = document.getElementById('sntScheduleMsg');
+        const btn   = document.getElementById('sntSaveScheduleBtn');
+        if (btn) btn.disabled = true;
+        if (msgEl) { msgEl.style.display = 'none'; }
+
+        try {
+          const res = await fetch(api + '/api/v1/sentiment/retrain-schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', accept: 'application/json' },
+            body: JSON.stringify({ cron }),
+          });
+          const data = await res.json();
+          if (msgEl) {
+            msgEl.style.display = 'block';
+            if (data.ok) {
+              msgEl.style.color = 'var(--success)';
+              msgEl.textContent = `✓ ${data.message}`;
+            } else {
+              msgEl.style.color = 'var(--danger)';
+              msgEl.textContent = data.detail || 'Failed to save';
+            }
+          }
+          if (data.ok) {
+            const meta = document.getElementById('sntScheduleMeta');
             if (meta) meta.textContent = `Cron: ${cron}`;
           }
         } catch (e) {

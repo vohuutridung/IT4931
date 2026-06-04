@@ -65,7 +65,11 @@ SPEED_WRITE_BATCH_SIZE = int(os.getenv("SPEED_WRITE_BATCH_SIZE", "500"))
 REALTIME_WINDOW_HOURS = int(os.getenv("REALTIME_WINDOW_HOURS", "24"))
 NLP_MODEL_NAME = os.getenv(
     "NLP_MODEL_NAME",
-    "distilbert-base-uncased-finetuned-sst-2-english",
+    "vinai/phobert-base",
+)
+SENTIMENT_ARTIFACTS_DIR = os.getenv(
+    "SENTIMENT_ARTIFACTS_DIR",
+    "ml/sentiment/artifacts",
 )
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

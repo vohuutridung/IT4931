@@ -1,14 +1,20 @@
-from speed.nlp_pipeline import analyze_sentiment, detect_language, enrich_post, extract_keywords
+from speed.nlp_pipeline import analyze_sentiment, detect_language, enrich_post, extract_keywords, MODEL_VERSION, _sentiment
+
+
+def is_vietnamese_model():
+    return _sentiment is not None and "phobert" in str(MODEL_VERSION).lower()
 
 
 def test_sentiment_fallback_positive():
-    result = analyze_sentiment("This is a great and amazing post")
+    text = "Bài viết này thật sự rất tuyệt vời và hữu ích!" if is_vietnamese_model() else "This is a great and amazing post"
+    result = analyze_sentiment(text)
     assert result["label"] in {"positive", "neutral"}
     assert -1.0 <= result["score"] <= 1.0
 
 
 def test_sentiment_fallback_negative_finance_terms():
-    result = analyze_sentiment("Beware a dollar confidence crisis and catastrophic warming risk")
+    text = "Cảnh báo rủi ro sập đổ và khủng hoảng tồi tệ" if is_vietnamese_model() else "Beware a dollar confidence crisis and catastrophic warming risk"
+    result = analyze_sentiment(text)
     assert result["label"] == "negative"
     assert result["score"] < 0
 
@@ -34,18 +40,32 @@ def test_enrich_post_schema():
 
 
 def test_sentiment_sample_f1_at_least_080():
-    positive = [
-        "I love this excellent social media launch",
-        "Great analytics and amazing pipeline results",
-        "Happy users like the best product update",
-        "This is good, excellent, and useful",
-    ] * 25
-    negative = [
-        "I hate this terrible social media launch",
-        "Bad analytics and awful pipeline results",
-        "Angry users dislike the worst product update",
-        "This is poor, terrible, and unusable",
-    ] * 25
+    if is_vietnamese_model():
+        positive = [
+            "Tôi rất thích sản phẩm tuyệt vời này",
+            "Một bài viết cực kỳ hay và ý nghĩa",
+            "Rất hài lòng với chất lượng dịch vụ tốt",
+            "Sự phát triển mạnh mẽ và an toàn",
+        ] * 25
+        negative = [
+            "Tôi cực kỳ ghét dịch vụ tồi tệ này",
+            "Bài viết quá chán và thất vọng",
+            "Rất không hài lòng với chất lượng kém",
+            "Nguy cơ rủi ro cao và tổn thất lớn",
+        ] * 25
+    else:
+        positive = [
+            "I love this excellent social media launch",
+            "Great analytics and amazing pipeline results",
+            "Happy users like the best product update",
+            "This is good, excellent, and useful",
+        ] * 25
+        negative = [
+            "I hate this terrible social media launch",
+            "Bad analytics and awful pipeline results",
+            "Angry users dislike the worst product update",
+            "This is poor, terrible, and unusable",
+        ] * 25
     labels = ["positive"] * len(positive) + ["negative"] * len(negative)
     predictions = [
         "positive" if analyze_sentiment(text)["score"] > 0 else "negative"
