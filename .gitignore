@@ -159,6 +159,7 @@ data/reddit_data/batch_data/
 data/reddit_data/stream_data/
 data/reddit_data/raw_data/
 
+
 # Giữ cấu trúc thư mục — dùng .gitkeep nếu cần
 !data/**/.gitkeep
 
@@ -276,4 +277,4 @@ CURRENT_ISSUES.md
 
 # ML artifacts
 ml/virality/artifacts/
-ml/sentiment/artifacts/
+# ml/sentiment/artifacts/
