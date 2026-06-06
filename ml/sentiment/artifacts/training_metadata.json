@@ -1,0 +1,13 @@
+{
+  "trained_at": "2026-06-04T10:19:59.292409+00:00",
+  "base_model": "vinai/phobert-base",
+  "n_train": 21483,
+  "n_val": 1193,
+  "n_test": 1195,
+  "test_metrics": {
+    "accuracy": 0.61,
+    "weighted_f1": 0.4774
+  },
+  "training_duration_sec": 2910.3,
+  "smoke_test": false
+}

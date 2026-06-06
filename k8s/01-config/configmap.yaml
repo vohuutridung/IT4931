@@ -34,3 +34,8 @@ data:
   PYTHONPATH: "/app"
   PYTHONUNBUFFERED: "1"
   PIPELINE_DIR: "/opt/social_pipeline"
+  VIRALITY_ARTIFACTS_DIR: "/app/ml/virality/artifacts"
+  VIRALITY_RETRAIN_CRON: "0 2 * * 1"
+  SENTIMENT_ARTIFACTS_DIR: "/app/ml/sentiment/artifacts"
+  SENTIMENT_RETRAIN_CRON: "0 3 * * 1"
+  HF_HOME: "/tmp/huggingface"

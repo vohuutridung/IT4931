@@ -107,6 +107,14 @@ Desktop.ini
 .aider*
 .continue/
 
+# Claude Code
+.claude/
+.agents/
+CLAUDE.md
+*.claude
+claude.json
+skills-lock.json
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  SECRETS & CONFIGURATION
@@ -265,3 +273,6 @@ SOP/
 
 CODE_REVIEW_FINDINGS.md
 CURRENT_ISSUES.md
+
+# ML artifacts
+ml/virality/artifacts/

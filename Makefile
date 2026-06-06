@@ -1,4 +1,4 @@
-.PHONY: build build-core build-airflow test download-data apply delete forward warehouse batch index-batch \
+.PHONY: build build-core build-airflow build-api-ml test download-data apply delete forward warehouse batch index-batch \
         ps logs logs-writer logs-speed logs-simulator
 
 build: build-core build-airflow
@@ -8,6 +8,10 @@ build-core:
 	docker build -t social-python:0.1.0 -f Dockerfile .
 	docker build -t social-spark:3.5.3 -f Dockerfile.spark .
 	docker build -t social-ml:0.1.0 --build-arg REQUIREMENTS_FILE=requirements.ml.txt -f Dockerfile .
+
+build-api-ml:
+	@echo "Building API image with ML dependencies..."
+	docker build -t social-api-ml:0.1.0 --build-arg REQUIREMENTS_FILE=requirements.ml.txt -f Dockerfile .
 
 build-airflow:
 	@echo "Building Airflow images (optional, replicas=0)..."
