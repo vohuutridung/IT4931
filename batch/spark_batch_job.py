@@ -13,7 +13,7 @@ from pyspark import StorageLevel
 from pyspark.sql.types import DoubleType
 from pyspark.sql.window import Window
 
-from config.settings import SPARK_MASTER, STORAGE_BATCH_VIEWS_BASE, STORAGE_RAW_BASE
+from config.settings import SPARK_MASTER, STORAGE_BATCH_VIEWS_BASE, STORAGE_RAW_BASE, SENTIMENT_ARTIFACTS_DIR
 from config.spark import configure_s3a
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s - %(message)s")
@@ -163,14 +163,59 @@ def _spark_path_exists(spark: SparkSession, path: str) -> bool:
     return bool(fs.exists(fs_path))
 
 
+_sentiment_pipeline = None
+_transformers_available = None
+
+
+def _get_transformers_sentiment():
+    global _sentiment_pipeline, _transformers_available
+    if _transformers_available is False:
+        return None
+    if _sentiment_pipeline is None:
+        try:
+            from transformers import pipeline
+            import os
+            model_path = os.path.join(SENTIMENT_ARTIFACTS_DIR, "fine_tuned_phobert")
+            if os.path.exists(model_path):
+                _sentiment_pipeline = pipeline(
+                    "sentiment-analysis",
+                    model=model_path,
+                    tokenizer=model_path,
+                )
+                _transformers_available = True
+            else:
+                _transformers_available = False
+        except Exception:
+            _transformers_available = False
+    return _sentiment_pipeline
+
+
+def _phobert_sentiment_batch(text: str) -> float:
+    nlp = _get_transformers_sentiment()
+    if nlp is not None:
+        try:
+            res = nlp(text[:512])[0]
+            label = res["label"].upper()
+            score = float(res["score"])
+            if label in ("POS", "POSITIVE", "LABEL_2"):
+                return score
+            elif label in ("NEG", "NEGATIVE", "LABEL_0"):
+                return -score
+            else:
+                return 0.0
+        except Exception:
+            return _lexicon_sentiment_batch(text)
+    return _lexicon_sentiment_batch(text)
+
+
 def add_common_columns(df: DataFrame) -> DataFrame:
-    # Create UDF for lightweight sentiment analysis (lexicon-based)
+    # Create UDF for sentiment analysis (fine-tuned PhoBERT with lexicon fallback)
     @F.udf(returnType=DoubleType())
     def compute_sentiment(text: str) -> float:
         if not text:
             return 0.0
         try:
-            return _lexicon_sentiment_batch(text)
+            return _phobert_sentiment_batch(text)
         except Exception:
             return 0.0
     

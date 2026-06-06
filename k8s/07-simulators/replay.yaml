@@ -24,7 +24,7 @@ spec:
             - --platform
             - reddit
             - --source
-            - data/reddit_data/sample_data
+            - data/reddit_data/raw_data
             - --rate
             - "20"
             - --kafka-bootstrap
@@ -76,7 +76,7 @@ spec:
             - --platform
             - facebook
             - --source
-            - data/facebook_data/sample_data
+            - data/facebook_data/raw_data
             - --rate
             - "20"
             - --kafka-bootstrap
@@ -128,7 +128,7 @@ spec:
             - --platform
             - instagram
             - --source
-            - data/instagram_data/sample_data
+            - data/instagram_data/raw_data
             - --rate
             - "20"
             - --kafka-bootstrap

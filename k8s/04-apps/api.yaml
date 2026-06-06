@@ -37,7 +37,7 @@ spec:
                 name: social-pipeline-secrets
       containers:
         - name: api
-          image: social-python:0.1.0
+          image: social-api-ml:0.1.0
           imagePullPolicy: Never
           command:
             - uvicorn
@@ -53,19 +53,31 @@ spec:
                 name: social-pipeline-config
             - secretRef:
                 name: social-pipeline-secrets
+          volumeMounts:
+            - name: virality-artifacts
+              mountPath: /app/ml/virality/artifacts
+            - name: sentiment-artifacts
+              mountPath: /app/ml/sentiment/artifacts
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 768Mi
             limits:
-              cpu: 400m
-              memory: 256Mi
+              cpu: 500m
+              memory: 2Gi
           readinessProbe:
             httpGet:
               path: /health
               port: 8000
             initialDelaySeconds: 10
             periodSeconds: 5
+      volumes:
+        - name: virality-artifacts
+          persistentVolumeClaim:
+            claimName: virality-artifacts-pvc
+        - name: sentiment-artifacts
+          persistentVolumeClaim:
+            claimName: sentiment-artifacts-pvc
 ---
 apiVersion: v1
 kind: Service
