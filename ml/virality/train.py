@@ -41,6 +41,11 @@ import argparse
 import json
 import logging
 import os
+# Sanitize SSL environment variables if they point to non-existent files/directories
+for var in ["SSL_CERT_FILE", "SSL_CERT_DIR"]:
+    if var in os.environ and not os.path.exists(os.environ[var]):
+        del os.environ[var]
+
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import time
 from datetime import datetime, timezone

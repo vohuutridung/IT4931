@@ -114,7 +114,6 @@ def main() -> None:
         .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
         .option("subscribe", ",".join(KAFKA_ALL_SOURCE_TOPICS))
         .option("startingOffsets", STREAM_STARTING_OFFSETS)
-        .option("failOnDataLoss", "false")
         .load()
     )
     parsed = (
@@ -127,7 +126,6 @@ def main() -> None:
         & F.col("post.platform").isNotNull()
         & F.col("post.created_at").isNotNull()
         & (ts >= F.lit("2026-01-01 00:00:00"))
-        & (ts <= F.lit("2026-04-30 23:59:59"))
     ).select("post.*")
     bad = parsed.filter(
         F.col("post.post_id").isNull()
@@ -135,7 +133,6 @@ def main() -> None:
         | F.col("post.created_at").isNull()
         | ts.isNull()
         | (ts < F.lit("2026-01-01 00:00:00"))
-        | (ts > F.lit("2026-04-30 23:59:59"))
     )
 
     (

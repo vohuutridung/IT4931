@@ -165,7 +165,11 @@ def run(args: argparse.Namespace) -> None:
     ) else "cpu"
     logger.info("Training device: %s", device)
 
-    model = AutoModelForSequenceClassification.from_pretrained("vinai/phobert-base", num_labels=3)
+    id2label = {0: "NEG", 1: "NEU", 2: "POS"}
+    label2id = {v: k for k, v in id2label.items()}
+    model = AutoModelForSequenceClassification.from_pretrained(
+        "vinai/phobert-base", num_labels=3, id2label=id2label, label2id=label2id
+    )
     model.to(device)
 
     # ── Step 6: Define Training Args ───────────────────────────────────────────

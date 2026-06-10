@@ -35,6 +35,23 @@ spec:
                 name: social-pipeline-config
             - secretRef:
                 name: social-pipeline-secrets
+        - name: init-sentiment-artifacts
+          image: social-api-ml:0.1.0
+          imagePullPolicy: Never
+          command:
+            - /bin/sh
+            - -c
+            - |
+              if [ ! -f /pvc/fine_tuned_phobert/config.json ]; then
+                echo "Copying PhoBERT model to PVC..."
+                cp -rp /app/ml/sentiment/artifacts/. /pvc/
+                echo "Done."
+              else
+                echo "Sentiment artifacts already present, skipping."
+              fi
+          volumeMounts:
+            - name: sentiment-artifacts
+              mountPath: /pvc
       containers:
         - name: api
           image: social-api-ml:0.1.0

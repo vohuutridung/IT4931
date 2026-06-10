@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timedelta, timezone
+
+# Sanitize SSL environment variables if they point to non-existent files/directories
+for var in ["SSL_CERT_FILE", "SSL_CERT_DIR"]:
+    if var in os.environ and not os.path.exists(os.environ[var]):
+        del os.environ[var]
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
@@ -221,26 +227,6 @@ _ENV_FILE               = _os.getenv("ENV_FILE", ".env")
 _train_state: dict = {"running": False, "pid": None, "started_at": None}
 _train_lock = _threading.Lock()
 
-# Cached predictor instances — loaded once, reused across requests
-_virality_predictor_cache = None
-_virality_predictor_lock  = _threading.Lock()
-
-
-def _get_virality_predictor():
-    global _virality_predictor_cache
-    if _virality_predictor_cache is None:
-        with _virality_predictor_lock:
-            if _virality_predictor_cache is None:
-                from ml.virality.predictor import ViralityPredictor
-                _virality_predictor_cache = ViralityPredictor(_VIRALITY_ARTIFACTS_DIR)
-    return _virality_predictor_cache
-
-
-def _reset_virality_predictor_cache():
-    global _virality_predictor_cache
-    with _virality_predictor_lock:
-        _virality_predictor_cache = None
-
 
 def _read_metadata() -> dict:
     path = _os.path.join(_VIRALITY_ARTIFACTS_DIR, "training_metadata.json")
@@ -306,7 +292,8 @@ def virality_predict(body: ViralityPredictBody) -> dict:
         created_at = int(_dt.datetime.now(_dt.timezone.utc).timestamp())
 
     try:
-        predictor = _get_virality_predictor()
+        from ml.virality.predictor import ViralityPredictor
+        predictor = ViralityPredictor(_VIRALITY_ARTIFACTS_DIR)
         result = predictor.predict({
             "content":    body.content,
             "url":        body.url,
@@ -362,8 +349,6 @@ def virality_train(body: ViralityTrainBody) -> dict:
                     f.write(f"\n[API] Subprocess exited with code {exit_code}\n")
             except Exception:
                 pass
-            if exit_code == 0:
-                _reset_virality_predictor_cache()
             with _train_lock:
                 _train_state["running"] = False
                 _train_state["pid"]     = None
@@ -422,26 +407,6 @@ _SENTIMENT_LOG_FILE      = _os.path.join(_SENTIMENT_ARTIFACTS_DIR, "train.log")
 _sentiment_train_state: dict = {"running": False, "pid": None, "started_at": None}
 _sentiment_train_lock = _threading.Lock()
 
-# Cached sentiment predictor — loaded once on first predict call
-_sentiment_predictor_cache = None
-_sentiment_predictor_lock  = _threading.Lock()
-
-
-def _get_sentiment_predictor():
-    global _sentiment_predictor_cache
-    if _sentiment_predictor_cache is None:
-        with _sentiment_predictor_lock:
-            if _sentiment_predictor_cache is None:
-                from ml.sentiment.predictor import SentimentPredictor
-                _sentiment_predictor_cache = SentimentPredictor(_SENTIMENT_ARTIFACTS_DIR)
-    return _sentiment_predictor_cache
-
-
-def _reset_sentiment_predictor_cache():
-    global _sentiment_predictor_cache
-    with _sentiment_predictor_lock:
-        _sentiment_predictor_cache = None
-
 
 def _read_sentiment_metadata() -> dict:
     path = _os.path.join(_SENTIMENT_ARTIFACTS_DIR, "training_metadata.json")
@@ -493,7 +458,8 @@ def sentiment_predict(body: SentimentPredictBody) -> dict:
     model_path = _os.path.join(_SENTIMENT_ARTIFACTS_DIR, "fine_tuned_phobert")
     if _os.path.exists(_os.path.join(model_path, "config.json")):
         try:
-            predictor = _get_sentiment_predictor()
+            from ml.sentiment.predictor import SentimentPredictor
+            predictor = SentimentPredictor(_SENTIMENT_ARTIFACTS_DIR)
             result = predictor.predict(body.content)
             return {"ok": True, "result": result, "source": "fine-tuned-phobert"}
         except Exception as exc:
@@ -563,8 +529,6 @@ def sentiment_train(body: SentimentTrainBody) -> dict:
                     f.write(f"\n[API] Subprocess exited with code {exit_code}\n")
             except Exception:
                 pass
-            if exit_code == 0:
-                _reset_sentiment_predictor_cache()
             with _sentiment_train_lock:
                 _sentiment_train_state["running"] = False
                 _sentiment_train_state["pid"]     = None
@@ -612,3 +576,4 @@ def set_sentiment_retrain_schedule(body: SentimentRetrainScheduleBody) -> dict:
 
     _os.environ["SENTIMENT_RETRAIN_CRON"] = cron
     return {"ok": True, "cron": cron, "message": "Saved to .env."}
+

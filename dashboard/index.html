@@ -3580,6 +3580,8 @@
         if (_netData) renderNetworkGraph();
       });
 
+      /* ══════════════════════════════════════════════════════════════════════
+         TAB 5 – VIRALITY
       ══════════════════════════════════════════════════════════════════════ */
 
       const VIRAL_COLORS = {
@@ -3845,6 +3847,9 @@
           }
         } catch (e) {
           if (msgEl) { msgEl.style.display='block'; msgEl.style.color='var(--danger)'; msgEl.textContent = `Error: ${e.message}`; }
+        }
+        if (btn) btn.disabled = false;
+      }
 
       /* ══════════════════════════════════════════════════════════════════════
          TAB — SENTIMENT MODEL  (JavaScript logic)

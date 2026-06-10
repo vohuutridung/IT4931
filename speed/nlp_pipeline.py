@@ -45,13 +45,14 @@ if pipeline:
         import os
         import json
         model_path = os.path.join(SENTIMENT_ARTIFACTS_DIR, "fine_tuned_phobert")
-        meta_path  = os.path.join(SENTIMENT_ARTIFACTS_DIR, "training_metadata.json")
-
+        meta_path = os.path.join(SENTIMENT_ARTIFACTS_DIR, "training_metadata.json")
+        
         is_smoke_test = False
         if os.path.exists(meta_path):
             try:
                 with open(meta_path, encoding="utf-8") as f:
-                    is_smoke_test = json.load(f).get("smoke_test", False)
+                    meta = json.load(f)
+                is_smoke_test = meta.get("smoke_test", False)
             except Exception:
                 pass
 
@@ -60,7 +61,7 @@ if pipeline:
             _sentiment = pipeline("sentiment-analysis", model=model_path, tokenizer=model_path)
             MODEL_VERSION = "local-fine-tuned-phobert"
         elif "phobert" in NLP_MODEL_NAME.lower():
-            logger.info("PhoBERT base model cannot be loaded directly for sentiment; using lexicon fallback.")
+            logger.info("PhoBERT base model cannot be loaded directly for sentiment analysis. Using lexicon fallback.")
             _sentiment = None
             MODEL_VERSION = NLP_MODEL_NAME
         else:
@@ -98,13 +99,13 @@ def analyze_sentiment(text: str) -> dict:
         result = _sentiment(text[:512])[0]
         raw_score = float(result["score"])
         raw_label = result["label"].upper()
-        if "POS" in raw_label or raw_label in ("LABEL_2",):
+        if "POS" in raw_label or raw_label == "LABEL_2":
             score = raw_score
             label = "positive"
-        elif "NEG" in raw_label or raw_label in ("LABEL_0",):
+        elif "NEG" in raw_label or raw_label == "LABEL_0":
             score = -raw_score
             label = "negative"
-        else:
+        else:  # NEU, NEUTRAL, LABEL_1
             score = 0.0
             label = "neutral"
     else:
