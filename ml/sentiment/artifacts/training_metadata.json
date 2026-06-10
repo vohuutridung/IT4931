@@ -1,13 +1,3 @@
-{
-  "trained_at": "2026-06-04T10:19:59.292409+00:00",
-  "base_model": "vinai/phobert-base",
-  "n_train": 21483,
-  "n_val": 1193,
-  "n_test": 1195,
-  "test_metrics": {
-    "accuracy": 0.61,
-    "weighted_f1": 0.4774
-  },
-  "training_duration_sec": 2910.3,
-  "smoke_test": false
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:eb889baf48e288d382dc1bf1f2c0f29edd30c8cc8f3b804c8f2fc3e25f2207ec
+size 278

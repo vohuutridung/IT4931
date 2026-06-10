@@ -910,6 +910,39 @@
       .prob-track{ flex: 1; height: 8px; border-radius: 99px; background: var(--panel-border); overflow: hidden; }
       .prob-fill { height: 100%; border-radius: inherit; transition: width .5s cubic-bezier(.4,0,.2,1); }
       .prob-pct  { width: 44px; text-align: right; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+
+      .train-log {
+        font-family: 'Fira Code', 'Consolas', monospace;
+        font-size: 11px; line-height: 1.6; color: var(--text-muted);
+        background: var(--panel-soft); border: 1px solid var(--panel-border);
+        border-radius: 8px; padding: 12px 14px;
+        overflow-y: auto; height: 240px;
+        white-space: pre-wrap; word-break: break-all;
+      }
+      .running-pill {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 3px 10px; border-radius: 99px;
+        background: rgba(245,158,11,.15); color: #f59e0b;
+        font-size: 11px; font-weight: 700; animation: pulse-pill 1.5s infinite;
+      }
+      @keyframes pulse-pill { 0%,100%{opacity:1;} 50%{opacity:.6;} }
+
+      .vrl-cron-input {
+        font-family: 'Fira Code', 'Consolas', monospace;
+        letter-spacing: .05em; font-size: 15px; font-weight: 600;
+        text-align: center;
+      }
+      .vrl-history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      .vrl-history-table th {
+        background: var(--panel-soft); color: var(--text-muted);
+        font-size: 10px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .06em; padding: 6px 10px; text-align: left;
+      }
+      .vrl-history-table td { padding: 7px 10px; border-bottom: 1px solid var(--panel-border); }
+
+      @media (max-width: 900px) {
+        .vrl-grid, .vrl-grid-3 { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
   <body>
@@ -1521,6 +1554,9 @@
     </div>
 
 
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 7 — VIRALITY PREDICTION
+    ══════════════════════════════════════════════════════════════════════ -->
     <div id="tab-virality" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-virality">
       <main>
 
@@ -1702,7 +1738,7 @@
     </div>
 
     <!-- ══════════════════════════════════════════════════════════════════════
-         TAB — SENTIMENT MODEL
+         TAB 8 — SENTIMENT MODEL CONTROL
     ══════════════════════════════════════════════════════════════════════ -->
     <div id="tab-sentiment-model" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-sentiment-model">
       <main>
@@ -1799,6 +1835,7 @@
               </div>
             </div>
             <div class="panel-body">
+              <!-- Options -->
               <div class="vrl-grid">
                 <div class="vrl-field">
                   <label class="vrl-label">Data Source</label>
@@ -1832,6 +1869,7 @@
                 <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M5 3l14 9-14 9V3z"/></svg>
                 Start Training
               </button>
+              <!-- Live log -->
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
                 <span class="vrl-label" style="margin:0;">Training Log</span>
                 <span id="sntLogMeta" style="font-size:11px;color:var(--text-muted);">idle</span>
@@ -3580,6 +3618,8 @@
         if (_netData) renderNetworkGraph();
       });
 
+      /* ══════════════════════════════════════════════════════════════════════
+         TAB 7 — VIRALITY  (JavaScript logic)
       ══════════════════════════════════════════════════════════════════════ */
 
       const VIRAL_COLORS = {
@@ -3845,9 +3885,13 @@
           }
         } catch (e) {
           if (msgEl) { msgEl.style.display='block'; msgEl.style.color='var(--danger)'; msgEl.textContent = `Error: ${e.message}`; }
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      }
 
       /* ══════════════════════════════════════════════════════════════════════
-         TAB — SENTIMENT MODEL  (JavaScript logic)
+         TAB 8 — SENTIMENT MODEL  (JavaScript logic)
       ══════════════════════════════════════════════════════════════════════ */
 
       let _sntLogPoller = null;
@@ -3882,13 +3926,14 @@
             stopSentimentLogPoller();
             loadSentimentStatus();
           }
-        } catch (e) { console.warn('Sentiment log poll error:', e.message); }
+        } catch (e) { console.warn('Log poll error:', e.message); }
       }
 
       async function loadSentimentStatus() {
         try {
           const data = await getJson('/api/v1/sentiment/model-status');
 
+          // Model ready badge
           const readyBadge = document.getElementById('sntModelReadyBadge');
           if (readyBadge) {
             readyBadge.textContent = data.model_ready ? '✓ Model Ready' : '✗ Not Trained';
@@ -3897,19 +3942,24 @@
             readyBadge.style.color = data.model_ready ? '#10b981' : '#ef4444';
           }
 
+          // Metadata KPIs
           const meta = data.metadata || {};
-          const testF1El    = document.getElementById('sntTestF1');
-          const testAccEl   = document.getElementById('sntTestAcc');
+          const testF1El = document.getElementById('sntTestF1');
+          const testAccEl = document.getElementById('sntTestAcc');
           const trainDateEl = document.getElementById('sntTrainDate');
-          if (testF1El)    testF1El.textContent    = meta.test_metrics ? meta.test_metrics.weighted_f1 : '—';
-          if (testAccEl)   testAccEl.textContent   = meta.test_metrics ? meta.test_metrics.accuracy    : '—';
+
+          if (testF1El) testF1El.textContent = meta.test_metrics ? meta.test_metrics.weighted_f1 : '—';
+          if (testAccEl) testAccEl.textContent = meta.test_metrics ? meta.test_metrics.accuracy : '—';
           if (trainDateEl) {
             if (meta.trained_at) {
               const dt = new Date(meta.trained_at);
-              trainDateEl.textContent = dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-            } else { trainDateEl.textContent = '—'; }
+              trainDateEl.textContent = dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            } else {
+              trainDateEl.textContent = '—';
+            }
           }
 
+          // History
           const tbody = document.getElementById('sntHistoryBody');
           if (tbody) {
             if (data.retrain_history && data.retrain_history.length > 0) {
@@ -3930,11 +3980,13 @@
             }
           }
 
+          // Cron
           const cronIn = document.getElementById('sntCronInput');
           if (cronIn && data.retrain_cron) cronIn.value = data.retrain_cron;
           const schedMeta = document.getElementById('sntScheduleMeta');
           if (schedMeta) schedMeta.textContent = `Cron: ${data.retrain_cron || '—'}`;
 
+          // Training running?
           const badgeEl = document.getElementById('sntTrainStatusBadge');
           const btnEl   = document.getElementById('sntStartTrainBtn');
           if (badgeEl) badgeEl.style.display = data.training_running ? 'inline-flex' : 'none';
@@ -3945,7 +3997,10 @@
 
       async function doSentimentPredict() {
         const text = document.getElementById('sntContent')?.value?.trim() || '';
-        if (!text) { alert('Vui lòng nhập văn bản cần phân tích!'); return; }
+        if (!text) {
+          alert('Vui lòng nhập văn bản cần phân tích!');
+          return;
+        }
 
         const btn = document.getElementById('sntPredictBtn');
         if (btn) btn.disabled = true;
@@ -3963,17 +4018,19 @@
             const badgeEl = document.getElementById('sntResultBadge');
             if (badgeEl) {
               badgeEl.textContent = resData.label.charAt(0).toUpperCase() + resData.label.slice(1);
-              badgeEl.className = 'viral-badge';
-              if (resData.prediction === 2) badgeEl.classList.add('viral-High');
-              else if (resData.prediction === 0) badgeEl.classList.add('viral-Viral');
-              else badgeEl.classList.add('viral-Medium');
+              badgeEl.className = 'viral-badge'; // reset
+              if (resData.prediction === 2) badgeEl.classList.add('viral-High'); // positive
+              else if (resData.prediction === 0) badgeEl.classList.add('viral-Viral'); // negative
+              else badgeEl.classList.add('viral-Medium'); // neutral
             }
+
             const scoreEl = document.getElementById('sntScoreText');
             if (scoreEl) scoreEl.textContent = `Score: ${resData.score}`;
             const confEl = document.getElementById('sntConfidenceText');
             if (confEl) confEl.textContent = `Confidence: ${(resData.confidence * 100).toFixed(1)}%`;
             const sourceEl = document.getElementById('sntSourceBadge');
             if (sourceEl) sourceEl.textContent = data.source;
+
             document.getElementById('sntResultCard').style.display = 'flex';
             document.getElementById('sntResultEmpty').style.display = 'none';
             document.getElementById('sntPredictMeta').textContent = 'Prediction complete';
@@ -4026,6 +4083,7 @@
         }
       }
 
+      // Show/hide data dir field based on source selection
       document.getElementById('sntTrainLocal')?.addEventListener('change', function() {
         const field = document.getElementById('sntDataDirField');
         if (field) field.style.display = this.value === 'local' ? 'block' : 'none';
@@ -4041,7 +4099,7 @@
         const msgEl = document.getElementById('sntScheduleMsg');
         const btn   = document.getElementById('sntSaveScheduleBtn');
         if (btn) btn.disabled = true;
-        if (msgEl) msgEl.style.display = 'none';
+        if (msgEl) { msgEl.style.display = 'none'; }
 
         try {
           const res = await fetch(api + '/api/v1/sentiment/retrain-schedule', {

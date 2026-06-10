@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 
+# Sanitize SSL environment variables if they point to non-existent files/directories
+for var in ["SSL_CERT_FILE", "SSL_CERT_DIR"]:
+    if var in os.environ and not os.path.exists(os.environ[var]):
+        del os.environ[var]
+
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from serving.merge_service import ServeQuery
@@ -185,6 +191,22 @@ def network_pagerank(
     if platform and platform not in {"reddit", "facebook", "instagram"}:
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
     return {"data": network_svc.query_top_influencers(platform, top_n)}
+
+
+# ── Metrics ───────────────────────────────────────────────────────────────────
+
+@app.get("/metrics")
+def metrics() -> Response:
+    try:
+        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    except ImportError as exc:
+        logger.error("Prometheus client not available: %s", exc)
+        raise HTTPException(status_code=503, detail="Metrics unavailable")
+    except Exception as exc:
+        logger.error("Error generating metrics: %s", exc)
+        raise HTTPException(status_code=500, detail="Error generating metrics")
 
 
 # ── Virality Prediction endpoints ─────────────────────────────────────────────

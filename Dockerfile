@@ -11,7 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ── Python deps ───────────────────────────────────────────────────────────────
 WORKDIR /app
 COPY requirements*.txt ./
-RUN pip wheel --no-cache-dir --wheel-dir /wheels -r "${REQUIREMENTS_FILE}"
+RUN pip wheel --no-cache-dir --wheel-dir /wheels \
+    --extra-index-url https://download.pytorch.org/whl/cu121 \
+    -r "${REQUIREMENTS_FILE}"
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM python:3.11-slim

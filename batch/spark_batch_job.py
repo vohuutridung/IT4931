@@ -239,7 +239,8 @@ def add_common_columns(df: DataFrame) -> DataFrame:
         df
         .withColumn("event_ts", F.col("created_at").cast("timestamp"))
         .filter(
-            F.col("event_ts") >= F.lit("2026-01-01 00:00:00")
+            (F.col("event_ts") >= F.lit("2026-01-01 00:00:00"))
+            & (F.col("event_ts") <= F.lit("2026-04-30 23:59:59"))
         )
         .withColumn("event_date", F.to_date("event_ts"))
         .withColumn("event_hour", F.date_trunc("hour", F.col("event_ts")))
