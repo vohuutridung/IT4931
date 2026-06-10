@@ -19,7 +19,7 @@ KAFKA_ALL_SOURCE_TOPICS = tuple(KAFKA_SOURCE_TOPICS.values())
 SPARK_APP_NAME = os.getenv("SPARK_APP_NAME", "SocialBatchETL")
 SPARK_MASTER   = os.getenv("SPARK_MASTER") or "spark://spark-master:7077"
 
-# ── Lambda Architecture stores ────────────────────────────────────────────────
+# ── Object Storage (MinIO) ────────────────────────────────────────────────────
 S3_ENDPOINT = os.getenv("S3_ENDPOINT", "http://localhost:9000")
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY") or "minioadmin"
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY") or "minioadmin"
@@ -34,35 +34,32 @@ STORAGE_BATCH_VIEWS_BASE = os.getenv(
     "STORAGE_BATCH_VIEWS_BASE",
     f"s3a://{S3_BUCKET}/data/batch_views",
 )
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-CASSANDRA_HOSTS = os.getenv("CASSANDRA_HOSTS", "localhost")
-CASSANDRA_KEYSPACE = os.getenv("CASSANDRA_KEYSPACE", "social_lambda")
-CASSANDRA_ENRICHMENTS_TABLE = os.getenv("CASSANDRA_ENRICHMENTS_TABLE", "enrichments")
-CASSANDRA_ALERTS_TABLE = os.getenv("CASSANDRA_ALERTS_TABLE", "alerts")
-ES_HOST = os.getenv("ES_HOST", "http://localhost:9200")
-ES_BATCH_INDEX = os.getenv("ES_BATCH_INDEX", "social_batch_views")
-ES_REALTIME_INDEX = os.getenv("ES_REALTIME_INDEX", "social_realtime_views")
-ES_BATCH_ALIAS = os.getenv("ES_BATCH_ALIAS", "batch_current")
+
+# ── Serving ───────────────────────────────────────────────────────────────────
+REALTIME_WINDOW_HOURS = int(os.getenv("REALTIME_WINDOW_HOURS", "24"))
+
+# ── ClickHouse ────────────────────────────────────────────────────────────────
 CLICKHOUSE_HOST = os.getenv("CLICKHOUSE_HOST", "http://localhost:8123")
-CLICKHOUSE_DATABASE = os.getenv("CLICKHOUSE_DATABASE", "social_warehouse")
-CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER") or "social"
-CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD") or "social"
-if ENV == "production" and ("social" in CLICKHOUSE_USER or "social" in CLICKHOUSE_PASSWORD):
-    raise ValueError("ERROR: Using default ClickHouse credentials in production! Set CLICKHOUSE_USER and CLICKHOUSE_PASSWORD")
-REPLAY_RATE_PER_SEC = int(os.getenv("REPLAY_RATE_PER_SEC", "20"))
-REPLAY_DEDUPE = os.getenv("REPLAY_DEDUPE", "true").lower() in {"1", "true", "yes", "y", "on"}
-STREAM_TRIGGER_SECS = int(os.getenv("STREAM_TRIGGER_SECS", "5"))
-STREAM_STARTING_OFFSETS = os.getenv("STREAM_STARTING_OFFSETS", "latest")
+if not CLICKHOUSE_HOST.startswith("http://") and not CLICKHOUSE_HOST.startswith("https://"):
+    CLICKHOUSE_HOST = f"http://{CLICKHOUSE_HOST}:8123"
+CLICKHOUSE_DATABASE = os.getenv("CLICKHOUSE_DATABASE", "social")
+CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER", "social")
+CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD", "social")
+CLICKHOUSE_WRITE_TIMEOUT = int(os.getenv("CLICKHOUSE_WRITE_TIMEOUT", "10"))
 
 # ── Retry & Resilience ────────────────────────────────────────────────────────
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 RETRY_BACKOFF_BASE = float(os.getenv("RETRY_BACKOFF_BASE", "1.0"))  # exponential backoff
 S3_WRITE_TIMEOUT = int(os.getenv("S3_WRITE_TIMEOUT", "60"))
-CLICKHOUSE_WRITE_TIMEOUT = int(os.getenv("CLICKHOUSE_WRITE_TIMEOUT", "60"))
-ES_REQUEST_TIMEOUT = int(os.getenv("ES_REQUEST_TIMEOUT", "5"))
+
+# ── Speed Layer tuning ────────────────────────────────────────────────────────
+STREAM_TRIGGER_SECS = int(os.getenv("STREAM_TRIGGER_SECS", "5"))
+STREAM_STARTING_OFFSETS = os.getenv("STREAM_STARTING_OFFSETS", "latest")
 SPEED_WRITE_BATCH_SIZE = int(os.getenv("SPEED_WRITE_BATCH_SIZE", "500"))
-REALTIME_WINDOW_HOURS = int(os.getenv("REALTIME_WINDOW_HOURS", "24"))
+REPLAY_RATE_PER_SEC = int(os.getenv("REPLAY_RATE_PER_SEC", "20"))
+REPLAY_DEDUPE = os.getenv("REPLAY_DEDUPE", "true").lower() in {"1", "true", "yes", "y", "on"}
+
+# ── NLP / ML ──────────────────────────────────────────────────────────────────
 NLP_MODEL_NAME = os.getenv(
     "NLP_MODEL_NAME",
     "vinai/phobert-base",
@@ -71,6 +68,7 @@ SENTIMENT_ARTIFACTS_DIR = os.getenv(
     "SENTIMENT_ARTIFACTS_DIR",
     "ml/sentiment/artifacts",
 )
+
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 

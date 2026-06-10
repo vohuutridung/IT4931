@@ -89,6 +89,7 @@ DDL = [
         platform LowCardinality(String),
         event_hour DateTime,
         avg_sentiment Float64,
+        post_count UInt64,
         loaded_at DateTime
     )
     ENGINE = ReplacingMergeTree(loaded_at)
@@ -109,6 +110,21 @@ DDL = [
     ENGINE = ReplacingMergeTree(loaded_at)
     PARTITION BY toYYYYMM(event_ts)
     ORDER BY (platform, event_ts, rank, post_id)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS realtime_posts (
+        post_id String,
+        platform LowCardinality(String),
+        author_id String,
+        content String,
+        hashtags Array(String),
+        sentiment Float64,
+        event_ts DateTime,
+        loaded_at DateTime
+    )
+    ENGINE = ReplacingMergeTree(loaded_at)
+    PARTITION BY toYYYYMM(event_ts)
+    ORDER BY (platform, event_ts, post_id)
     """,
 ]
 
@@ -159,6 +175,11 @@ def ensure_schema() -> None:
     clickhouse(f"CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE}", use_database=False)
     for ddl in DDL:
         clickhouse(ddl)
+
+
+def ensure_realtime_table() -> None:
+    """Ensure the realtime table is created (can be called by speed layer or tests)."""
+    ensure_schema()
 
 
 def truncate_tables(tables: list[str]) -> None:

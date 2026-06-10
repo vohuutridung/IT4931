@@ -9,8 +9,11 @@ from datetime import date, datetime, timezone
 from pyspark.sql import SparkSession
 
 from serving.es_indexer import ElasticsearchIndexer
-from config.settings import ES_BATCH_INDEX, SPARK_MASTER, STORAGE_BATCH_VIEWS_BASE
+from config.settings import SPARK_MASTER, STORAGE_BATCH_VIEWS_BASE
 from config.spark import configure_s3a
+
+# ES_BATCH_INDEX đã bị xóa, ElasticsearchIndexer giờ đây là no-op
+ES_BATCH_INDEX = "social_batch_views"  # kept for compatibility
 
 
 def create_spark() -> SparkSession:

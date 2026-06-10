@@ -35,10 +35,10 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 128Mi
+              memory: 256Mi
             limits:
               cpu: 200m
-              memory: 256Mi
+              memory: 512Mi
           volumeMounts:
             - name: data-volume
               mountPath: /app/data
@@ -87,10 +87,10 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 128Mi
+              memory: 256Mi
             limits:
               cpu: 200m
-              memory: 256Mi
+              memory: 512Mi
           volumeMounts:
             - name: data-volume
               mountPath: /app/data
@@ -139,10 +139,10 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 128Mi
+              memory: 256Mi
             limits:
               cpu: 200m
-              memory: 256Mi
+              memory: 512Mi
           volumeMounts:
             - name: data-volume
               mountPath: /app/data

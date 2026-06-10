@@ -42,6 +42,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("simulator")
 
+
+class OutOfRangeError(ValueError):
+    """Exception raised when a post timestamp is outside the valid range [2026-01-01, 2026-04-30]."""
+    pass
+
+
 NORMALIZERS = {
     "reddit": reddit.normalize,
     "facebook": facebook.normalize,
@@ -108,6 +114,11 @@ def read_records(path: Path) -> Iterator[dict]:
             yield from csv.DictReader(handle)
         return
 
+    if suffix in {".jsonl", ".ndjson"}:
+        with path.open(encoding="utf-8-sig") as handle:
+            yield from _read_json_lines(handle, path)
+        return
+
     with path.open(encoding="utf-8-sig") as handle:
         first = handle.read(1)
         handle.seek(0)
@@ -156,10 +167,13 @@ def iter_source_files(source: Path) -> Iterator[Path]:
         raise ValueError(f"Source must be a file or directory: {source}")
 
     found = False
-    for path in sorted(source.rglob("*")):
-        if path.is_file() and path.suffix.lower() in SUPPORTED_SOURCE_SUFFIXES:
-            found = True
-            yield path
+    import os
+    for root, _, files in os.walk(str(source)):
+        for file in sorted(files):
+            ext = os.path.splitext(file)[1].lower()
+            if ext in SUPPORTED_SOURCE_SUFFIXES:
+                found = True
+                yield Path(root) / file
     if not found:
         raise ValueError(f"No supported source files found under: {source}")
 
@@ -182,6 +196,18 @@ def to_sop_schema(platform: str, raw: dict, post: dict) -> dict:
     if post["event_time"] in {None, ""}:
         raise ValueError("missing normalized event_time")
 
+    try:
+        event_time_sec = float(post["event_time"])
+        if event_time_sec > 10_000_000_000:
+            event_time_sec = event_time_sec / 1000
+        # Filter: Jan 1, 2026 is 1767225600.0, Apr 30, 2026 is 1777593599.0
+        if not (1767225600.0 <= event_time_sec <= 1777593599.0):
+            raise OutOfRangeError(f"timestamp {event_time_sec} outside range 2026-01-01 to 2026-04-30")
+    except (TypeError, ValueError) as exc:
+        if isinstance(exc, OutOfRangeError):
+            raise
+        raise ValueError(f"invalid timestamp for filtering: {exc}") from exc
+
     metrics = _metrics(post.get("engagement") or {})
     canonical = {
         "post_id": _global_post_id(platform, post["post_id"]),
@@ -193,8 +219,8 @@ def to_sop_schema(platform: str, raw: dict, post: dict) -> dict:
         "media_urls": _media_urls(raw, post),
         "hashtags": _string_list(post.get("hashtags")),
         "comments": _comments(post.get("comments")),
-        "created_at": _iso_utc(post["event_time"]),
-        "ingested_at": _iso_utc(post["ingest_time"]),
+        "created_at": _iso_utc(post["event_time"], shift=False),
+        "ingested_at": _iso_utc(post["ingest_time"], shift=False),
         "metrics": metrics,
     }
     validate_sop_post(canonical)
@@ -238,13 +264,17 @@ def _hash_author_id(author_id: Any) -> str:
     return hashlib.sha256(str(author_id).encode("utf-8")).hexdigest()
 
 
-def _iso_utc(value: Any) -> str:
+def _iso_utc(value: Any, shift: bool = False) -> str:
     try:
         timestamp = float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"invalid timestamp: {value!r}") from exc
     if timestamp > 10_000_000_000:
         timestamp = timestamp / 1000
+    if shift:
+        max_raw_ts = 1777562263.0
+        offset = time.time() - max_raw_ts
+        timestamp = timestamp + offset
     return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
@@ -388,6 +418,8 @@ def replay(
                         publish(producer, topic, post, platform)
                         emitted += 1
                         total += 1
+                    except OutOfRangeError:
+                        continue
                     except Exception as exc:
                         logger.warning("Routing malformed record to DLQ: %s | source=%s", exc, file_path)
                         publish_dlq(producer, platform, raw, exc)

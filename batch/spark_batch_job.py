@@ -77,6 +77,13 @@ def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", output)
 
 
+# Pre-normalize the lexicon once globally to avoid running loop with thousands of replacements for every single row.
+NORMALIZED_POSITIVE_WORDS = {_normalize_text(word) for word in POSITIVE if " " not in word}
+NORMALIZED_NEGATIVE_WORDS = {_normalize_text(word) for word in NEGATIVE if " " not in word}
+NORMALIZED_POSITIVE_PHRASES = [(_normalize_text(phrase), phrase) for phrase in POSITIVE if " " in phrase]
+NORMALIZED_NEGATIVE_PHRASES = [(_normalize_text(phrase), phrase) for phrase in NEGATIVE if " " in phrase]
+
+
 def _lexicon_sentiment_batch(text: str) -> float:
     """Lightweight lexicon-based sentiment analysis (for batch layer)."""
     if not text:
@@ -87,16 +94,14 @@ def _lexicon_sentiment_batch(text: str) -> float:
     token_count = max(len(tokens), 1)
     token_set = set(tokens)
     
-    positive = len(token_set & {_normalize_text(word) for word in POSITIVE if " " not in word})
-    negative = len(token_set & {_normalize_text(word) for word in NEGATIVE if " " not in word})
+    positive = len(token_set & NORMALIZED_POSITIVE_WORDS)
+    negative = len(token_set & NORMALIZED_NEGATIVE_WORDS)
 
-    for phrase in POSITIVE:
-        normalized_phrase = _normalize_text(phrase)
-        if " " in phrase and normalized_phrase in normalized:
+    for norm_phrase, phrase in NORMALIZED_POSITIVE_PHRASES:
+        if norm_phrase in normalized:
             positive += 1
-    for phrase in NEGATIVE:
-        normalized_phrase = _normalize_text(phrase)
-        if " " in phrase and normalized_phrase in normalized:
+    for norm_phrase, phrase in NORMALIZED_NEGATIVE_PHRASES:
+        if norm_phrase in normalized:
             negative += 1
 
     positive += sum(text.count(item) for item in POSITIVE_EMOJI)
@@ -172,19 +177,19 @@ def _get_transformers_sentiment():
     if _transformers_available is False:
         return None
     if _sentiment_pipeline is None:
+        import os
+        model_path = os.path.join(SENTIMENT_ARTIFACTS_DIR, "fine_tuned_phobert")
+        if not os.path.exists(model_path):
+            _transformers_available = False
+            return None
         try:
             from transformers import pipeline
-            import os
-            model_path = os.path.join(SENTIMENT_ARTIFACTS_DIR, "fine_tuned_phobert")
-            if os.path.exists(model_path):
-                _sentiment_pipeline = pipeline(
-                    "sentiment-analysis",
-                    model=model_path,
-                    tokenizer=model_path,
-                )
-                _transformers_available = True
-            else:
-                _transformers_available = False
+            _sentiment_pipeline = pipeline(
+                "sentiment-analysis",
+                model=model_path,
+                tokenizer=model_path,
+            )
+            _transformers_available = True
         except Exception:
             _transformers_available = False
     return _sentiment_pipeline
@@ -234,8 +239,7 @@ def add_common_columns(df: DataFrame) -> DataFrame:
         df
         .withColumn("event_ts", F.col("created_at").cast("timestamp"))
         .filter(
-            (F.col("event_ts") >= F.lit("2026-01-01 00:00:00"))
-            & (F.col("event_ts") <= F.lit("2026-04-30 23:59:59"))
+            F.col("event_ts") >= F.lit("2026-01-01 00:00:00")
         )
         .withColumn("event_date", F.to_date("event_ts"))
         .withColumn("event_hour", F.date_trunc("hour", F.col("event_ts")))

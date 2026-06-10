@@ -1,8 +1,8 @@
-FROM apache/spark:3.5.3
+FROM apache/spark:3.5.1
 
 USER root
 
-ARG SPARK_VERSION=3.5.3
+ARG SPARK_VERSION=3.5.1
 ARG SCALA_BINARY_VERSION=2.12
 # [FIX] kafka-clients 3.6.0 để khớp với Confluent 7.6.0 (Kafka 3.6.x)
 ARG KAFKA_CLIENTS_VERSION=3.6.0

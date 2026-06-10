@@ -1,7 +1,7 @@
 FROM apache/airflow:2.9.3-python3.11
 
 ARG AIRFLOW_VERSION=2.9.3
-ARG SPARK_VERSION=3.5.3
+ARG SPARK_VERSION=3.5.1
 ARG HADOOP_AWS_VERSION=3.3.4
 ARG AWS_SDK_BUNDLE_VERSION=1.12.262
 # Hardcode URL thay vì dùng ${PYTHON_VERSION} — base image set ENV PYTHON_VERSION=3.11.9 override ARG
@@ -18,7 +18,7 @@ RUN apt-get update \
 
 USER airflow
 
-# Cài pyspark riêng — bỏ qua constraint file của base image (hash conflict với 3.5.3)
+# Cài pyspark riêng — bỏ qua constraint file của base image (hash conflict với 3.5.1)
 RUN pip install --no-cache-dir --constraint /dev/null "pyspark==${SPARK_VERSION}"
 
 # Để constraint file tự chọn version provider tương thích

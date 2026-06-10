@@ -28,34 +28,33 @@ Nhánh này triển khai trên **Kubernetes local** bằng Minikube.
 flowchart LR
     DATA["📁 data/*"]
     SIM["ingestion.simulator"]
-    KAFKA[["Kafka\nsocial.&lt;platform&gt;.posts"]]
+    KAFKA[["Kafka (KRaft)\nsocial.&lt;platform&gt;.posts"]]
 
     subgraph batch["⬛ Batch Layer"]
         OSW["object_store_writer"]
         RAW[("MinIO\ndata/raw/")]
         SPARK["spark_batch_job"]
         BV[("MinIO\ndata/batch_views/")]
-        IDX["index_batch_views"]
-        ES_B[("Elasticsearch\nsocial_batch_views")]
     end
 
     subgraph speed["⚡ Speed Layer"]
         STREAM["streaming_job\n+ nlp_pipeline"]
-        REDIS[("Redis\nrt:stats:*\nrt:hashtags:*")]
-        ES_RT[("Elasticsearch\nsocial_realtime_views")]
+        ENRICH[["social.enriched.posts"]]
     end
 
     subgraph serving["🔗 Serving Layer"]
-        MERGE["merge_service"]
         API["FastAPI :8000"]
         DASH["Dashboard :8084"]
     end
 
     DATA --> SIM --> KAFKA
-    KAFKA --> OSW --> RAW --> SPARK --> BV --> IDX --> ES_B
-    KAFKA --> STREAM --> REDIS & ES_RT
-    ES_B & ES_RT & REDIS --> MERGE --> API --> DASH
+    KAFKA --> OSW --> RAW --> SPARK --> BV
+    KAFKA --> STREAM --> ENRICH
+    BV --> API --> DASH
 ```
+
+> **Ghi chú**: Elasticsearch, Redis, Cassandra, Zookeeper, Prometheus, Grafana đã được loại bỏ để tiết kiệm tài nguyên.
+> API đọc trực tiếp batch views Parquet từ MinIO.
 
 ---
 
@@ -63,14 +62,11 @@ flowchart LR
 
 | Service | Vai trò | URL / Cổng Host |
 |---|---|---|
-| Kafka | Message broker | `localhost:9092` |
+| Kafka (KRaft) | Message broker | `localhost:9092` |
 | MinIO Console | Object storage UI | http://localhost:9001 |
 | Spark Master | Cluster UI | http://localhost:8080 |
-| Redis | Cache realtime | `localhost:6379` |
-| Elasticsearch | Serving indexes | http://localhost:9200 |
 | FastAPI | Serving API | http://localhost:8000 |
 | Dashboard | UI tĩnh | http://localhost:8084 |
-| Grafana | Metrics | http://localhost:3000 |
 | Airflow | Orchestration | http://localhost:8082 |
 
 MinIO mặc định: `minioadmin` / `minioadmin`
@@ -95,7 +91,7 @@ cd IT4931
 make download-data                         # Tải dữ liệu mẫu từ Google Drive
 
 # Khởi động Minikube với mount thư mục dự án
-minikube start --memory=8192 --cpus=4 \
+minikube start --memory=6144 --cpus=4 \
   --mount --mount-string="$(pwd):/social-pipeline"
 
 eval $(minikube docker-env)                # Trỏ Docker CLI vào daemon Minikube
@@ -106,7 +102,6 @@ make forward                               # Mở port-forward ra host (giữ te
 
 # Đợi ~2 phút để simulators chạy xong, sau đó:
 make batch                                 # Chạy Spark batch job (~20 phút)
-make index-batch                           # Index batch views vào Elasticsearch
 # Xem kết quả tại: http://localhost:8084
 ```
 

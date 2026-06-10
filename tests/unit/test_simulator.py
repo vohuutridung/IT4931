@@ -54,7 +54,7 @@ def test_replay_deduplicates_posts_with_same_canonical_id(tmp_path, monkeypatch)
         "author_fullname": "t2_author",
         "author": "alice",
         "subreddit": "datascience",
-        "created_utc_raw": 1_700_000_000,
+        "created_utc_raw": 1_770_000_000,
     }
     (source / "a.json").write_text(json.dumps(raw), encoding="utf-8")
     (source / "b.json").write_text(json.dumps(raw), encoding="utf-8")
@@ -90,7 +90,7 @@ def test_normalise_emits_sop_canonical_schema_for_reddit():
         "author_fullname": "t2_author",
         "author": "alice",
         "subreddit": "datascience",
-        "created_utc_raw": 1_700_000_000,
+        "created_utc_raw": 1_770_000_000,
         "upvotes": 7,
         "comment_count": 2,
         "crossposts_count": 1,
@@ -101,7 +101,7 @@ def test_normalise_emits_sop_canonical_schema_for_reddit():
                 "body": "Great update",
                 "author": "bob",
                 "author_fullname": "t2_bob",
-                "created_utc_raw": 1_700_000_010,
+                "created_utc_raw": 1_770_000_010,
                 "score": 3,
                 "replies": [],
             }
@@ -120,7 +120,7 @@ def test_normalise_emits_sop_canonical_schema_for_reddit():
         "media_urls": [],
         "hashtags": ["data"],
         "comments": post["comments"],
-        "created_at": "2023-11-14T22:13:20Z",
+        "created_at": "2026-02-02T02:40:00Z",
         "ingested_at": post["ingested_at"],
         "metrics": {"likes": 7, "comments": 2, "shares": 1, "views": 0},
     }

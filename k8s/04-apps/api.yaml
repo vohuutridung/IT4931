@@ -22,9 +22,9 @@ spec:
             - /bin/sh
             - -c
             - |
-              echo "Waiting for Redis and Elasticsearch..."
-              until nc -z redis-service 6379; do sleep 2; done
-              until nc -z elasticsearch-service 9200; do sleep 2; done
+              echo "Waiting for Postgres and ClickHouse..."
+              until nc -z postgres-service 5432; do sleep 2; done
+              until nc -z clickhouse-service 8123; do sleep 2; done
               echo "Infra ready!"
         - name: serving-init
           image: social-python:0.1.0

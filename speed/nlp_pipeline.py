@@ -47,8 +47,8 @@ if pipeline:
         model_path = os.path.join(SENTIMENT_ARTIFACTS_DIR, "fine_tuned_phobert")
         meta_path  = os.path.join(SENTIMENT_ARTIFACTS_DIR, "training_metadata.json")
 
-        is_smoke_test = False
-        if os.path.exists(meta_path):
+        is_smoke_test = os.getenv("SPEED_LIGHTWEIGHT", "false").lower() in ("1", "true", "yes", "y")
+        if not is_smoke_test and os.path.exists(meta_path):
             try:
                 with open(meta_path, encoding="utf-8") as f:
                     is_smoke_test = json.load(f).get("smoke_test", False)
@@ -70,6 +70,23 @@ if pipeline:
     except Exception as exc:
         logger.warning("Transformer sentiment unavailable, using fallback: %s", exc)
 
+def _normalize_text(text: str) -> str:
+    replacements = {
+        "áàảãạăắằẳẵặâấầẩẫậ": "a",
+        "éèẻẽẹêếềểễệ": "e",
+        "íìỉĩị": "i",
+        "óòỏõọôốồổỗộơớờởỡợ": "o",
+        "úùủũụưứừửữự": "u",
+        "ýỳỷỹỵ": "y",
+        "đ": "d",
+    }
+    output = text.lower()
+    for chars, replacement in replacements.items():
+        for char in chars:
+            output = output.replace(char, replacement)
+    return re.sub(r"\s+", " ", output)
+
+
 POSITIVE = {
     "amazing", "awesome", "beautiful", "benefit", "best", "better", "bullish", "calm",
     "clear", "confident", "constructive", "cute", "enjoy", "excellent", "gain", "gains",
@@ -90,6 +107,13 @@ NEGATIVE = {
 }
 POSITIVE_EMOJI = {"😀", "😃", "😄", "😁", "😊", "😍", "🥰", "❤️", "❤", "👍", "🔥", "✨"}
 NEGATIVE_EMOJI = {"😢", "😭", "😡", "😠", "💔", "👎", "😞", "😔", "😟", "😨"}
+
+# Pre-normalized lists for speed-streaming performance
+NORMALIZED_POSITIVE_WORDS = {re.sub(r"[^a-z0-9_]+", "", _normalize_text(word)) for word in POSITIVE if " " not in word}
+NORMALIZED_NEGATIVE_WORDS = {re.sub(r"[^a-z0-9_]+", "", _normalize_text(word)) for word in NEGATIVE if " " not in word}
+
+NORMALIZED_POSITIVE_PHRASES = [re.sub(r"[^a-z0-9_]+", " ", _normalize_text(phrase)).strip() for phrase in POSITIVE if " " in phrase]
+NORMALIZED_NEGATIVE_PHRASES = [re.sub(r"[^a-z0-9_]+", " ", _normalize_text(phrase)).strip() for phrase in NEGATIVE if " " in phrase]
 
 
 def analyze_sentiment(text: str) -> dict:
@@ -119,20 +143,16 @@ def _lexicon_sentiment(text: str) -> float:
     token_count = max(len(tokens), 1)
     token_set = set(tokens)
     
-    positive = len(token_set & {re.sub(r"[^a-z0-9_]+", "", _normalize_text(word)) for word in POSITIVE if " " not in word})
-    negative = len(token_set & {re.sub(r"[^a-z0-9_]+", "", _normalize_text(word)) for word in NEGATIVE if " " not in word})
+    positive = len(token_set & NORMALIZED_POSITIVE_WORDS)
+    negative = len(token_set & NORMALIZED_NEGATIVE_WORDS)
 
     normalized_clean = f" {re.sub(r'[^a-z0-9_]+', ' ', normalized)} "
-    for phrase in POSITIVE:
-        if " " in phrase:
-            normalized_phrase = re.sub(r"[^a-z0-9_]+", " ", _normalize_text(phrase)).strip()
-            if f" {normalized_phrase} " in normalized_clean:
-                positive += 1
-    for phrase in NEGATIVE:
-        if " " in phrase:
-            normalized_phrase = re.sub(r"[^a-z0-9_]+", " ", _normalize_text(phrase)).strip()
-            if f" {normalized_phrase} " in normalized_clean:
-                negative += 1
+    for norm_phrase in NORMALIZED_POSITIVE_PHRASES:
+        if f" {norm_phrase} " in normalized_clean:
+            positive += 1
+    for norm_phrase in NORMALIZED_NEGATIVE_PHRASES:
+        if f" {norm_phrase} " in normalized_clean:
+            negative += 1
 
     positive += sum(text.count(item) for item in POSITIVE_EMOJI)
     negative += sum(text.count(item) for item in NEGATIVE_EMOJI)
@@ -144,23 +164,6 @@ def _lexicon_sentiment(text: str) -> float:
     elif raw < 0:
         raw -= exclamation_boost
     return max(-1.0, min(1.0, raw))
-
-
-def _normalize_text(text: str) -> str:
-    replacements = {
-        "áàảãạăắằẳẵặâấầẩẫậ": "a",
-        "éèẻẽẹêếềểễệ": "e",
-        "íìỉĩị": "i",
-        "óòỏõọôốồổỗộơớờởỡợ": "o",
-        "úùủũụưứừửữự": "u",
-        "ýỳỷỹỵ": "y",
-        "đ": "d",
-    }
-    output = text.lower()
-    for chars, replacement in replacements.items():
-        for char in chars:
-            output = output.replace(char, replacement)
-    return re.sub(r"\s+", " ", output)
 
 
 def extract_keywords(text: str, top_n: int = 10) -> list[str]:

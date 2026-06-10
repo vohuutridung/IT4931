@@ -41,7 +41,12 @@ from typing import Any
 
 import requests
 
-from config.settings import ES_HOST, REDIS_HOST, REDIS_PORT
+from config.settings import S3_ENDPOINT  # keep import for module health check
+
+# ES và Redis đã bị loại bỏ — network_analysis luôn dùng --simulated mode
+ES_HOST = ""
+REDIS_HOST = "localhost"
+REDIS_PORT = 6379
 
 logging.basicConfig(
     level=logging.INFO,

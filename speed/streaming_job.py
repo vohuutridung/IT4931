@@ -29,18 +29,6 @@ POST_SCHEMA = StructType([
     StructField("title", StringType()),
     StructField("media_urls", ArrayType(StringType())),
     StructField("hashtags", ArrayType(StringType())),
-    StructField("comments", ArrayType(StructType([
-        StructField("comment_id", StringType()),
-        StructField("post_id", StringType()),
-        StructField("parent_id", StringType()),
-        StructField("author_id", StringType()),
-        StructField("author", StringType()),
-        StructField("text", StringType()),
-        StructField("likes", LongType()),
-        StructField("depth", LongType()),
-        StructField("created_at", LongType()),
-        StructField("extra", StringType()),
-    ]))),
     StructField("created_at", StringType()),
     StructField("ingested_at", StringType()),
     StructField("metrics", StructType([
@@ -58,8 +46,8 @@ def create_spark() -> SparkSession:
         SparkSession.builder
         .appName("SocialLambdaSpeedLayer")
         .master(SPARK_MASTER)
-        .config("spark.executor.cores", "2")
-        .config("spark.cores.max", "2")
+        .config("spark.executor.cores", "1")
+        .config("spark.cores.max", "1")
     )
     return configure_s3a(builder).getOrCreate()
 
@@ -82,7 +70,7 @@ def foreach_batch(df, batch_id: int) -> None:
 
     chunk: list[dict] = []
     total = 0
-    for spark_row in df.toLocalIterator():
+    for spark_row in df.collect():
         row = spark_row.asDict(recursive=True)
         enriched = dict(row, enrichment=enrich_post(row))
         chunk.append(enriched)
@@ -108,6 +96,12 @@ def foreach_batch(df, batch_id: int) -> None:
 
 
 def main() -> None:
+    try:
+        from warehouse.clickhouse_loader import ensure_realtime_table
+        ensure_realtime_table()
+    except Exception as exc:
+        logger.warning("Could not ensure ClickHouse schema: %s", exc)
+
     spark = create_spark()
     raw = (
         spark.readStream.format("kafka")
@@ -121,13 +115,12 @@ def main() -> None:
         raw.select(F.col("value").cast("string").alias("json_value"))
         .select(F.from_json("json_value", POST_SCHEMA).alias("post"), "json_value")
     )
-    ts = F.to_timestamp(F.col("post.created_at"))
+    ts = F.col("post.created_at").cast("timestamp")
     good = parsed.filter(
         F.col("post.post_id").isNotNull()
         & F.col("post.platform").isNotNull()
         & F.col("post.created_at").isNotNull()
         & (ts >= F.lit("2026-01-01 00:00:00"))
-        & (ts <= F.lit("2026-04-30 23:59:59"))
     ).select("post.*")
     bad = parsed.filter(
         F.col("post.post_id").isNull()
@@ -135,7 +128,6 @@ def main() -> None:
         | F.col("post.created_at").isNull()
         | ts.isNull()
         | (ts < F.lit("2026-01-01 00:00:00"))
-        | (ts > F.lit("2026-04-30 23:59:59"))
     )
 
     (

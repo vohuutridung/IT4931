@@ -98,13 +98,12 @@ with DAG(
             bash_command="spark-submit /opt/social_pipeline/batch/spark_batch_job.py",
         )
 
-    refresh_serving_layer = BashOperator(
-        task_id="refresh_serving_layer",
+    clickhouse_load = BashOperator(
+        task_id="clickhouse_load",
         bash_command=(
             f"export PYTHONPATH=/opt/social_pipeline SPARK_MASTER='{SPARK_MASTER}' && "
             "cd /opt/social_pipeline && "
-            "python -m serving.es_indexer --ensure && "
-            "spark-submit batch/index_batch_views.py"
+            "python -m warehouse.clickhouse_loader"
         ),
     )
 
@@ -114,7 +113,7 @@ with DAG(
             "FAILED_UPSTREAM=\"{{ '1' if "
             "dag_run.get_task_instance('check_new_data').state in ['failed', 'upstream_failed'] or "
             "dag_run.get_task_instance('run_spark_batch').state in ['failed', 'upstream_failed'] or "
-            "dag_run.get_task_instance('refresh_serving_layer').state in ['failed', 'upstream_failed'] "
+            "dag_run.get_task_instance('clickhouse_load').state in ['failed', 'upstream_failed'] "
             "else '0' }}\"; "
             "test \"$FAILED_UPSTREAM\" = \"0\" -o -z \"$SLACK_WEBHOOK_URL\" || "
             "python -c \"import os, requests; requests.post(os.environ['SLACK_WEBHOOK_URL'], json={'text': 'Batch pipeline failed'})\""
@@ -136,8 +135,5 @@ with DAG(
         python_callable=mark_raw_data_processed,
     )
 
-    # check_new_data >> run_spark_batch >> refresh_serving_layer >> mark_processed
-    # [check_new_data, run_spark_batch, refresh_serving_layer, mark_processed] >> send_slack_alert
-
-    check_new_data >> run_spark_batch >> refresh_serving_layer >> run_network_analysis >> mark_processed
-    [check_new_data, run_spark_batch, refresh_serving_layer, run_network_analysis, mark_processed] >> send_slack_alert
+    check_new_data >> run_spark_batch >> clickhouse_load >> run_network_analysis >> mark_processed
+    [check_new_data, run_spark_batch, clickhouse_load, run_network_analysis, mark_processed] >> send_slack_alert

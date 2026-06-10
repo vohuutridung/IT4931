@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: spark-master
-          image: social-spark:3.5.3
+          image: social-spark:3.5.1
           imagePullPolicy: Never
           command:
             - /opt/spark/bin/spark-class
