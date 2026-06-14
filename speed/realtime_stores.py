@@ -86,12 +86,9 @@ class RealtimeViewWriter:
             logger.warning("Elasticsearch not ready for RealtimeViewWriter: %s", exc)
 
     def write(self, posts: list[dict]) -> None:
-        """Insert a batch of enriched posts into ClickHouse, Redis, and Elasticsearch."""
+        """Insert a batch of enriched posts into Redis and Elasticsearch."""
         if not posts:
             return
-
-        # 1. Write to ClickHouse
-        self._write_clickhouse(posts)
 
         # 2. Write to Redis
         if self.redis:

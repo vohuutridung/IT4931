@@ -8,7 +8,16 @@ import logging
 
 import requests
 
-from config.settings import ES_HOST, REALTIME_WINDOW_HOURS, REDIS_HOST, REDIS_PORT
+from config.settings import (
+    ES_HOST,
+    REALTIME_WINDOW_HOURS,
+    REDIS_HOST,
+    REDIS_PORT,
+    CLICKHOUSE_HOST,
+    CLICKHOUSE_DATABASE,
+    CLICKHOUSE_USER,
+    CLICKHOUSE_PASSWORD,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +129,82 @@ class ServeQuery:
                     break
         return unique_ordered
 
+    def _ensure_clickhouse_table(self) -> None:
+        params = {
+            "user": CLICKHOUSE_USER,
+            "password": CLICKHOUSE_PASSWORD,
+        }
+        create_db_query = f"CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE}"
+        create_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {CLICKHOUSE_DATABASE}.merged_posts (
+            post_id String,
+            platform LowCardinality(String),
+            author_id String,
+            content String,
+            event_ts DateTime,
+            engagement_score UInt64,
+            sentiment_score Float64,
+            loaded_at DateTime
+        )
+        ENGINE = ReplacingMergeTree(loaded_at)
+        PARTITION BY toYYYYMM(event_ts)
+        ORDER BY (platform, event_ts, post_id)
+        """
+        try:
+            requests.post(CLICKHOUSE_HOST, params=params, data=create_db_query.encode("utf-8"), timeout=3)
+            requests.post(CLICKHOUSE_HOST, params=params, data=create_table_query.encode("utf-8"), timeout=3)
+        except Exception as exc:
+            logger.error("Failed to ensure ClickHouse schema: %s", exc)
+
+    def _write_to_clickhouse(self, posts: list[dict]) -> None:
+        if not posts:
+            return
+        
+        self._ensure_clickhouse_table()
+        
+        docs = []
+        loaded_at_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        for post in posts:
+            event_ts_raw = post.get("event_ts")
+            event_ts_formatted = "1970-01-01 00:00:00"
+            if event_ts_raw:
+                try:
+                    dt = self._parse_dt(event_ts_raw)
+                    event_ts_formatted = dt.strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    pass
+
+            doc = {
+                "post_id": str(post.get("post_id") or ""),
+                "platform": str(post.get("platform") or post.get("source") or "unknown"),
+                "author_id": str(post.get("author_id") or "unknown"),
+                "content": str(post.get("content") or ""),
+                "event_ts": event_ts_formatted,
+                "engagement_score": int(post.get("engagement_score") or 0),
+                "sentiment_score": float(post.get("sentiment_score") or post.get("sentiment") or 0.0),
+                "loaded_at": loaded_at_str,
+            }
+            docs.append(doc)
+            
+        import json
+        payload = "\n".join(json.dumps(doc, ensure_ascii=False, default=str) for doc in docs).encode("utf-8")
+        params = {
+            "user": CLICKHOUSE_USER,
+            "password": CLICKHOUSE_PASSWORD,
+            "database": CLICKHOUSE_DATABASE,
+        }
+        try:
+            response = requests.post(
+                CLICKHOUSE_HOST,
+                params=params,
+                data=b"INSERT INTO merged_posts FORMAT JSONEachRow\n" + payload,
+                timeout=5,
+            )
+            response.raise_for_status()
+            logger.info("Successfully wrote %d merged posts to ClickHouse merged_posts table", len(docs))
+        except Exception as exc:
+            logger.error("Failed to insert merged posts to ClickHouse: %s", exc)
+
     def query_posts(self, platform: str | None, start_dt: datetime | str, end_dt: datetime | str, limit: int = 100) -> list[dict]:
         start = self._parse_dt(start_dt)
         end = self._parse_dt(end_dt)
@@ -135,7 +220,13 @@ class ServeQuery:
             posts.extend(self._search("social_realtime_views", query, limit, sort=sort))
         if start < cutoff:
             posts.extend(self._search("social_batch_views", query, limit, sort=sort))
-        return self._dedupe(posts, limit)
+        
+        merged_posts = self._dedupe(posts, limit)
+        try:
+            self._write_to_clickhouse(merged_posts)
+        except Exception as exc:
+            logger.error("Error writing merged posts to ClickHouse: %s", exc)
+        return merged_posts
 
     def query_sentiment_trend(self, platform: str | None, granularity: str, start_dt: datetime | str, end_dt: datetime | str) -> list[dict]:
         start = self._parse_dt(start_dt)

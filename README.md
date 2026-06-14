@@ -25,7 +25,7 @@ Nhánh này triển khai trên **Kubernetes local** bằng Minikube.
 ## Kiến Trúc Hệ Thống
 
 ```mermaid
-flowchart TD
+flowchart LR
     %% Styling definitions
     classDef ingestion fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
     classDef speed fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
@@ -33,69 +33,38 @@ flowchart TD
     classDef serving fill:#efebe9,stroke:#4e342e,stroke-width:2px;
     classDef visualize fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
 
-    %% Ingestion Layer
-    subgraph INGEST ["📥 Ingestion Layer (Thu thập)"]
-        DATA["📁 Local Data Files (data/*)"]:::ingestion
-        SIM["ingestion.simulator"]:::ingestion
-        KAFKA[["Kafka Message Broker"]]:::ingestion
-        DATA --> SIM --> KAFKA
-    end
+    DATA["📁 data/*"]:::ingestion
+    SIM["ingestion.simulator"]:::ingestion
+    KAFKA[["Kafka<br/>social.&lt;platform&gt;.posts"]]:::ingestion
 
-    %% Kafka Routing
-    KAFKA --> STREAM
-    KAFKA --> OSW
-
-    %% Speed Layer
-    subgraph SPEED ["⚡ Speed Layer (Realtime)"]
-        STREAM["streaming_job + NLP Pipeline"]:::speed
-        REDIS[("Redis Cache<br/>rt:stats:*, rt:hashtags:*")]:::speed
-        CH_S[("ClickHouse<br/>realtime_posts")]:::speed
-        ES_RT[("Elasticsearch<br/>social_realtime_views")]:::speed
-        
-        STREAM --> REDIS
-        STREAM --> CH_S
-        STREAM --> ES_RT
-    end
-
-    %% Batch Layer
-    subgraph BATCH ["⬛ Batch Layer (Xử lý theo lô)"]
+    subgraph batch["⬛ Batch Layer"]
         OSW["object_store_writer"]:::batch
-        RAW[("MinIO Lake<br/>data/raw/")]:::batch
-        AIRFLOW["Apache Airflow<br/>Orchestrator"]:::batch
-        SPARK["spark_batch_job (PySpark)"]:::batch
-        BV[("MinIO Lake<br/>data/batch_views/")]:::batch
-        
+        RAW[("MinIO<br/>data/raw/")]:::batch
+        SPARK["spark_batch_job"]:::batch
+        BV[("MinIO<br/>data/batch_views/")]:::batch
         IDX["index_batch_views"]:::batch
-        LOAD["clickhouse_loader"]:::batch
-        ES_B[("Elasticsearch<br/>social_batch_views, social_topics, social_network")]:::batch
-        CH_B[("ClickHouse<br/>batch tables")]:::batch
-
-        OSW --> RAW
-        AIRFLOW -->|Trigger| SPARK
-        RAW --> SPARK --> BV
-        BV --> IDX --> ES_B
-        BV --> LOAD --> CH_B
+        ES_B[("Elasticsearch<br/>social_batch_views")]:::batch
     end
 
-    %% Serving Layer
-    subgraph SERVING ["🔗 Serving Layer (Phục vụ API)"]
+    subgraph speed["⚡ Speed Layer"]
+        STREAM["streaming_job<br/>+ nlp_pipeline"]:::speed
+        REDIS[("Redis<br/>rt:stats:*<br/>rt:hashtags:*")]:::speed
+        ES_RT[("Elasticsearch<br/>social_realtime_views")]:::speed
+    end
+
+    subgraph serving["🔗 Serving Layer"]
         MERGE["merge_service"]:::serving
-        NET["network_service"]:::serving
-        TOPIC["topic_service"]:::serving
-        API["FastAPI App (:8000)"]:::serving
-        
-        CH_B & CH_S --> MERGE
-        REDIS --> NET
-        ES_B & ES_RT --> TOPIC
-        
-        MERGE & NET & TOPIC --> API
+        CH[("ClickHouse<br/>social.merged_posts")]:::serving
+        API["FastAPI :8000"]:::serving
+        DASH["Dashboard :8084"]:::visualize
     end
 
-    %% Presentation Layer
-    subgraph VISUAL ["📊 Presentation Layer (Trực quan)"]
-        DASH["Dashboard UI (:8084)"]:::visualize
-        API --> DASH
-    end
+    DATA --> SIM --> KAFKA
+    KAFKA --> OSW --> RAW --> SPARK --> BV --> IDX --> ES_B
+    KAFKA --> STREAM --> REDIS & ES_RT
+    ES_B & ES_RT & REDIS --> MERGE
+    MERGE --> API --> DASH
+    MERGE --> CH
 ```
 
 

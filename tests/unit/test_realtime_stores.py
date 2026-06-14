@@ -1,38 +1,56 @@
-import pytest
-from unittest.mock import MagicMock
 from speed.realtime_stores import RealtimeViewWriter
 
 
-def test_write_clickhouse_realtime_views(monkeypatch):
-    called = []
+class DummyRedis:
+    def __init__(self):
+        self.commands = []
 
-    def mock_post(self, url, **kwargs):
-        called.append((url, kwargs.get("params"), kwargs.get("data"), kwargs.get("timeout")))
-        mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock()
-        return mock_response
+    def pipeline(self, transaction=False):
+        return self
 
-    monkeypatch.setattr("requests.Session.post", mock_post)
+    def zadd(self, *args, **kwargs):
+        self.commands.append(("zadd", args, kwargs))
 
-    writer = RealtimeViewWriter()
-    writer.write([
-        {
-            "post_id": "p1",
-            "platform": "reddit",
-            "author_id": "author1",
-            "content": "hello",
-            "created_at": "2026-06-10 12:00:00",
-            "hashtags": ["AI"],
-            "enrichment": {"sentiment_score": 0.5},
-        }
-    ])
+    def zremrangebyrank(self, *args, **kwargs):
+        self.commands.append(("zremrangebyrank", args, kwargs))
 
-    assert len(called) == 1
-    url, params, data, timeout = called[0]
-    assert params["user"] == "social"
-    assert params["password"] == "social"
-    assert params["database"] == "social"
-    assert b"INSERT INTO realtime_posts FORMAT JSONEachRow" in data
-    assert b'"post_id": "p1"' in data
-    assert b'"platform": "reddit"' in data
-    assert b'"sentiment": 0.5' in data
+    def expire(self, *args, **kwargs):
+        self.commands.append(("expire", args, kwargs))
+
+    def hset(self, *args, **kwargs):
+        self.commands.append(("hset", args, kwargs))
+
+    def hincrby(self, *args, **kwargs):
+        self.commands.append(("hincrby", args, kwargs))
+
+    def hincrbyfloat(self, *args, **kwargs):
+        self.commands.append(("hincrbyfloat", args, kwargs))
+
+    def zincrby(self, *args, **kwargs):
+        self.commands.append(("zincrby", args, kwargs))
+
+    def zrem(self, *args, **kwargs):
+        self.commands.append(("zrem", args, kwargs))
+
+    def execute(self):
+        self.commands.append(("execute", (), {}))
+
+
+def test_write_redis_realtime_views():
+    writer = object.__new__(RealtimeViewWriter)
+    writer.redis = DummyRedis()
+    writer._write_redis(
+        [
+            {
+                "post_id": "p1",
+                "platform": "reddit",
+                "created_at": "2023-11-14T22:13:20Z",
+                "hashtags": ["AI"],
+                "enrichment": {"sentiment_score": 0.5},
+            }
+        ]
+    )
+    command_names = [cmd[0] for cmd in writer.redis.commands]
+    assert "hincrby" in command_names
+    assert "hincrbyfloat" in command_names
+    assert "hset" in command_names
