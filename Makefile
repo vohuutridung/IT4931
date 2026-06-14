@@ -107,7 +107,8 @@ reset-data:
 	   TRUNCATE TABLE fact_author_activity; \
 	   TRUNCATE TABLE fact_sentiment_time_series; \
 	   TRUNCATE TABLE fact_top_posts; \
-	   TRUNCATE TABLE realtime_posts;"
+	   TRUNCATE TABLE IF EXISTS realtime_posts; \
+	   TRUNCATE TABLE IF EXISTS merged_posts;"
 	@echo "[2/3] Xóa raw data, batch views và checkpoints trong MinIO..."
 	kubectl exec -n social-pipeline deployments/minio -- \
 	  bash -c "mc alias set l http://localhost:9000 minioadmin minioadmin 2>/dev/null && \

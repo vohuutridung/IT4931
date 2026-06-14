@@ -156,7 +156,7 @@ class ServeQuery:
         except Exception as exc:
             logger.error("Failed to ensure ClickHouse schema: %s", exc)
 
-    def _write_to_clickhouse(self, posts: list[dict]) -> None:
+    def write_to_clickhouse(self, posts: list[dict]) -> None:
         if not posts:
             return
         
@@ -221,12 +221,7 @@ class ServeQuery:
         if start < cutoff:
             posts.extend(self._search("social_batch_views", query, limit, sort=sort))
         
-        merged_posts = self._dedupe(posts, limit)
-        try:
-            self._write_to_clickhouse(merged_posts)
-        except Exception as exc:
-            logger.error("Error writing merged posts to ClickHouse: %s", exc)
-        return merged_posts
+        return self._dedupe(posts, limit)
 
     def query_sentiment_trend(self, platform: str | None, granularity: str, start_dt: datetime | str, end_dt: datetime | str) -> list[dict]:
         start = self._parse_dt(start_dt)

@@ -9,7 +9,7 @@ for var in ["SSL_CERT_FILE", "SSL_CERT_DIR"]:
     if var in os.environ and not os.path.exists(os.environ[var]):
         del os.environ[var]
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -65,12 +65,16 @@ def posts(
     start: datetime | None = None,
     end: datetime | None = None,
     limit: int = Query(100, ge=1, le=500),
+    background_tasks: BackgroundTasks = None,
 ) -> dict:
     if platform and platform not in {"reddit", "facebook", "instagram"}:
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
     end = end or datetime(2026, 4, 30, 23, 59, 59, tzinfo=timezone.utc)
     start = start or end - timedelta(hours=24)
-    return {"data": service.query_posts(platform, start, end, limit), "limit": limit}
+    data = service.query_posts(platform, start, end, limit)
+    if background_tasks and data:
+        background_tasks.add_task(service.write_to_clickhouse, data)
+    return {"data": data, "limit": limit}
 
 
 @app.get("/api/v1/sentiment/trend")

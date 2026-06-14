@@ -1,22 +1,13 @@
-"""Realtime view writer — Writes streaming data to ClickHouse serving layer, Redis, and Elasticsearch."""
+"""Realtime view writer — Writes streaming data to Redis and Elasticsearch."""
 
 from __future__ import annotations
 
 import json
 import logging
-import requests
-import time
 from collections import defaultdict, Counter
 from datetime import datetime, timezone
 
 from config.settings import (
-    CLICKHOUSE_HOST,
-    CLICKHOUSE_DATABASE,
-    CLICKHOUSE_USER,
-    CLICKHOUSE_PASSWORD,
-    CLICKHOUSE_WRITE_TIMEOUT,
-    MAX_RETRIES,
-    RETRY_BACKOFF_BASE,
     ES_HOST,
     ES_REALTIME_INDEX,
     REDIS_HOST,
@@ -60,12 +51,9 @@ def _created_at_to_dt(ts: str | None) -> datetime:
 
 
 class RealtimeViewWriter:
-    """Writes enriched realtime posts to ClickHouse realtime_posts table, Redis, and Elasticsearch."""
+    """Writes enriched realtime posts to Redis and Elasticsearch."""
 
     def __init__(self) -> None:
-        self.session = requests.Session()
-        logger.info("RealtimeViewWriter: initialized writing to ClickHouse at %s", CLICKHOUSE_HOST)
-
         # Initialize Redis
         self.redis = None
         try:
@@ -102,53 +90,6 @@ class RealtimeViewWriter:
             self._write_elasticsearch(posts)
         except Exception as exc:
             logger.error("Realtime ES indexing failed: %s", exc)
-
-    def _write_clickhouse(self, posts: list[dict]) -> None:
-        docs = []
-        loaded_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        for post in posts:
-            enrichment = post.get("enrichment") or {}
-            doc = {
-                "post_id": post.get("post_id"),
-                "platform": post.get("platform"),
-                "author_id": post.get("author_id"),
-                "content": post.get("content") or "",
-                "hashtags": post.get("hashtags") or [],
-                "sentiment": float(enrichment.get("sentiment_score", 0.0)),
-                "event_ts": _normalize_ts(post.get("created_at"), loaded_at),
-                "loaded_at": loaded_at,
-            }
-            docs.append(doc)
-
-        payload = "\n".join(json.dumps(doc, ensure_ascii=False) for doc in docs).encode("utf-8")
-        sql = "INSERT INTO realtime_posts FORMAT JSONEachRow\n"
-        body = sql.encode("utf-8") + payload
-
-        params = {
-            "user": CLICKHOUSE_USER,
-            "password": CLICKHOUSE_PASSWORD,
-            "database": CLICKHOUSE_DATABASE,
-        }
-
-        for attempt in range(MAX_RETRIES):
-            try:
-                response = self.session.post(
-                    CLICKHOUSE_HOST,
-                    params=params,
-                    data=body,
-                    timeout=CLICKHOUSE_WRITE_TIMEOUT,
-                )
-                response.raise_for_status()
-                logger.info("RealtimeViewWriter: inserted %d records to ClickHouse", len(docs))
-                return
-            except requests.RequestException as exc:
-                if attempt < MAX_RETRIES - 1:
-                    backoff = RETRY_BACKOFF_BASE ** (attempt + 1)
-                    logger.warning("RealtimeViewWriter ClickHouse write failed (attempt %d/%d), retrying in %.1fs: %s", attempt + 1, MAX_RETRIES, backoff, exc)
-                    time.sleep(backoff)
-                else:
-                    logger.error("RealtimeViewWriter ClickHouse write failed after %d attempts: %s", MAX_RETRIES, exc)
-                    return
 
     def _write_redis(self, posts: list[dict]) -> None:
         pipe = self.redis.pipeline(transaction=False)

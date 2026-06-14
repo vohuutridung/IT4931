@@ -283,7 +283,7 @@ make reset-data
 
 Lệnh này tự động thực hiện:
 - Tạm dừng `speed-streaming` và `object-store-writer`.
-- `TRUNCATE` tất cả 7 bảng ClickHouse (`dim_*`, `fact_*`, `realtime_posts`).
+- `TRUNCATE` tất cả các bảng ClickHouse (`dim_*`, `fact_*`, `merged_posts`).
 - Xóa toàn bộ indices Elasticsearch (`social_batch_views`, `social_realtime_views`, `social_network`, `social_topics`).
 - Flush toàn bộ dữ liệu Redis (`FLUSHALL`).
 - Xóa raw data, batch views và streaming checkpoints trong MinIO.
@@ -431,7 +431,7 @@ Dữ liệu từ MinIO (Batch) và Kafka (Speed) được tập trung lưu trữ
 | `fact_author_activity` | Batch | Tần suất hoạt động và điểm tích cực của tác giả |
 | `fact_sentiment_time_series` | Batch | Biến thiên trung bình sentiment theo giờ |
 | `fact_top_posts` | Batch | Danh sách 1000 bài viết nổi bật nhất |
-| `realtime_posts` | Speed | Bài viết realtime được ghi trực tiếp với TTL 48 giờ để tự động dọn dẹp |
+| `merged_posts` | Serving | Bài viết sau khi gộp (merged) được ghi nhận bất đồng bộ sau bước ServeQuery |
 
 ### Elasticsearch Indices
 
