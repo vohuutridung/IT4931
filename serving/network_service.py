@@ -11,11 +11,10 @@ import random
 from typing import Any
 
 import requests
+import redis
+from config.settings import ES_HOST, REDIS_HOST, REDIS_PORT
 
 logger = logging.getLogger(__name__)
-
-# ES và Redis đã bị loại bỏ — NetworkService luôn dùng simulated data fallback
-_ES_HOST = ""
 
 ES_NETWORK_INDEX = "social_network"
 PLATFORMS = ["reddit", "facebook", "instagram"]
@@ -125,11 +124,21 @@ def _simulated_top_influencers(platform: str | None, top_n: int) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 class NetworkService:
-    """Query user-interaction graph data — simulated fallback (ES/Redis removed)."""
+    """Query user-interaction graph data from ES with simulated fallback."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        es_host: str = ES_HOST,
+        redis_host: str = REDIS_HOST,
+        redis_port: int = REDIS_PORT,
+    ) -> None:
+        self.es_host = es_host.rstrip("/")
         self._redis = None
-        logger.info("NetworkService: running in simulated-data mode (ES/Redis removed)")
+        try:
+            import redis
+            self._redis = redis.Redis(host=redis_host, port=redis_port, decode_responses=True)
+        except Exception as exc:
+            logger.warning("Redis client unavailable for NetworkService: %s", exc)
 
     def _search(self, query: dict, size: int = 5000) -> list[dict]:
         try:
@@ -219,7 +228,6 @@ class NetworkService:
         filters: list[dict[str, Any]] = [{"term": {"record_type": "node"}}]
         if platform:
             filters.append({"term": {"platform": platform}})
-        sort = [{"pagerank": {"order": "desc"}}]
         results = self._search({"bool": {"filter": filters}}, size=top_n)
         if results:
             return results

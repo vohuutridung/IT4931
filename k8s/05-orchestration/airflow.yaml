@@ -92,9 +92,6 @@ spec:
             requests:
               cpu: 100m
               memory: 512Mi
-            limits:
-              cpu: 500m
-              memory: 1Gi
           readinessProbe:
             httpGet:
               path: /health
@@ -166,6 +163,10 @@ spec:
           env:
             - name: AIRFLOW__CORE__EXECUTOR
               value: "LocalExecutor"
+            - name: SPARK_LOCAL_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
           volumeMounts:
             - name: dags-volume
               mountPath: /opt/airflow/dags
@@ -178,9 +179,6 @@ spec:
             requests:
               cpu: 100m
               memory: 512Mi
-            limits:
-              cpu: 500m
-              memory: 1Gi
       volumes:
         - name: dags-volume
           hostPath:

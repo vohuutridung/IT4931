@@ -68,7 +68,7 @@ def posts(
 ) -> dict:
     if platform and platform not in {"reddit", "facebook", "instagram"}:
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
-    end = end or datetime.now(timezone.utc)
+    end = end or datetime(2026, 4, 30, 23, 59, 59, tzinfo=timezone.utc)
     start = start or end - timedelta(hours=24)
     return {"data": service.query_posts(platform, start, end, limit), "limit": limit}
 
@@ -82,7 +82,7 @@ def sentiment_trend(
 ) -> dict:
     if platform and platform not in {"reddit", "facebook", "instagram"}:
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
-    end = end or datetime.now(timezone.utc)
+    end = end or datetime(2026, 4, 30, 23, 59, 59, tzinfo=timezone.utc)
     start = start or end - timedelta(days=7)
     data = service.query_sentiment_trend(platform, granularity, start, end)
     velocities = [float(r.get("velocity") or 0) for r in data[1:]]
@@ -110,6 +110,9 @@ def top_hashtags(
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
     if window_hours not in {1, 6, 24, 168}:
         raise HTTPException(status_code=400, detail="window_hours must be one of 1, 6, 24, 168")
+    import re
+    if week and not re.match(r"^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$", week):
+        raise HTTPException(status_code=400, detail="Invalid week format")
     return {"data": service.query_top_hashtags(platform, window_hours, top_n, week)}
 
 

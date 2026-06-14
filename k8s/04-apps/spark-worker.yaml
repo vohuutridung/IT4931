@@ -35,7 +35,7 @@ spec:
             - name: SPARK_WORKER_CORES
               value: "2"
             - name: SPARK_WORKER_MEMORY
-              value: "2G"
+              value: "1536M"
             - name: SPARK_LOCAL_IP
               valueFrom:
                 fieldRef:
@@ -43,10 +43,11 @@ spec:
           resources:
             requests:
               cpu: 200m
-              memory: 1Gi
+              memory: 512Mi
             limits:
-              cpu: 1000m
-              memory: 3Gi
+              cpu: 2000m
+              memory: 2Gi
+
 ---
 apiVersion: v1
 kind: Service

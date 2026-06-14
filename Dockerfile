@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY requirements*.txt ./
 RUN pip wheel --no-cache-dir --wheel-dir /wheels \
-    --extra-index-url https://download.pytorch.org/whl/cu121 \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
     -r "${REQUIREMENTS_FILE}"
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────

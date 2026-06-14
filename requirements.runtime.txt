@@ -7,6 +7,6 @@ boto3==1.34.131
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
 prometheus-client==0.20.0
-redis==5.0.4
 langdetect==1.0.9
-cassandra-driver==3.29.2
+redis==5.0.4
+

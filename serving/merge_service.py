@@ -64,9 +64,11 @@ class ServeQuery:
 
         platform_filter = f"AND platform = '{platform}'" if platform else ""
 
-        # Query batch view (historical top posts)
+        # Query batch view (historical top posts) — includes engagement_score
         sql_batch = f"""
-        SELECT post_id, platform, author_id, content, 0.0 AS sentiment_score, 
+        SELECT post_id, platform, author_id, content,
+               sentiment_score,
+               engagement_score,
                formatDateTime(event_ts, '%Y-%m-%d %H:%i:%S') AS event_ts, loaded_at
         FROM fact_top_posts
         WHERE event_ts >= '{start}' AND event_ts <= '{end}' {platform_filter}
@@ -74,9 +76,11 @@ class ServeQuery:
         LIMIT {limit}
         """
 
-        # Query speed view (realtime posts)
+        # Query speed view (realtime posts) — no engagement metrics available, default to 0
         sql_speed = f"""
-        SELECT post_id, platform, author_id, content, sentiment AS sentiment_score, 
+        SELECT post_id, platform, author_id, content,
+               sentiment AS sentiment_score,
+               0 AS engagement_score,
                formatDateTime(event_ts, '%Y-%m-%d %H:%i:%S') AS event_ts, loaded_at
         FROM realtime_posts
         WHERE event_ts >= '{start}' AND event_ts <= '{end}' {platform_filter}
@@ -92,13 +96,15 @@ class ServeQuery:
         for post in speed_posts:
             pid = post.get("post_id")
             if pid:
-                post["sentiment"] = post.get("sentiment_score", 0.0)
+                post["sentiment"] = float(post.get("sentiment_score") or 0.0)
+                post["engagement_score"] = int(post.get("engagement_score") or 0)
                 merged[pid] = post
 
         for post in batch_posts:
             pid = post.get("post_id")
             if pid:
-                post["sentiment"] = post.get("sentiment_score", 0.0)
+                post["sentiment"] = float(post.get("sentiment_score") or 0.0)
+                post["engagement_score"] = int(post.get("engagement_score") or 0)
                 merged[pid] = post
 
         # Sort merged posts by event_ts DESC

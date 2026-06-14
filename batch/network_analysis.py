@@ -41,12 +41,7 @@ from typing import Any
 
 import requests
 
-from config.settings import S3_ENDPOINT  # keep import for module health check
-
-# ES và Redis đã bị loại bỏ — network_analysis luôn dùng --simulated mode
-ES_HOST = ""
-REDIS_HOST = "localhost"
-REDIS_PORT = 6379
+from config.settings import ES_HOST, REDIS_HOST, REDIS_PORT
 
 logging.basicConfig(
     level=logging.INFO,
@@ -184,10 +179,15 @@ def louvain_communities(graph: DirectedGraph) -> dict[str, int]:
     community: dict[str, int] = {n: i for i, n in enumerate(nodes)}
     comm_members: dict[int, set[str]] = {i: {n} for i, n in enumerate(nodes)}
 
-    def _modularity_gain(node: str, comm_id: int, current_comm: int) -> float:
-        k_i = sum(adj[node].values())
+    # Precompute degrees of all nodes to avoid repeating sum(adj[node].values())
+    node_degrees = {node: sum(adj[node].values()) for node in nodes}
+    # Precompute community total degrees to achieve O(1) sigma_tot lookup
+    comm_degrees = {i: node_degrees[n] for i, n in enumerate(nodes)}
+
+    def _modularity_gain(node: str, comm_id: int) -> float:
+        k_i = node_degrees[node]
         k_i_in = sum(adj[node].get(nb, 0.0) for nb in comm_members.get(comm_id, set()) if nb != node)
-        sigma_tot = sum(sum(adj[nb].values()) for nb in comm_members.get(comm_id, set()))
+        sigma_tot = comm_degrees.get(comm_id, 0.0)
         return (k_i_in / m) - (sigma_tot * k_i) / (2 * m * m)
 
     improved = True
@@ -208,15 +208,18 @@ def louvain_communities(graph: DirectedGraph) -> dict[str, int]:
             for c in neighbour_comms:
                 if c == current_comm:
                     continue
-                gain = _modularity_gain(node, c, current_comm)
+                gain = _modularity_gain(node, c)
                 if gain > best_gain:
                     best_gain = gain
                     best_comm = c
 
             if best_comm != current_comm:
                 comm_members[current_comm].discard(node)
+                comm_degrees[current_comm] -= node_degrees[node]
+
                 community[node] = best_comm
                 comm_members.setdefault(best_comm, set()).add(node)
+                comm_degrees[best_comm] = comm_degrees.get(best_comm, 0.0) + node_degrees[node]
                 improved = True
 
     # Re-label communities as 0..N-1
@@ -517,6 +520,10 @@ def main() -> None:
     parser.add_argument("--redis-host", default=REDIS_HOST)
     parser.add_argument("--redis-port", type=int, default=REDIS_PORT)
     args = parser.parse_args()
+
+    if not args.es_host:
+        logger.info("Elasticsearch host is not configured (ES_HOST is empty). Exiting early as ES is disabled.")
+        return
 
     es_host = args.es_host.rstrip("/")
 

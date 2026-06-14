@@ -11,11 +11,19 @@ ARG AWS_SDK_BUNDLE_VERSION=1.12.262
 ARG COMMONS_POOL2_VERSION=2.11.1
 ARG SPARK_JARS_DIR=/opt/spark/jars
 
-# ── Cài Python 3 + pip (apache/spark base không có sẵn pip) ───────────────────
+# ── Cài Python 3.11 + pip (để khớp với Airflow Python 3.11) dùng Micromamba ──
+ENV MAMBA_ROOT_PREFIX=/opt/conda
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-pip python3-dev curl \
-        gcc librdkafka-dev \
-    && ln -sf /usr/bin/python3 /usr/bin/python \
+        curl gcc librdkafka-dev \
+    && curl -Ls https://github.com/mamba-org/micromamba-releases/releases/latest/download/micromamba-linux-64 -o /usr/bin/micromamba \
+    && chmod +x /usr/bin/micromamba \
+    && micromamba install -y -n base -c conda-forge python=3.11 pip \
+    && micromamba clean --all --yes \
+    && chmod -R 755 /opt/conda \
+    && ln -sf /opt/conda/bin/python3 /usr/bin/python3 \
+    && ln -sf /opt/conda/bin/python3 /usr/bin/python \
+    && ln -sf /opt/conda/bin/pip3 /usr/bin/pip3 \
+    && ln -sf /opt/conda/bin/pip /usr/bin/pip \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python deps cho Spark jobs ────────────────────────────────────────────────
@@ -23,8 +31,7 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 WORKDIR /app
 COPY requirements.spark.txt .
-RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip3 install --no-cache-dir -r requirements.spark.txt
+RUN pip3 install --no-cache-dir -r requirements.spark.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
 # ── Tải JARs vào thư mục jars của Spark ──────────────────────────────────────
 RUN curl --fail --show-error --silent --location --retry 3 \

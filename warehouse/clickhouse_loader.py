@@ -105,6 +105,7 @@ DDL = [
         author_id String,
         content String,
         engagement_score UInt64,
+        sentiment_score Float64,
         loaded_at DateTime
     )
     ENGINE = ReplacingMergeTree(loaded_at)
@@ -125,6 +126,7 @@ DDL = [
     ENGINE = ReplacingMergeTree(loaded_at)
     PARTITION BY toYYYYMM(event_ts)
     ORDER BY (platform, event_ts, post_id)
+    TTL loaded_at + INTERVAL 48 HOUR
     """,
 ]
 
@@ -202,11 +204,22 @@ def json_value(value: Any) -> Any:
     return value
 
 
+TABLE_COLUMNS = {
+    "platform_daily_stats": {"platform", "event_date", "post_count", "avg_sentiment", "total_engagement", "loaded_at"},
+    "top_hashtags_weekly": {"platform", "event_week", "hashtag", "frequency", "rank", "loaded_at"},
+    "author_activity": {"platform", "author_id", "post_count", "avg_sentiment", "total_reach", "loaded_at"},
+    "sentiment_time_series": {"platform", "event_hour", "avg_sentiment", "post_count", "loaded_at"},
+    "top_posts": {"rank", "post_id", "platform", "event_ts", "author_id", "content", "engagement_score", "sentiment_score", "loaded_at"},
+}
+
+
 def normalize_doc(view: str, row: dict, loaded_at: str) -> dict:
     doc = {key: json_value(value) for key, value in row.items()}
     doc["loaded_at"] = loaded_at
     if view == "top_posts":
         doc["event_ts"] = doc.get("event_ts") or "1970-01-01 00:00:00"
+    if view in TABLE_COLUMNS:
+        doc = {k: v for k, v in doc.items() if k in TABLE_COLUMNS[view]}
     return doc
 
 

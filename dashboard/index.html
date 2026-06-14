@@ -2105,8 +2105,20 @@
       }
 
       function normalizeStats(rows) {
+        if (!rows || rows.length === 0) return [];
+        
+        // If it's ClickHouse format (has platform and no key)
+        if (rows[0] && rows[0].platform && !rows[0].key) {
+          return rows.map(row => ({
+            key: row.platform,
+            post_count: number(row.post_count),
+            avg_sentiment: number(row.avg_sentiment),
+            top_hashtag: row.top_hashtag || ''
+          }));
+        }
+
         const groups = {};
-        (rows || []).forEach(row => {
+        rows.forEach(row => {
           const parts = (row.key || '').split(':');
           const windowTime = parts.slice(3).join(':') || row.key || '';
           if (!windowTime) return;

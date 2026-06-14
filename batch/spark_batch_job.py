@@ -124,6 +124,10 @@ def create_spark(shuffle_partitions: int) -> SparkSession:
         .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
         .config("spark.sql.shuffle.partitions", str(shuffle_partitions))
         .config("spark.sql.adaptive.enabled", "true")
+        # Tolerate files that appear in listing but disappear before read
+        # (race condition with concurrent object-store-writer ingestion)
+        .config("spark.sql.files.ignoreMissingFiles", "true")
+        .config("spark.sql.files.ignoreCorruptFiles", "true")
     )
     return configure_s3a(builder).getOrCreate()
 

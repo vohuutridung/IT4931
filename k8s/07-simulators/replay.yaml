@@ -26,7 +26,7 @@ spec:
             - --source
             - data/reddit_data/raw_data
             - --rate
-            - "20"
+            - "5"
             - --kafka-bootstrap
             - kafka-service:9092
           envFrom:
@@ -78,7 +78,7 @@ spec:
             - --source
             - data/facebook_data/raw_data
             - --rate
-            - "20"
+            - "5"
             - --kafka-bootstrap
             - kafka-service:9092
           envFrom:
@@ -130,7 +130,7 @@ spec:
             - --source
             - data/instagram_data/raw_data
             - --rate
-            - "20"
+            - "5"
             - --kafka-bootstrap
             - kafka-service:9092
           envFrom:

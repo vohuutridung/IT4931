@@ -371,14 +371,20 @@ def publish(producer: Producer, topic: str, post: dict, platform: str) -> None:
 
 
 def publish_dlq(producer: Producer, platform: str, raw: dict, error: Exception) -> None:
+    raw_copy = dict(raw)
+    if "comments" in raw_copy:
+        raw_copy["comments"] = f"<Truncated comments list: {len(raw_copy['comments'])} items>"
     payload = {
         "platform": platform,
         "error": str(error),
-        "raw": raw,
+        "raw": raw_copy,
         "failed_at": int(time.time() * 1000),
     }
-    producer.produce(KAFKA_TOPIC_DLQ, value=encode(payload))
-    producer.poll(0)
+    try:
+        producer.produce(KAFKA_TOPIC_DLQ, value=encode(payload))
+        producer.poll(0)
+    except Exception as dlq_exc:
+        logger.error("Failed to publish to DLQ: %s", dlq_exc)
     if publish_errors_total:
         publish_errors_total.labels(platform=platform).inc()
 

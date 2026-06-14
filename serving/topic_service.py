@@ -38,11 +38,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import requests
+from config.settings import ES_HOST
 
 logger = logging.getLogger(__name__)
-
-# ES đã bị loại bỏ — TopicService luôn dùng simulated data fallback
-_ES_HOST = ""
 
 ES_TOPICS_INDEX = "social_topics"
 
@@ -145,11 +143,10 @@ def _simulated_sentiment_heatmap(platform: str | None) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 class TopicService:
-    """Topic service — trả simulated data (ES đã bị loại bỏ)."""
+    """Query topic data from Elasticsearch with simulated-data fallback."""
 
-    def __init__(self, **_kwargs) -> None:
-        pass
-
+    def __init__(self, es_host: str = ES_HOST, **_kwargs) -> None:
+        self.es_host = es_host.rstrip("/")
 
     # ── internal helpers ────────────────────────────────────────────────────
 
@@ -181,19 +178,59 @@ class TopicService:
     # ── public API ──────────────────────────────────────────────────────────
 
     def query_topic_distribution(self, platform: str | None = None) -> list[dict]:
-        """Per-topic post count + keywords + UMAP position — simulated."""
+        """Per-topic post count + keywords + UMAP position."""
+        filters: list[dict] = [{"term": {"view": "topic_distribution"}}]
+        if platform:
+            filters.append({"term": {"platform": platform}})
+
+        results = self._search({"bool": {"filter": filters}}, size=100)
+        if results:
+            return results
+
+        logger.info("topic_distribution: using simulated data")
         return _simulated_topic_distribution(platform)
 
     def query_topic_trend(self, platform: str | None = None, weeks: int = 8) -> list[dict]:
-        """Weekly post count per topic — simulated."""
+        """Weekly post count per topic."""
+        filters: list[dict] = [{"term": {"view": "topic_trend"}}]
+        if platform:
+            filters.append({"term": {"platform": platform}})
+
+        sort = [{"event_week": {"order": "asc"}}]
+        results = self._search({"bool": {"filter": filters}}, size=1000, sort=sort)
+        if results:
+            return results
+
+        logger.info("topic_trend: using simulated data")
         return _simulated_topic_trend(platform, weeks)
 
     def query_sentiment_heatmap(self, platform: str | None = None) -> list[dict]:
-        """Avg sentiment per topic x platform — simulated."""
+        """Avg sentiment per topic × platform."""
+        filters: list[dict] = [{"term": {"view": "topic_sentiment_heatmap"}}]
+        if platform:
+            filters.append({"term": {"platform": platform}})
+
+        results = self._search({"bool": {"filter": filters}}, size=200)
+        if results:
+            return results
+
+        logger.info("topic_sentiment_heatmap: using simulated data")
         return _simulated_sentiment_heatmap(platform)
 
     def query_topic_network(self, platform: str | None = None) -> dict:
-        """Topic co-occurrence network — simulated."""
+        """Topic co-occurrence network (nodes + edges)."""
+        filters: list[dict] = [{"term": {"view": "topic_network"}}]
+        if platform:
+            filters.append({"term": {"platform": platform}})
+
+        results = self._search({"bool": {"filter": filters}}, size=500)
+        if results:
+            # Expect results to contain serialised nodes/edges lists
+            nodes = [r for r in results if r.get("record_type") == "node"]
+            edges = [r for r in results if r.get("record_type") == "edge"]
+            return {"nodes": nodes, "edges": edges}
+
+        logger.info("topic_network: using simulated data")
         return _simulated_topic_network(platform)
 
 

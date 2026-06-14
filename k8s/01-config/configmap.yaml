@@ -16,8 +16,8 @@ data:
   STREAM_STARTING_OFFSETS: "earliest"
   STREAM_TRIGGER_SECS: "5"
   SPEED_WRITE_BATCH_SIZE: "500"
-  BATCH_INPUT_PARTITIONS: "64"
-  BATCH_SHUFFLE_PARTITIONS: "64"
+  BATCH_INPUT_PARTITIONS: "2"
+  BATCH_SHUFFLE_PARTITIONS: "2"
   SPARK_MASTER: "spark://spark-master-service:7077"
   AIRFLOW_SPARK_MASTER: "spark://spark-master-service:7077"
   PYTHONPATH: "/app"
@@ -32,4 +32,11 @@ data:
   CLICKHOUSE_DATABASE: "social"
   CLICKHOUSE_USER: "social"
   REALTIME_WINDOW_HOURS: "3000"
+  ES_HOST: "http://elasticsearch-service:9200"
+  ES_BATCH_INDEX: "social_batch_views"
+  ES_REALTIME_INDEX: "social_realtime_views"
+  ES_BATCH_ALIAS: "batch_current"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+
 

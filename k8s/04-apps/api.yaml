@@ -22,19 +22,12 @@ spec:
             - /bin/sh
             - -c
             - |
-              echo "Waiting for Postgres and ClickHouse..."
+              echo "Waiting for Postgres, ClickHouse, Elasticsearch and Redis..."
               until nc -z postgres-service 5432; do sleep 2; done
               until nc -z clickhouse-service 8123; do sleep 2; done
+              until nc -z elasticsearch-service 9200; do sleep 2; done
+              until nc -z redis-service 6379; do sleep 2; done
               echo "Infra ready!"
-        - name: serving-init
-          image: social-python:0.1.0
-          imagePullPolicy: Never
-          command: ["python", "-m", "serving.es_indexer", "--ensure"]
-          envFrom:
-            - configMapRef:
-                name: social-pipeline-config
-            - secretRef:
-                name: social-pipeline-secrets
       containers:
         - name: api
           image: social-api-ml:0.1.0

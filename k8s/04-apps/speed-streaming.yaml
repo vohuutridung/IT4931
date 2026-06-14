@@ -22,9 +22,8 @@ spec:
             - /bin/sh
             - -c
             - |
-              echo "Waiting for Kafka, Spark Master, and ClickHouse..."
+              echo "Waiting for Kafka and ClickHouse..."
               until nc -z kafka-service 9092; do sleep 2; done
-              until nc -z spark-master-service 7077; do sleep 2; done
               until nc -z clickhouse-service 8123; do sleep 2; done
               echo "Infra ready!"
       containers:
@@ -34,7 +33,7 @@ spec:
           command:
             - /opt/spark/bin/spark-submit
             - --master
-            - spark://spark-master-service:7077
+            - "spark://spark-master-service:7077"
             - --driver-memory
             - 1g
             - --executor-memory
@@ -42,7 +41,13 @@ spec:
             - --total-executor-cores
             - "1"
             - --conf
-            - spark.driver.host=$(SPARK_LOCAL_IP)
+            - spark.driver.host=$(SPARK_POD_IP)
+            - --conf
+            - spark.driver.bindAddress=0.0.0.0
+            - --conf
+            - spark.ui.port=4040
+            - --conf
+            - spark.driver.extraJavaOptions=-Djava.net.preferIPv4Stack=true
             - /app/speed/streaming_job.py
           envFrom:
             - configMapRef:
@@ -51,6 +56,10 @@ spec:
                 name: social-pipeline-secrets
           env:
             - name: SPARK_LOCAL_IP
+              value: "0.0.0.0"
+            - name: SPARK_MASTER
+              value: "spark://spark-master-service:7077"
+            - name: SPARK_POD_IP
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
@@ -65,3 +74,15 @@ spec:
             limits:
               cpu: 800m
               memory: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: speed-streaming-ui-service
+  namespace: social-pipeline
+spec:
+  ports:
+    - port: 4040
+      targetPort: 4040
+  selector:
+    app: speed-streaming

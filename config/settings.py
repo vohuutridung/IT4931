@@ -35,7 +35,15 @@ STORAGE_BATCH_VIEWS_BASE = os.getenv(
     f"s3a://{S3_BUCKET}/data/batch_views",
 )
 
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+ES_HOST = os.getenv("ES_HOST", "http://localhost:9200")
+ES_BATCH_INDEX = os.getenv("ES_BATCH_INDEX", "social_batch_views")
+ES_REALTIME_INDEX = os.getenv("ES_REALTIME_INDEX", "social_realtime_views")
+ES_BATCH_ALIAS = os.getenv("ES_BATCH_ALIAS", "batch_current")
+
 # ── Serving ───────────────────────────────────────────────────────────────────
+
 REALTIME_WINDOW_HOURS = int(os.getenv("REALTIME_WINDOW_HOURS", "24"))
 
 # ── ClickHouse ────────────────────────────────────────────────────────────────

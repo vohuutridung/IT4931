@@ -7,6 +7,8 @@ metadata:
     app: clickhouse
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: clickhouse
@@ -25,7 +27,7 @@ spec:
               name: native
           env:
             - name: CLICKHOUSE_DB
-              value: "social_warehouse"
+              value: "social"
             - name: CLICKHOUSE_USER
               value: "social"
             - name: CLICKHOUSE_PASSWORD
@@ -39,10 +41,10 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 512Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              memory: 1Gi
           readinessProbe:
             httpGet:
               path: /ping
