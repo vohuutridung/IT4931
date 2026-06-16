@@ -19,8 +19,8 @@ from config.spark import configure_s3a
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s - %(message)s")
 logger = logging.getLogger("spark_batch_job")
 
-DEFAULT_BATCH_INPUT_PARTITIONS = int(os.getenv("BATCH_INPUT_PARTITIONS", "64"))
-DEFAULT_BATCH_SHUFFLE_PARTITIONS = int(os.getenv("BATCH_SHUFFLE_PARTITIONS", "64"))
+DEFAULT_BATCH_INPUT_PARTITIONS = int(os.getenv("BATCH_INPUT_PARTITIONS", "8"))   # Giảm từ 64 → 8 (phù hợp 1 core)
+DEFAULT_BATCH_SHUFFLE_PARTITIONS = int(os.getenv("BATCH_SHUFFLE_PARTITIONS", "4"))  # Giảm từ 64 → 4
 BATCH_COLUMNS = [
     "post_id",
     "platform",
@@ -128,6 +128,17 @@ def create_spark(shuffle_partitions: int) -> SparkSession:
         # (race condition with concurrent object-store-writer ingestion)
         .config("spark.sql.files.ignoreMissingFiles", "true")
         .config("spark.sql.files.ignoreCorruptFiles", "true")
+        # --- Resource limits: tránh chiếm toàn bộ worker ---
+        .config("spark.cores.max", "1")                      # Chỉ dùng 1 core
+        .config("spark.executor.cores", "1")
+        .config("spark.executor.memory", "512m")
+        .config("spark.driver.memory", "512m")
+        .config("spark.dynamicAllocation.enabled", "false")  # Tắt dynamic alloc
+        # --- Timeout: tránh zombie app chiếm slot mãi mãi ---
+        .config("spark.network.timeout", "300s")             # 5 phút network timeout
+        .config("spark.executor.heartbeatInterval", "60s")
+        .config("spark.rpc.askTimeout", "120s")
+        .config("spark.sql.broadcastTimeout", "120")
     )
     return configure_s3a(builder).getOrCreate()
 

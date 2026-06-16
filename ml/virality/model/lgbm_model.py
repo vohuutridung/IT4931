@@ -34,6 +34,30 @@ logger = logging.getLogger(__name__)
 N_OPTUNA_TRIALS = int(os.getenv("OPTUNA_TRIALS", "50"))
 
 
+def _lgbm_device() -> dict:
+    """Auto-detect GPU availability và trả về LightGBM device params."""
+    # Kiểm tra biến môi trường (override thủ công)
+    force = os.getenv("LGBM_DEVICE", "").lower()
+    if force == "cpu":
+        logger.info("LightGBM device: CPU (forced via LGBM_DEVICE env)")
+        return {"device": "cpu", "n_jobs": -1}
+    if force == "gpu":
+        logger.info("LightGBM device: GPU (forced via LGBM_DEVICE env)")
+        return {"device": "gpu", "gpu_platform_id": 0, "gpu_device_id": 0, "n_jobs": 1}
+
+    # Auto-detect: kiểm tra CUDA qua PyTorch (sử dụng bởi PhoBERT)
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            logger.info("LightGBM device: GPU (%s)", gpu_name)
+            return {"device": "gpu", "gpu_platform_id": 0, "gpu_device_id": 0, "n_jobs": 1}
+    except ImportError:
+        pass
+    logger.info("LightGBM device: CPU (no CUDA detected)")
+    return {"device": "cpu", "n_jobs": -1}  # CPU: dùng hết cores
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Default hyperparameters
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -53,9 +77,9 @@ DEFAULT_PARAMS: dict = {
     "bagging_freq":     5,
     "reg_alpha":        0.1,
     "reg_lambda":       1.0,
-    "n_jobs":           1,
     "verbose":          -1,
     "random_state":     42,
+    # device và n_jobs sẽ được inject ở runtime bởi _lgbm_device()
 }
 
 
@@ -87,6 +111,10 @@ def train(
     """
     if params is None:
         params = DEFAULT_PARAMS.copy()
+
+    # Inject device params (GPU nếu có, CPU fallback)
+    device_params = _lgbm_device()
+    params = {**params, **device_params}
 
     # Compute sample weights to balance classes
     sample_weights = compute_sample_weight("balanced", y=y_train)
@@ -160,7 +188,7 @@ def tune_hyperparams(
             "n_estimators":      500,
             "verbose":           -1,
             "random_state":      42,
-            "n_jobs":            1,
+            **_lgbm_device(),    # GPU nếu có
             # Search space
             "num_leaves":        trial.suggest_int("num_leaves", 31, 255),
             "learning_rate":     trial.suggest_float("learning_rate", 0.01, 0.1, log=True),

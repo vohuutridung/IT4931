@@ -228,8 +228,13 @@ def load_from_local(raw_data_dir: str) -> pd.DataFrame:
     records: list[dict] = []
     for path in paths:
         try:
-            with open(path, encoding="utf-8") as f:
-                raw = json.load(f)
+            # Thử utf-8 trước, fallback utf-8-sig để xử lý file có BOM
+            try:
+                with open(path, encoding="utf-8") as f:
+                    raw = json.load(f)
+            except ValueError:
+                with open(path, encoding="utf-8-sig") as f:
+                    raw = json.load(f)
             author = raw.get("author") or {}
             # Handle both list-of-posts and single-post formats
             posts = raw if isinstance(raw, list) else [raw]
@@ -249,12 +254,18 @@ def load_from_local(raw_data_dir: str) -> pd.DataFrame:
         except Exception as exc:
             logger.warning("Skipping %s: %s", path, exc)
 
+    if not records:
+        raise RuntimeError(
+            f"No posts could be loaded from {raw_data_dir}. "
+            "Check that post.json files exist and are valid JSON."
+        )
+
     df = pd.DataFrame(records)
     df = df[df["post_id"] != ""]
     df["created_at"] = pd.to_datetime(df["created_at"], unit="s", utc=True, errors="coerce")
     df = df.dropna(subset=["created_at"])
     df = df.sort_values("created_at").reset_index(drop=True)
-    logger.info("Loaded %d posts from local files", len(df))
+    logger.info("Loaded %d posts from local files (skipped %d files)", len(df), len(paths) - len(records))
     return df
 
 

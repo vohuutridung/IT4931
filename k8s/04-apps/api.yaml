@@ -66,11 +66,13 @@ spec:
             periodSeconds: 5
       volumes:
         - name: virality-artifacts
-          persistentVolumeClaim:
-            claimName: virality-artifacts-pvc
+          hostPath:
+            path: /social-pipeline/ml/virality/artifacts
+            type: DirectoryOrCreate
         - name: sentiment-artifacts
-          persistentVolumeClaim:
-            claimName: sentiment-artifacts-pvc
+          hostPath:
+            path: /social-pipeline/ml/sentiment/artifacts
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
