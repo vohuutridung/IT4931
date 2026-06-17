@@ -35,7 +35,7 @@ spec:
               memory: 256Mi
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "airflow"]
+              command: ["pg_isready", "-U", "airflow_local"]
             initialDelaySeconds: 10
             periodSeconds: 5
       volumes:
