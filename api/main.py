@@ -9,22 +9,23 @@ for var in ["SSL_CERT_FILE", "SSL_CERT_DIR"]:
     if var in os.environ and not os.path.exists(os.environ[var]):
         del os.environ[var]
 
-from fastapi import FastAPI, HTTPException, Query, Request, BackgroundTasks
-from fastapi.responses import JSONResponse, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from serving.merge_service import ServeQuery
 from serving.topic_service import TopicService
 from serving.network_service import NetworkService
+from config.settings import API_ADMIN_TOKEN, API_ALLOW_ENV_WRITES, API_CORS_ALLOW_ORIGINS
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Social Lambda Pipeline API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=list(API_CORS_ALLOW_ORIGINS),
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type", "X-Admin-Token"],
 )
 
 
@@ -40,6 +41,13 @@ async def add_cache_control_header(request: Request, call_next):
 service = ServeQuery()
 topics = TopicService()
 network_svc = NetworkService()
+
+
+def require_admin_token(x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")) -> None:
+    if not API_ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Admin API is disabled until API_ADMIN_TOKEN is configured")
+    if x_admin_token != API_ADMIN_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid admin token")
 
 
 def problem(status: int, title: str, detail: str) -> JSONResponse:
@@ -65,15 +73,12 @@ def posts(
     start: datetime | None = None,
     end: datetime | None = None,
     limit: int = Query(100, ge=1, le=500),
-    background_tasks: BackgroundTasks = None,
 ) -> dict:
     if platform and platform not in {"reddit", "facebook", "instagram"}:
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
-    end = end or datetime(2026, 4, 30, 23, 59, 59, tzinfo=timezone.utc)
+    end = end or datetime.now(timezone.utc)
     start = start or end - timedelta(hours=24)
     data = service.query_posts(platform, start, end, limit)
-    if background_tasks and data:
-        background_tasks.add_task(service.write_to_clickhouse, data)
     return {"data": data, "limit": limit}
 
 
@@ -86,7 +91,7 @@ def sentiment_trend(
 ) -> dict:
     if platform and platform not in {"reddit", "facebook", "instagram"}:
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
-    end = end or datetime(2026, 4, 30, 23, 59, 59, tzinfo=timezone.utc)
+    end = end or datetime.now(timezone.utc)
     start = start or end - timedelta(days=7)
     data = service.query_sentiment_trend(platform, granularity, start, end)
     velocities = [float(r.get("velocity") or 0) for r in data[1:]]
@@ -141,7 +146,8 @@ def topic_distribution(platform: str | None = None) -> dict:
     """Per-topic post count, keywords, and UMAP 2-D position."""
     if platform and platform not in {"reddit", "facebook", "instagram"}:
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
-    return {"data": topics.query_topic_distribution(platform)}
+    result = topics.query_topic_distribution(platform)
+    return {"data": result["data"], "simulated": result.get("simulated", False)}
 
 
 @app.get("/api/v1/topics/trend")
@@ -152,7 +158,8 @@ def topic_trend(
     """Weekly post count per topic (for line / animated timeline chart)."""
     if platform and platform not in {"reddit", "facebook", "instagram"}:
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
-    return {"data": topics.query_topic_trend(platform, weeks)}
+    result = topics.query_topic_trend(platform, weeks)
+    return {"data": result["data"], "simulated": result.get("simulated", False)}
 
 
 @app.get("/api/v1/topics/sentiment-heatmap")
@@ -160,7 +167,8 @@ def topic_sentiment_heatmap(platform: str | None = None) -> dict:
     """Average sentiment score per topic × platform (heatmap matrix)."""
     if platform and platform not in {"reddit", "facebook", "instagram"}:
         raise HTTPException(status_code=400, detail="platform must be one of 'reddit', 'facebook', 'instagram'")
-    return {"data": topics.query_sentiment_heatmap(platform)}
+    result = topics.query_sentiment_heatmap(platform)
+    return {"data": result["data"], "simulated": result.get("simulated", False)}
 
 
 @app.get("/api/v1/topics/network")
@@ -200,22 +208,6 @@ def network_pagerank(
     return {"data": network_svc.query_top_influencers(platform, top_n)}
 
 
-# ── Metrics ───────────────────────────────────────────────────────────────────
-
-@app.get("/metrics")
-def metrics() -> Response:
-    try:
-        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-
-        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-    except ImportError as exc:
-        logger.error("Prometheus client not available: %s", exc)
-        raise HTTPException(status_code=503, detail="Metrics unavailable")
-    except Exception as exc:
-        logger.error("Error generating metrics: %s", exc)
-        raise HTTPException(status_code=500, detail="Error generating metrics")
-
-
 # ── Virality Prediction endpoints ─────────────────────────────────────────────
 
 import json as _json
@@ -224,11 +216,17 @@ import re as _re
 import subprocess as _subprocess
 import threading as _threading
 from pathlib import Path as _Path
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 _VIRALITY_ARTIFACTS_DIR = _os.getenv("VIRALITY_ARTIFACTS_DIR", "ml/virality/artifacts")
 _VIRALITY_LOG_FILE      = _os.path.join(_VIRALITY_ARTIFACTS_DIR, "train.log")
 _ENV_FILE               = _os.getenv("ENV_FILE", ".env")
+_PROJECT_ROOT           = _Path(__file__).resolve().parents[1]
+_TRAIN_DATA_ROOTS       = tuple(
+    (_PROJECT_ROOT / part.strip()).resolve()
+    for part in _os.getenv("TRAIN_DATA_ROOTS", "data").split(",")
+    if part.strip()
+)
 
 # Global training state (in-process; resets on API restart)
 _train_state: dict = {"running": False, "pid": None, "started_at": None}
@@ -269,6 +267,44 @@ def _read_retrain_history(n: int = 10) -> list:
         return []
     lines = _Path(path).read_text(encoding="utf-8").splitlines()
     return [_json.loads(line) for line in lines[-n:] if line.strip()]
+
+
+def _resolve_train_data_dir(value: str) -> str:
+    candidate = (_PROJECT_ROOT / value).resolve() if not _Path(value).is_absolute() else _Path(value).resolve()
+    if not any(candidate == root or root in candidate.parents for root in _TRAIN_DATA_ROOTS):
+        raise HTTPException(status_code=400, detail="data_dir must be inside configured TRAIN_DATA_ROOTS")
+    if not candidate.exists() or not candidate.is_dir():
+        raise HTTPException(status_code=400, detail="data_dir does not exist")
+    return str(candidate)
+
+
+def _validate_cron(cron: str) -> str:
+    value = cron.strip()
+    fields = value.split()
+    if len(fields) != 5:
+        raise HTTPException(status_code=400, detail="cron must have exactly 5 fields")
+    if not _re.fullmatch(r"[0-9A-Za-z*/,\-\s]+", value):
+        raise HTTPException(status_code=400, detail="cron contains unsupported characters")
+    return value
+
+
+def _write_env_value(key: str, value: str) -> bool:
+    _os.environ[key] = value
+    if not API_ALLOW_ENV_WRITES:
+        return False
+    env_path = _Path(_ENV_FILE)
+    if env_path.exists():
+        original = env_path.read_text(encoding="utf-8")
+        pattern = _re.compile(rf"^{_re.escape(key)}=.*$", _re.MULTILINE)
+        updated = (
+            pattern.sub(f"{key}={value}", original)
+            if pattern.search(original)
+            else original.rstrip("\n") + f"\n{key}={value}\n"
+        )
+        env_path.write_text(updated, encoding="utf-8")
+    else:
+        env_path.write_text(f"{key}={value}\n", encoding="utf-8")
+    return True
 
 
 @app.get("/api/v1/virality/status")
@@ -334,12 +370,12 @@ def virality_predict(body: ViralityPredictBody) -> dict:
 
 class ViralityTrainBody(BaseModel):
     local:       bool = True
-    data_dir:    str  = "data/facebook_data/raw_data"
+    data_dir:    str  = Field("data/facebook_data/raw_data", max_length=500)
     tune:        bool = False
     use_phobert: bool = False
 
 
-@app.post("/api/v1/virality/train")
+@app.post("/api/v1/virality/train", dependencies=[Depends(require_admin_token)])
 def virality_train(body: ViralityTrainBody) -> dict:
     """Kick off a training job in the background subprocess."""
     with _train_lock:
@@ -354,7 +390,7 @@ def virality_train(body: ViralityTrainBody) -> dict:
 
         cmd = [_sys.executable, "-m", "ml.virality.train",
                "--output-dir", _VIRALITY_ARTIFACTS_DIR]
-        if body.local:          cmd += ["--local", "--data-dir", body.data_dir]
+        if body.local:          cmd += ["--local", "--data-dir", _resolve_train_data_dir(body.data_dir)]
         if body.tune:           cmd += ["--tune"]
         if not body.use_phobert: cmd += ["--no-phobert"]
 
@@ -386,8 +422,8 @@ def virality_train(body: ViralityTrainBody) -> dict:
     return {"ok": True, "message": "Training started", "pid": proc.pid}
 
 
-@app.get("/api/v1/virality/train/log")
-def virality_train_log(tail: int = 50) -> dict:
+@app.get("/api/v1/virality/train/log", dependencies=[Depends(require_admin_token)])
+def virality_train_log(tail: int = Query(50, ge=1, le=500)) -> dict:
     """Return the last N lines of the training log."""
     if not _os.path.exists(_VIRALITY_LOG_FILE):
         return {"ok": True, "lines": [], "running": _train_state["running"]}
@@ -404,27 +440,14 @@ class RetrainScheduleBody(BaseModel):
     cron: str
 
 
-@app.post("/api/v1/virality/retrain-schedule")
+@app.post("/api/v1/virality/retrain-schedule", dependencies=[Depends(require_admin_token)])
 def set_retrain_schedule(body: RetrainScheduleBody) -> dict:
     """Update VIRALITY_RETRAIN_CRON in the .env file (takes effect after Airflow restart)."""
-    cron = body.cron.strip()
-    if len(cron.split()) != 5:
-        raise HTTPException(status_code=400, detail="cron must have exactly 5 fields")
-
-    env_path = _Path(_ENV_FILE)
-    if env_path.exists():
-        original = env_path.read_text(encoding="utf-8")
-        pattern  = _re.compile(r"^VIRALITY_RETRAIN_CRON=.*$", _re.MULTILINE)
-        updated  = (pattern.sub(f"VIRALITY_RETRAIN_CRON={cron}", original)
-                    if pattern.search(original)
-                    else original.rstrip("\n") + f"\nVIRALITY_RETRAIN_CRON={cron}\n")
-        env_path.write_text(updated, encoding="utf-8")
-    else:
-        env_path.write_text(f"VIRALITY_RETRAIN_CRON={cron}\n", encoding="utf-8")
-
-    _os.environ["VIRALITY_RETRAIN_CRON"] = cron
+    cron = _validate_cron(body.cron)
+    persisted = _write_env_value("VIRALITY_RETRAIN_CRON", cron)
     return {"ok": True, "cron": cron,
-            "message": "Saved to .env. Restart Airflow scheduler to apply."}
+            "persisted": persisted,
+            "message": "Schedule updated in process" + (". Restart Airflow scheduler to apply persisted value." if persisted else ".")}
 
 
 # ── Sentiment Model endpoints ─────────────────────────────────────────────────
@@ -534,13 +557,13 @@ def sentiment_predict(body: SentimentPredictBody) -> dict:
 
 class SentimentTrainBody(BaseModel):
     local:      bool = True
-    data_dir:   str  = "data/facebook_data/raw_data"
-    epochs:     int  = 3
-    batch_size: int  = 8
+    data_dir:   str  = Field("data/facebook_data/raw_data", max_length=500)
+    epochs:     int  = Field(3, ge=1, le=20)
+    batch_size: int  = Field(8, ge=1, le=128)
     smoke_test: bool = False
 
 
-@app.post("/api/v1/sentiment/train")
+@app.post("/api/v1/sentiment/train", dependencies=[Depends(require_admin_token)])
 def sentiment_train(body: SentimentTrainBody) -> dict:
     """Kick off a PhoBERT sentiment training job in the background."""
     with _sentiment_train_lock:
@@ -557,7 +580,7 @@ def sentiment_train(body: SentimentTrainBody) -> dict:
                "--output-dir", _SENTIMENT_ARTIFACTS_DIR,
                "--epochs", str(body.epochs),
                "--batch-size", str(body.batch_size)]
-        if body.local:      cmd += ["--local", "--data-dir", body.data_dir]
+        if body.local:      cmd += ["--local", "--data-dir", _resolve_train_data_dir(body.data_dir)]
         if body.smoke_test: cmd += ["--smoke-test"]
 
         env = _os.environ.copy()
@@ -587,8 +610,8 @@ def sentiment_train(body: SentimentTrainBody) -> dict:
     return {"ok": True, "message": "Sentiment training started", "pid": proc.pid}
 
 
-@app.get("/api/v1/sentiment/train/log")
-def sentiment_train_log(tail: int = 50) -> dict:
+@app.get("/api/v1/sentiment/train/log", dependencies=[Depends(require_admin_token)])
+def sentiment_train_log(tail: int = Query(50, ge=1, le=500)) -> dict:
     """Return the last N lines of the sentiment training log."""
     if not _os.path.exists(_SENTIMENT_LOG_FILE):
         return {"ok": True, "lines": [], "running": _sentiment_train_state["running"]}
@@ -605,23 +628,9 @@ class SentimentRetrainScheduleBody(BaseModel):
     cron: str
 
 
-@app.post("/api/v1/sentiment/retrain-schedule")
+@app.post("/api/v1/sentiment/retrain-schedule", dependencies=[Depends(require_admin_token)])
 def set_sentiment_retrain_schedule(body: SentimentRetrainScheduleBody) -> dict:
     """Update SENTIMENT_RETRAIN_CRON in the .env file."""
-    cron = body.cron.strip()
-    if len(cron.split()) != 5:
-        raise HTTPException(status_code=400, detail="cron must have exactly 5 fields")
-
-    env_path = _Path(_ENV_FILE)
-    if env_path.exists():
-        original = env_path.read_text(encoding="utf-8")
-        pattern  = _re.compile(r"^SENTIMENT_RETRAIN_CRON=.*$", _re.MULTILINE)
-        updated  = (pattern.sub(f"SENTIMENT_RETRAIN_CRON={cron}", original)
-                    if pattern.search(original)
-                    else original.rstrip("\n") + f"\nSENTIMENT_RETRAIN_CRON={cron}\n")
-        env_path.write_text(updated, encoding="utf-8")
-    else:
-        env_path.write_text(f"SENTIMENT_RETRAIN_CRON={cron}\n", encoding="utf-8")
-
-    _os.environ["SENTIMENT_RETRAIN_CRON"] = cron
-    return {"ok": True, "cron": cron, "message": "Saved to .env."}
+    cron = _validate_cron(body.cron)
+    persisted = _write_env_value("SENTIMENT_RETRAIN_CRON", cron)
+    return {"ok": True, "cron": cron, "persisted": persisted, "message": "Schedule updated in process."}

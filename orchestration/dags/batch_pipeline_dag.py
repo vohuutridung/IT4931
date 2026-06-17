@@ -56,25 +56,27 @@ def _latest_raw_marker() -> str | None:
     return f"{latest_modified.isoformat()}::{latest_key}"
 
 
-def has_new_raw_data() -> bool:
+def has_new_raw_data(**context) -> bool:
     latest = _latest_raw_marker()
     if latest is None:
         return False
+    context["ti"].xcom_push(key="raw_marker", value=latest)
     previous = Variable.get(RAW_DATA_MARKER_VARIABLE, default_var="")
     return latest != previous
 
 
-def mark_raw_data_processed() -> None:
-    latest = _latest_raw_marker()
-    if latest:
-        Variable.set(RAW_DATA_MARKER_VARIABLE, latest)
+def mark_raw_data_processed(**context) -> None:
+    marker = context["ti"].xcom_pull(task_ids="check_new_data", key="raw_marker")
+    if marker:
+        Variable.set(RAW_DATA_MARKER_VARIABLE, marker)
 
 
 with DAG(
     dag_id="social_lambda_batch_pipeline",
     start_date=datetime(2026, 5, 1),
-    schedule="*/5 * * * *",
+    schedule="*/10 * * * *",
     catchup=False,
+    max_active_runs=1,
     on_failure_callback=slack_failure_callback,
 ) as dag:
     check_new_data = ShortCircuitOperator(
@@ -142,7 +144,7 @@ with DAG(
     run_network_analysis = BashOperator(
         task_id="run_network_analysis",
         bash_command=(
-            "export PYTHONPATH=/opt/social_pipeline && "
+            "export PYTHONPATH=/opt/social_pipeline NETWORK_ANALYSIS_SPARK_MASTER='local[2]' && "
             "cd /opt/social_pipeline && "
             "python -m batch.network_analysis"
         ),
@@ -155,4 +157,3 @@ with DAG(
 
     check_new_data >> run_spark_batch >> [clickhouse_load, elasticsearch_load] >> run_network_analysis >> mark_processed
     [check_new_data, run_spark_batch, clickhouse_load, elasticsearch_load, run_network_analysis, mark_processed] >> send_slack_alert
-

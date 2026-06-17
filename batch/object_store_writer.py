@@ -16,13 +16,16 @@ from urllib.parse import urlparse
 import boto3
 import pyarrow as pa
 import pyarrow.parquet as pq
-from confluent_kafka import Consumer, KafkaError
+from confluent_kafka import Consumer, KafkaError, Producer
 
 from config.settings import (
     CONSUMER_FLUSH_SIZE,
     CONSUMER_FLUSH_INTERVAL,
+    EVENT_TIME_MAX,
+    EVENT_TIME_MIN,
     KAFKA_ALL_SOURCE_TOPICS,
     KAFKA_BOOTSTRAP_SERVERS,
+    KAFKA_TOPIC_DLQ,
     MAX_RETRIES,
     RETRY_BACKOFF_BASE,
     S3_ACCESS_KEY,
@@ -121,6 +124,34 @@ def partition_key(row: dict) -> tuple[str, int, int, int]:
     return row["platform"], dt.year, dt.month, dt.day
 
 
+def _epoch_bound(value: str, *, end_of_day: bool = False) -> datetime | None:
+    if not value:
+        return None
+    raw = value.strip()
+    try:
+        epoch = float(raw)
+        if epoch > 10_000_000_000:
+            epoch = epoch / 1000
+        return datetime.fromtimestamp(epoch, tz=timezone.utc)
+    except ValueError:
+        pass
+    if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
+        raw = f"{raw}T23:59:59+00:00" if end_of_day else f"{raw}T00:00:00+00:00"
+    elif raw.endswith("Z"):
+        raw = f"{raw[:-1]}+00:00"
+    return datetime.fromisoformat(raw).astimezone(timezone.utc)
+
+
+def _within_event_time_bounds(dt: datetime) -> bool:
+    min_dt = _epoch_bound(EVENT_TIME_MIN)
+    max_dt = _epoch_bound(EVENT_TIME_MAX, end_of_day=True)
+    if min_dt and dt < min_dt:
+        return False
+    if max_dt and dt > max_dt:
+        return False
+    return True
+
+
 def _parse_timestamp(iso_value, epoch_value=None) -> datetime:
     if iso_value:
         if isinstance(iso_value, datetime):
@@ -189,20 +220,35 @@ def flush(client, buffers: dict[tuple[str, int, int, int], list[dict]]) -> int:
     count = 0
     for key, rows in list(buffers.items()):
         if rows:
-            platform, year, month, day = key
-            if year == 2026 and 1 <= month <= 4:
-                storage_base = STORAGE_RAW_BASE
-            else:
-                storage_base = STORAGE_DISCARDED_BASE
+            storage_base = STORAGE_RAW_BASE if _within_event_time_bounds(rows[0]["created_at"]) else STORAGE_DISCARDED_BASE
             write_rows(client, rows, key, storage_base)
             count += len(rows)
             del buffers[key]
     return count
 
 
+def publish_dlq(producer: Producer, msg, error: Exception) -> bool:
+    try:
+        payload = {
+            "error": str(error),
+            "failed_at": datetime.now(timezone.utc).isoformat(),
+            "source_topic": msg.topic(),
+            "source_partition": msg.partition(),
+            "source_offset": msg.offset(),
+            "raw_value": msg.value().decode("utf-8", errors="replace") if msg.value() is not None else None,
+        }
+        producer.produce(KAFKA_TOPIC_DLQ, json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+        producer.flush(5)
+        return True
+    except Exception as exc:
+        logger.error("Failed to publish malformed message to DLQ: %s", exc)
+        return False
+
+
 def run() -> None:
     client = s3_client()
     ensure_bucket(client)
+    dlq_producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS})
     consumer = Consumer({
         "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
         "group.id": os.getenv("KAFKA_CONSUMER_GROUP", "batch-consumer"),
@@ -230,16 +276,20 @@ def run() -> None:
                         raise ValueError("missing platform or created_at")
                     buffers[partition_key(row)].append(row)
                 except Exception as exc:
-                    logger.warning("Skipping malformed Kafka message: %s", exc)
+                    logger.warning("Publishing malformed Kafka message to DLQ: %s", exc)
+                    if publish_dlq(dlq_producer, msg, exc) and not any(buffers.values()):
+                        consumer.commit(message=msg, asynchronous=False)
 
             buffered = sum(len(rows) for rows in buffers.values())
             if buffered >= flush_size or (buffered and time.monotonic() - last_flush >= CONSUMER_FLUSH_INTERVAL):
                 total += flush(client, buffers)
+                dlq_producer.flush(5)
                 consumer.commit()
                 last_flush = time.monotonic()
                 logger.info("Committed offsets after object store write | total=%d", total)
     finally:
         total += flush(client, buffers)
+        dlq_producer.flush(5)
         consumer.commit()
         consumer.close()
         logger.info("Stopped | total=%d", total)

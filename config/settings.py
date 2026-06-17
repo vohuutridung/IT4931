@@ -2,10 +2,31 @@
 
 import os
 
+
+def _bool_env(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _csv_env(name: str, default: tuple[str, ...] = ()) -> tuple[str, ...]:
+    value = os.getenv(name)
+    if not value:
+        return default
+    return tuple(item.strip() for item in value.split(",") if item.strip())
+
 # ── Kafka ─────────────────────────────────────────────────────────────────────
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 
 ENV = os.getenv("ENV", "dev")
+API_ADMIN_TOKEN = os.getenv("API_ADMIN_TOKEN", "")
+API_ALLOW_ENV_WRITES = _bool_env("API_ALLOW_ENV_WRITES", False)
+API_CORS_ALLOW_ORIGINS = _csv_env(
+    "API_CORS_ALLOW_ORIGINS",
+    ("http://localhost:8084", "http://127.0.0.1:8084"),
+)
+ENABLE_DEMO_FALLBACK = _bool_env("ENABLE_DEMO_FALLBACK", False)
 KAFKA_TOPIC_DLQ = os.getenv("KAFKA_TOPIC_DLQ", "social.dlq")
 KAFKA_TOPIC_ENRICHED = os.getenv("KAFKA_TOPIC_ENRICHED", "social.enriched.posts")
 KAFKA_SOURCE_TOPICS = {
@@ -21,18 +42,24 @@ SPARK_MASTER   = os.getenv("SPARK_MASTER") or "spark://spark-master:7077"
 
 # ── Object Storage (MinIO) ────────────────────────────────────────────────────
 S3_ENDPOINT = os.getenv("S3_ENDPOINT", "http://localhost:9000")
-S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY") or "minioadmin"
-S3_SECRET_KEY = os.getenv("S3_SECRET_KEY") or "minioadmin"
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
 S3_BUCKET = os.getenv("S3_BUCKET", "social-lake")
-if ENV == "production" and ("minioadmin" in S3_ACCESS_KEY or "minioadmin" in S3_SECRET_KEY):
-    raise ValueError("ERROR: Using default S3 credentials in production! Set S3_ACCESS_KEY and S3_SECRET_KEY")
+if ENV == "production" and (not S3_ACCESS_KEY or not S3_SECRET_KEY):
+    raise ValueError("ERROR: Missing S3 credentials in production! Set S3_ACCESS_KEY and S3_SECRET_KEY")
 S3_REGION = os.getenv("S3_REGION", "us-east-1")
 S3_PATH_STYLE_ACCESS = os.getenv("S3_PATH_STYLE_ACCESS", "true")
 STORAGE_RAW_BASE = os.getenv("STORAGE_RAW_BASE", f"s3a://{S3_BUCKET}/data/raw")
 STORAGE_DISCARDED_BASE = os.getenv("STORAGE_DISCARDED_BASE", f"s3a://{S3_BUCKET}/data/discarded")
+EVENT_TIME_MIN = os.getenv("EVENT_TIME_MIN", "")
+EVENT_TIME_MAX = os.getenv("EVENT_TIME_MAX", "")
 STORAGE_BATCH_VIEWS_BASE = os.getenv(
     "STORAGE_BATCH_VIEWS_BASE",
     f"s3a://{S3_BUCKET}/data/batch_views",
+)
+STREAM_CHECKPOINT_BASE = os.getenv(
+    "STREAM_CHECKPOINT_BASE",
+    f"s3a://{S3_BUCKET}/checkpoints/speed",
 )
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")

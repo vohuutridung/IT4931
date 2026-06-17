@@ -69,6 +69,7 @@ COPY config/     config/
 COPY serving/    serving/
 COPY scripts/    scripts/
 COPY warehouse/  warehouse/
+COPY shared/     shared/
 RUN touch __init__.py
 
 # ── Runtime writable directories ──────────────────────────────────────────────

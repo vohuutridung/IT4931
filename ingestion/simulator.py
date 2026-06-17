@@ -22,19 +22,14 @@ from confluent_kafka import Producer
 
 from ingestion.normalizers import facebook, instagram, reddit
 from config.settings import (
+    EVENT_TIME_MAX,
+    EVENT_TIME_MIN,
     KAFKA_BOOTSTRAP_SERVERS,
     KAFKA_SOURCE_TOPICS,
     KAFKA_TOPIC_DLQ,
     REPLAY_DEDUPE,
     REPLAY_RATE_PER_SEC,
 )
-
-try:
-    from prometheus_client import Counter, Histogram, start_http_server
-except Exception:  # pragma: no cover - optional dependency fallback
-    Counter = Histogram = None
-    start_http_server = None
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,8 +38,32 @@ logging.basicConfig(
 logger = logging.getLogger("simulator")
 
 
+def _epoch_bound(value: str, *, end_of_day: bool = False) -> float | None:
+    if not value:
+        return None
+    raw = value.strip()
+    try:
+        return float(raw)
+    except ValueError:
+        pass
+    if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
+        raw = f"{raw}T23:59:59+00:00" if end_of_day else f"{raw}T00:00:00+00:00"
+    elif raw.endswith("Z"):
+        raw = f"{raw[:-1]}+00:00"
+    return datetime.fromisoformat(raw).astimezone(timezone.utc).timestamp()
+
+
+def _validate_event_time_range(event_time_sec: float) -> None:
+    min_ts = _epoch_bound(EVENT_TIME_MIN)
+    max_ts = _epoch_bound(EVENT_TIME_MAX, end_of_day=True)
+    if min_ts is not None and event_time_sec < min_ts:
+        raise OutOfRangeError(f"timestamp {event_time_sec} before EVENT_TIME_MIN={EVENT_TIME_MIN}")
+    if max_ts is not None and event_time_sec > max_ts:
+        raise OutOfRangeError(f"timestamp {event_time_sec} after EVENT_TIME_MAX={EVENT_TIME_MAX}")
+
+
 class OutOfRangeError(ValueError):
-    """Exception raised when a post timestamp is outside the valid range [2026-01-01, 2026-04-30]."""
+    """Exception raised when a post timestamp is outside configured event-time bounds."""
     pass
 
 
@@ -71,20 +90,6 @@ REQUIRED_POST_FIELDS = {
 }
 
 METRIC_FIELDS = {"likes", "comments", "shares", "views"}
-
-records_published_total = (
-    Counter("records_published_total", "Records published", ["platform"])
-    if Counter else None
-)
-publish_errors_total = (
-    Counter("publish_errors_total", "Publish or validation errors", ["platform"])
-    if Counter else None
-)
-publish_latency_seconds = (
-    Histogram("publish_latency_seconds", "Kafka publish latency", ["platform"])
-    if Histogram else None
-)
-
 
 class TokenBucket:
     def __init__(self, rate: float, capacity: float | None = None) -> None:
@@ -200,9 +205,7 @@ def to_sop_schema(platform: str, raw: dict, post: dict) -> dict:
         event_time_sec = float(post["event_time"])
         if event_time_sec > 10_000_000_000:
             event_time_sec = event_time_sec / 1000
-        # Filter: Jan 1, 2026 is 1767225600.0, Apr 30, 2026 is 1777593599.0
-        if not (1767225600.0 <= event_time_sec <= 1777593599.0):
-            raise OutOfRangeError(f"timestamp {event_time_sec} outside range 2026-01-01 to 2026-04-30")
+        _validate_event_time_range(event_time_sec)
     except (TypeError, ValueError) as exc:
         if isinstance(exc, OutOfRangeError):
             raise
@@ -361,13 +364,9 @@ def encode(post: dict) -> bytes:
     return json.dumps(post, ensure_ascii=False, default=str).encode("utf-8")
 
 
-def publish(producer: Producer, topic: str, post: dict, platform: str) -> None:
-    started = time.monotonic()
+def publish(producer: Producer, topic: str, post: dict) -> None:
     producer.produce(topic=topic, key=str(post["post_id"]).encode(), value=encode(post))
     producer.poll(0)
-    if records_published_total:
-        records_published_total.labels(platform=platform).inc()
-        publish_latency_seconds.labels(platform=platform).observe(time.monotonic() - started)
 
 
 def publish_dlq(producer: Producer, platform: str, raw: dict, error: Exception) -> None:
@@ -385,8 +384,6 @@ def publish_dlq(producer: Producer, platform: str, raw: dict, error: Exception) 
         producer.poll(0)
     except Exception as dlq_exc:
         logger.error("Failed to publish to DLQ: %s", dlq_exc)
-    if publish_errors_total:
-        publish_errors_total.labels(platform=platform).inc()
 
 
 def replay(
@@ -421,7 +418,7 @@ def replay(
                             skipped_duplicates += 1
                             continue
                         seen_post_ids.add(post_id)
-                        publish(producer, topic, post, platform)
+                        publish(producer, topic, post)
                         emitted += 1
                         total += 1
                     except OutOfRangeError:
@@ -464,19 +461,10 @@ def main() -> None:
     parser.add_argument("--kafka-bootstrap", default=KAFKA_BOOTSTRAP_SERVERS)
     parser.add_argument("--dedupe", type=parse_bool, default=REPLAY_DEDUPE)
     parser.add_argument("--max-records", type=int)
-    parser.add_argument("--metrics-port", type=int, default=9101)
-    parser.add_argument("--metrics-hold-seconds", type=int, default=0)
     args = parser.parse_args()
-
-    if start_http_server:
-        start_http_server(args.metrics_port)
-        logger.info("Prometheus metrics listening on :%d", args.metrics_port)
 
     source = args.source or default_source_for_platform(args.platform)
     replay(source, args.platform, args.rate, args.loop, args.kafka_bootstrap, args.dedupe, args.max_records)
-    if args.metrics_hold_seconds > 0:
-        logger.info("Keeping metrics endpoint alive for %d seconds", args.metrics_hold_seconds)
-        time.sleep(args.metrics_hold_seconds)
 
 
 if __name__ == "__main__":

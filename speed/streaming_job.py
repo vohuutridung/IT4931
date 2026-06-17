@@ -9,10 +9,15 @@ from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import ArrayType, LongType, StringType, StructField, StructType
 
 from config.settings import (
+    EVENT_TIME_MAX,
+    EVENT_TIME_MIN,
     KAFKA_ALL_SOURCE_TOPICS,
     KAFKA_BOOTSTRAP_SERVERS,
+    KAFKA_TOPIC_DLQ,
+    KAFKA_TOPIC_ENRICHED,
     SPARK_MASTER,
     SPEED_WRITE_BATCH_SIZE,
+    STREAM_CHECKPOINT_BASE,
     STREAM_STARTING_OFFSETS,
     STREAM_TRIGGER_SECS,
 )
@@ -70,13 +75,13 @@ def foreach_batch(df, batch_id: int) -> None:
 
     chunk: list[dict] = []
     total = 0
-    for spark_row in df.collect():
+    for spark_row in df.toLocalIterator():
         row = spark_row.asDict(recursive=True)
         enriched = dict(row, enrichment=enrich_post(row))
         chunk.append(enriched)
         
         _producer.produce(
-            "social.enriched.posts",
+            KAFKA_TOPIC_ENRICHED,
             key=str(enriched.get("post_id", "")).encode("utf-8"),
             value=json.dumps(enriched).encode("utf-8")
         )
@@ -96,12 +101,6 @@ def foreach_batch(df, batch_id: int) -> None:
 
 
 def main() -> None:
-    try:
-        from warehouse.clickhouse_loader import ensure_realtime_table
-        ensure_realtime_table()
-    except Exception as exc:
-        logger.warning("Could not ensure ClickHouse schema: %s", exc)
-
     spark = create_spark()
     raw = (
         spark.readStream.format("kafka")
@@ -116,33 +115,36 @@ def main() -> None:
         .select(F.from_json("json_value", POST_SCHEMA).alias("post"), "json_value")
     )
     ts = F.col("post.created_at").cast("timestamp")
-    good = parsed.filter(
+    good_condition = (
         F.col("post.post_id").isNotNull()
         & F.col("post.platform").isNotNull()
         & F.col("post.created_at").isNotNull()
-        & (ts >= F.lit("2026-01-01 00:00:00"))
-    ).select("post.*")
-    bad = parsed.filter(
-        F.col("post.post_id").isNull()
-        | F.col("post.platform").isNull()
-        | F.col("post.created_at").isNull()
-        | ts.isNull()
-        | (ts < F.lit("2026-01-01 00:00:00"))
+        & ts.isNotNull()
     )
+    if EVENT_TIME_MIN:
+        good_condition = good_condition & (ts >= F.lit(EVENT_TIME_MIN))
+    if EVENT_TIME_MAX:
+        max_value = EVENT_TIME_MAX
+        if len(max_value) == 10 and max_value[4] == "-" and max_value[7] == "-":
+            max_value = f"{max_value} 23:59:59"
+        good_condition = good_condition & (ts <= F.lit(max_value))
+
+    good = parsed.filter(good_condition).select("post.*")
+    bad = parsed.filter(~good_condition)
 
     (
         bad.selectExpr("CAST(json_value AS STRING) AS value")
         .writeStream.format("kafka")
         .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
-        .option("topic", "social.dlq")
-        .option("checkpointLocation", "s3a://social-lake/checkpoints/speed/dlq")
+        .option("topic", KAFKA_TOPIC_DLQ)
+        .option("checkpointLocation", f"{STREAM_CHECKPOINT_BASE.rstrip('/')}/dlq")
         .start()
     )
 
     (
         good.writeStream.foreachBatch(foreach_batch)
         .trigger(processingTime=f"{STREAM_TRIGGER_SECS} seconds")
-        .option("checkpointLocation", "s3a://social-lake/checkpoints/speed/enriched")
+        .option("checkpointLocation", f"{STREAM_CHECKPOINT_BASE.rstrip('/')}/enriched")
         .start()
         .awaitTermination()
     )

@@ -138,6 +138,10 @@ secrets.yml
 secrets/
 .secrets/
 credentials.json
+
+# Kubernetes local secrets. Commit *.yaml.example templates only.
+k8s/**/secrets.yaml
+!k8s/**/secrets.yaml.example
 *.secret
 *.secrets
 *.token

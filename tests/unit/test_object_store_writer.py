@@ -1,5 +1,5 @@
 from unittest.mock import MagicMock, patch
-from batch.object_store_writer import flatten, parse_object_uri, partition_key, flush
+from batch.object_store_writer import flatten, parse_object_uri, partition_key, flush, publish_dlq
 from config.settings import STORAGE_RAW_BASE, STORAGE_DISCARDED_BASE
 
 
@@ -26,7 +26,9 @@ def test_flatten_and_partition_key():
 
 
 @patch("batch.object_store_writer.write_rows")
-def test_flush_routing(mock_write_rows):
+def test_flush_routing(mock_write_rows, monkeypatch):
+    monkeypatch.setattr("batch.object_store_writer.EVENT_TIME_MIN", "2026-01-01")
+    monkeypatch.setattr("batch.object_store_writer.EVENT_TIME_MAX", "2026-04-30")
     client = MagicMock()
     
     # 1. Dữ liệu hợp lệ (trong khoảng Jan - Apr 2026)
@@ -79,3 +81,32 @@ def test_flush_routing(mock_write_rows):
         else:
             assert storage_base == STORAGE_DISCARDED_BASE
 
+
+def test_flush_routes_all_to_raw_when_no_time_bounds(monkeypatch):
+    monkeypatch.setattr("batch.object_store_writer.EVENT_TIME_MIN", "")
+    monkeypatch.setattr("batch.object_store_writer.EVENT_TIME_MAX", "")
+    row = flatten({
+        "post_id": "p1",
+        "platform": "reddit",
+        "created_at": "2026-05-01T00:00:00Z",
+        "ingested_at": "2026-05-01T00:01:00Z",
+    })
+    buffers = {partition_key(row): [row]}
+    with patch("batch.object_store_writer.write_rows") as mock_write_rows:
+        flush(MagicMock(), buffers)
+    assert mock_write_rows.call_args.args[3] == STORAGE_RAW_BASE
+
+
+def test_publish_dlq_includes_source_metadata():
+    producer = MagicMock()
+    msg = MagicMock()
+    msg.topic.return_value = "social.reddit.posts"
+    msg.partition.return_value = 2
+    msg.offset.return_value = 10
+    msg.value.return_value = b"{bad json"
+
+    assert publish_dlq(producer, msg, ValueError("bad payload")) is True
+    topic, payload = producer.produce.call_args.args
+    assert topic == "social.dlq"
+    assert b"bad payload" in payload
+    producer.flush.assert_called_once_with(5)

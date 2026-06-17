@@ -32,6 +32,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from ml.virality.safe_artifacts import safe_pickle_path
+
 logger = logging.getLogger(__name__)
 
 LABEL_NAMES = ["Low", "Medium", "High", "Viral"]
@@ -76,7 +78,7 @@ class ViralityPredictor:
                 f"Artifact not found: {path}. Run ml.virality.train first."
             )
         if loader == "pickle":
-            with open(path, "rb") as f:
+            with open(safe_pickle_path(path), "rb") as f:
                 return pickle.load(f)
         if loader == "json":
             with open(path, encoding="utf-8") as f:

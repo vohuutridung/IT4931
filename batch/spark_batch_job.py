@@ -6,15 +6,22 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import re
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
 from pyspark import StorageLevel
 from pyspark.sql.types import DoubleType
 from pyspark.sql.window import Window
 
-from config.settings import SPARK_MASTER, STORAGE_BATCH_VIEWS_BASE, STORAGE_RAW_BASE, SENTIMENT_ARTIFACTS_DIR
+from config.settings import (
+    EVENT_TIME_MAX,
+    EVENT_TIME_MIN,
+    SENTIMENT_ARTIFACTS_DIR,
+    SPARK_MASTER,
+    STORAGE_BATCH_VIEWS_BASE,
+    STORAGE_RAW_BASE,
+)
 from config.spark import configure_s3a
+from shared.sentiment import lexicon_sentiment
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s - %(message)s")
 logger = logging.getLogger("spark_batch_job")
@@ -36,84 +43,21 @@ BATCH_COLUMNS = [
 ]
 
 
-# Sentiment lexicons (for use in UDF)
-POSITIVE = {
-    "amazing", "awesome", "beautiful", "benefit", "best", "better", "bullish", "calm",
-    "clear", "confident", "constructive", "cute", "enjoy", "excellent", "gain", "gains",
-    "good", "great", "growth", "happy", "hope", "hopeful", "improve", "improved",
-    "like", "love", "positive", "profit", "profits", "recover", "recovery", "safe",
-    "strong", "support", "useful", "win", "winner",
-    "ổn", "tốt", "hay", "vui", "thích", "yêu", "đẹp", "xinh", "đỉnh", "tuyệt",
-    "tuyệtvời", "hạnhphúc", "ủnghộ", "lãi", "tăng", "mạnh", "khỏe", "an toàn",
-}
-NEGATIVE = {
-    "angry", "awful", "bad", "bearish", "beware", "catastrophic", "concern", "crack",
-    "crash", "crisis", "cut", "cuts", "decline", "debt", "drop", "fall", "falling",
-    "fear", "fraud", "gap", "hate", "inflation", "loss", "losses", "losing", "miss",
-    "negative", "poor", "problem", "risk", "sad", "scam", "terrible", "weak", "worse",
-    "worst", "worried",
-    "buồn", "tệ", "xấu", "ghét", "chán", "khóc", "giận", "lo", "rủi ro", "lỗ",
-    "giảm", "sập", "khủng hoảng", "thất vọng", "đau", "kém",
-}
-POSITIVE_EMOJI = {"😀", "😃", "😄", "😁", "😊", "😍", "🥰", "❤️", "❤", "👍", "🔥", "✨"}
-NEGATIVE_EMOJI = {"😢", "😭", "😡", "😠", "💔", "👎", "😞", "😔", "😟", "😨"}
-
-
-def _normalize_text(text: str) -> str:
-    """Normalize Vietnamese text for sentiment analysis."""
-    replacements = {
-        "áàảãạăắằẳẵặâấầẩẫậ": "a",
-        "éèẻẽẹêếềểễệ": "e",
-        "íìỉĩị": "i",
-        "óòỏõọôốồổỗộơớờởỡợ": "o",
-        "úùủũụưứừửữự": "u",
-        "ýỳỷỹỵ": "y",
-        "đ": "d",
-    }
-    output = text.lower()
-    for chars, replacement in replacements.items():
-        for char in chars:
-            output = output.replace(char, replacement)
-    return re.sub(r"\s+", " ", output)
-
-
-# Pre-normalize the lexicon once globally to avoid running loop with thousands of replacements for every single row.
-NORMALIZED_POSITIVE_WORDS = {_normalize_text(word) for word in POSITIVE if " " not in word}
-NORMALIZED_NEGATIVE_WORDS = {_normalize_text(word) for word in NEGATIVE if " " not in word}
-NORMALIZED_POSITIVE_PHRASES = [(_normalize_text(phrase), phrase) for phrase in POSITIVE if " " in phrase]
-NORMALIZED_NEGATIVE_PHRASES = [(_normalize_text(phrase), phrase) for phrase in NEGATIVE if " " in phrase]
+def _apply_event_time_bounds(df: DataFrame) -> DataFrame:
+    bounded = df
+    if EVENT_TIME_MIN:
+        bounded = bounded.filter(F.col("event_ts") >= F.lit(EVENT_TIME_MIN))
+    if EVENT_TIME_MAX:
+        max_value = EVENT_TIME_MAX
+        if len(max_value) == 10 and max_value[4] == "-" and max_value[7] == "-":
+            max_value = f"{max_value} 23:59:59"
+        bounded = bounded.filter(F.col("event_ts") <= F.lit(max_value))
+    return bounded
 
 
 def _lexicon_sentiment_batch(text: str) -> float:
-    """Lightweight lexicon-based sentiment analysis (for batch layer)."""
-    if not text:
-        return 0.0
-    
-    normalized = _normalize_text(text)
-    tokens = re.findall(r"[a-z0-9_]+", normalized)
-    token_count = max(len(tokens), 1)
-    token_set = set(tokens)
-    
-    positive = len(token_set & NORMALIZED_POSITIVE_WORDS)
-    negative = len(token_set & NORMALIZED_NEGATIVE_WORDS)
-
-    for norm_phrase, phrase in NORMALIZED_POSITIVE_PHRASES:
-        if norm_phrase in normalized:
-            positive += 1
-    for norm_phrase, phrase in NORMALIZED_NEGATIVE_PHRASES:
-        if norm_phrase in normalized:
-            negative += 1
-
-    positive += sum(text.count(item) for item in POSITIVE_EMOJI)
-    negative += sum(text.count(item) for item in NEGATIVE_EMOJI)
-
-    exclamation_boost = min(text.count("!"), 3) * 0.03
-    raw = (positive - negative) / max(token_count**0.5, 1)
-    if raw > 0:
-        raw += exclamation_boost
-    elif raw < 0:
-        raw -= exclamation_boost
-    return max(-1.0, min(1.0, raw))
+    """Lexicon-based sentiment — delegates to shared module for consistency."""
+    return lexicon_sentiment(text)
 
 
 def create_spark(shuffle_partitions: int) -> SparkSession:
@@ -166,6 +110,7 @@ def read_raw(spark: SparkSession, platform: str | None, date: str | None) -> Dat
     else:
         from functools import reduce
         df = reduce(DataFrame.unionByName, dfs)
+        df = df.dropDuplicates(["post_id"])
     if date:
         year, month, day = date.split("-")
         df = df.filter(
@@ -250,19 +195,16 @@ def add_common_columns(df: DataFrame) -> DataFrame:
         + F.coalesce(F.col("comments"), F.lit(0)) * 2
         + F.coalesce(F.col("shares"), F.lit(0)) * 3
     )
-    return (
+    enriched = (
         df
         .withColumn("event_ts", F.col("created_at").cast("timestamp"))
-        .filter(
-            (F.col("event_ts") >= F.lit("2026-01-01 00:00:00"))
-            & (F.col("event_ts") <= F.lit("2026-04-30 23:59:59"))
-        )
         .withColumn("event_date", F.to_date("event_ts"))
         .withColumn("event_hour", F.date_trunc("hour", F.col("event_ts")))
         .withColumn("event_week", F.date_trunc("week", F.col("event_ts")))
         .withColumn("sentiment_score", sentiment.cast("double"))
         .withColumn("engagement_score", engagement.cast("long"))
     )
+    return _apply_event_time_bounds(enriched)
 
 
 def project_batch_columns(df: DataFrame) -> DataFrame:

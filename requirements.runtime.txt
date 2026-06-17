@@ -6,7 +6,5 @@ requests==2.32.3
 boto3==1.34.131
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
-prometheus-client==0.20.0
 langdetect==1.0.9
 redis==5.0.4
-

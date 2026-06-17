@@ -90,6 +90,10 @@ DDL = [
         event_hour DateTime,
         avg_sentiment Float64,
         post_count UInt64,
+        positive_count UInt64,
+        negative_count UInt64,
+        neutral_count UInt64,
+        weighted_sentiment Float64,
         loaded_at DateTime
     )
     ENGINE = ReplacingMergeTree(loaded_at)
@@ -111,22 +115,6 @@ DDL = [
     ENGINE = ReplacingMergeTree(loaded_at)
     PARTITION BY toYYYYMM(event_ts)
     ORDER BY (platform, event_ts, rank, post_id)
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS realtime_posts (
-        post_id String,
-        platform LowCardinality(String),
-        author_id String,
-        content String,
-        hashtags Array(String),
-        sentiment Float64,
-        event_ts DateTime,
-        loaded_at DateTime
-    )
-    ENGINE = ReplacingMergeTree(loaded_at)
-    PARTITION BY toYYYYMM(event_ts)
-    ORDER BY (platform, event_ts, post_id)
-    TTL loaded_at + INTERVAL 48 HOUR
     """,
 ]
 
@@ -179,11 +167,6 @@ def ensure_schema() -> None:
         clickhouse(ddl)
 
 
-def ensure_realtime_table() -> None:
-    """Ensure the realtime table is created (can be called by speed layer or tests)."""
-    ensure_schema()
-
-
 def truncate_tables(tables: list[str]) -> None:
     valid_tables = set(VIEWS.values()) | {"dim_platform"}
     for table in tables:
@@ -208,7 +191,7 @@ TABLE_COLUMNS = {
     "platform_daily_stats": {"platform", "event_date", "post_count", "avg_sentiment", "total_engagement", "loaded_at"},
     "top_hashtags_weekly": {"platform", "event_week", "hashtag", "frequency", "rank", "loaded_at"},
     "author_activity": {"platform", "author_id", "post_count", "avg_sentiment", "total_reach", "loaded_at"},
-    "sentiment_time_series": {"platform", "event_hour", "avg_sentiment", "post_count", "loaded_at"},
+    "sentiment_time_series": {"platform", "event_hour", "avg_sentiment", "post_count", "positive_count", "negative_count", "neutral_count", "weighted_sentiment", "loaded_at"},
     "top_posts": {"rank", "post_id", "platform", "event_ts", "author_id", "content", "engagement_score", "sentiment_score", "loaded_at"},
 }
 

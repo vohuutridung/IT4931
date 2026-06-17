@@ -33,6 +33,7 @@ import argparse
 import json
 import logging
 import math
+import os
 import random
 import time
 from collections import defaultdict
@@ -41,7 +42,7 @@ from typing import Any
 
 import requests
 
-from config.settings import ES_HOST, REDIS_HOST, REDIS_PORT
+from config.settings import ES_HOST, REDIS_HOST, REDIS_PORT, STORAGE_RAW_BASE
 
 logging.basicConfig(
     level=logging.INFO,
@@ -92,6 +93,11 @@ class DirectedGraph:
 
     def __len__(self) -> int:
         return len(self._nodes)
+
+
+def _merge_graph(target: DirectedGraph, source: DirectedGraph) -> None:
+    for src, tgt, weight in source.edges():
+        target.add_edge(src, tgt, weight)
 
 
 # ---------------------------------------------------------------------------
@@ -273,19 +279,6 @@ def build_simulated_graph(platform: str | None, seed: int = 42) -> DirectedGraph
             graph.add_edge(src, tgt, rng.randint(1, 5))
 
     return graph
-
-
-def _assign_simulated_communities(nodes: list[str]) -> dict[str, int]:
-    """Assign community IDs based on node naming convention."""
-    comm: dict[str, int] = {}
-    for node in nodes:
-        # Extract community index from synthetic node name
-        try:
-            idx = int(node.split("user")[1].split("_")[0])
-            comm[node] = idx // _NODES_PER_COMMUNITY
-        except (IndexError, ValueError):
-            comm[node] = 0
-    return comm
 
 
 # ---------------------------------------------------------------------------
@@ -470,8 +463,8 @@ def run_platform(
 def _fetch_interaction_graph(es_host: str, platform: str) -> DirectedGraph | None:
     """Attempt to build a graph from ES social_batch_views / social_realtime_views.
 
-    Looks for posts that have 'mentions' or 'in_reply_to_user' fields.
-    Returns None when there is no usable data.
+    Looks for indexed interaction fields first, then falls back to raw comment
+    trees from MinIO. Returns None when there is no usable data.
     """
     query = {
         "bool": {
@@ -508,7 +501,138 @@ def _fetch_interaction_graph(es_host: str, platform: str) -> DirectedGraph | Non
         except Exception as exc:
             logger.warning("Could not fetch interaction data from %s: %s", index, exc)
 
+    raw_graph = _fetch_comment_graph_from_raw(platform)
+    if raw_graph is not None:
+        _merge_graph(graph, raw_graph)
+
     return graph if len(graph) >= 10 else None
+
+
+def _fetch_comment_graph_from_raw(platform: str) -> DirectedGraph | None:
+    """Build interaction edges from normalized comment trees in raw parquet.
+
+    Edge direction is commenter -> replied/post author. Top-level comments point
+    to the post author; replies point to the parent comment author when known.
+    """
+    spark = None
+    try:
+        spark = _create_spark_for_raw_graph()
+        path = f"{STORAGE_RAW_BASE.rstrip('/')}/{platform}"
+        if not _spark_path_exists(spark, path):
+            logger.warning("Raw parquet path not found for network graph: %s", path)
+            return None
+
+        df = spark.read.option("basePath", path).parquet(path)
+        required = {"author_id", "comments_json"}
+        if not required.issubset(set(df.columns)):
+            logger.warning("Raw parquet missing columns for network graph: required=%s columns=%s", sorted(required), df.columns)
+            return None
+
+        max_posts = int(os.getenv("NETWORK_GRAPH_MAX_POSTS", "20000"))
+        graph = DirectedGraph()
+        rows = df.select("post_id", "author_id", "comments_json").limit(max_posts).toLocalIterator()
+        for row in rows:
+            post = row.asDict(recursive=True)
+            post_author = _valid_author(post.get("author_id"))
+            comments = _parse_comments_json(post.get("comments_json"))
+            if not post_author or not comments:
+                continue
+
+            _add_comment_edges(graph, post_author, comments)
+
+        logger.info("Raw comment graph for %s: %d nodes, %d edges", platform, len(graph), len(graph.edges()))
+        return graph if len(graph) >= 10 else None
+    except Exception as exc:
+        logger.warning("Could not build raw comment graph for %s: %s", platform, exc)
+        return None
+    finally:
+        if spark is not None:
+            try:
+                spark.stop()
+            except Exception:
+                pass
+
+
+def _create_spark_for_raw_graph():
+    from pyspark.sql import SparkSession
+
+    from config.settings import SPARK_MASTER
+    from config.spark import configure_s3a
+
+    master = os.getenv("NETWORK_ANALYSIS_SPARK_MASTER") or os.getenv("SPARK_MASTER") or SPARK_MASTER
+    builder = (
+        SparkSession.builder
+        .appName("SocialNetworkRawInteractionGraph")
+        .master(master)
+        .config("spark.sql.files.ignoreMissingFiles", "true")
+        .config("spark.sql.files.ignoreCorruptFiles", "true")
+        .config("spark.cores.max", "1")
+        .config("spark.executor.cores", "1")
+    )
+    return configure_s3a(builder).getOrCreate()
+
+
+def _spark_path_exists(spark: Any, path: str) -> bool:
+    try:
+        hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+        fs_path = spark._jvm.org.apache.hadoop.fs.Path(path)
+        fs = fs_path.getFileSystem(hadoop_conf)
+        return bool(fs.exists(fs_path))
+    except Exception:
+        return False
+
+
+def _parse_comments_json(value: Any) -> list[dict]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return [item for item in parsed if isinstance(item, dict)] if isinstance(parsed, list) else []
+
+
+def _valid_author(value: Any) -> str | None:
+    if value is None:
+        return None
+    author = str(value).strip()
+    return author if author and author.lower() != "unknown" else None
+
+
+def _add_comment_edges(graph: DirectedGraph, post_author: str, comments: list[dict]) -> None:
+    comment_authors: dict[str, str] = {}
+    for comment in comments:
+        comment_id = str(comment.get("comment_id") or "").strip()
+        author = _valid_author(comment.get("author_id"))
+        if comment_id and author:
+            comment_authors[comment_id] = author
+
+    for comment in comments:
+        author = _valid_author(comment.get("author_id"))
+        if not author:
+            continue
+        parent_author = _parent_comment_author(comment.get("parent_id"), comment_authors)
+        target = parent_author or post_author
+        if target and target != author:
+            graph.add_edge(author, target)
+
+
+def _parent_comment_author(parent_id: Any, comment_authors: dict[str, str]) -> str | None:
+    if parent_id is None:
+        return None
+    parent = str(parent_id).strip()
+    if not parent:
+        return None
+    candidates = [parent]
+    if parent.startswith("t1_"):
+        candidates.append(parent[3:])
+    for candidate in candidates:
+        author = comment_authors.get(candidate)
+        if author:
+            return author
+    return None
 
 
 def main() -> None:

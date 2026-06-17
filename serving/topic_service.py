@@ -1,9 +1,7 @@
 """Topic Modeling serving layer.
 
-Queries the ``social_topics`` Elasticsearch index populated by
-``batch/network_analysis.py`` (BERTopic output).  When the index is
-empty or unreachable the service returns **deterministic simulated data**
-so the dashboard always renders.
+Queries the ``social_topics`` Elasticsearch index.  Demo data is returned
+only when ``ENABLE_DEMO_FALLBACK=true``.
 
 Schema written by network_analysis.py:
   {
@@ -38,7 +36,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import requests
-from config.settings import ES_HOST
+from config.settings import ENABLE_DEMO_FALLBACK, ES_HOST
 
 logger = logging.getLogger(__name__)
 
@@ -143,10 +141,11 @@ def _simulated_sentiment_heatmap(platform: str | None) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 class TopicService:
-    """Query topic data from Elasticsearch with simulated-data fallback."""
+    """Query topic data from Elasticsearch with optional demo fallback."""
 
     def __init__(self, es_host: str = ES_HOST, **_kwargs) -> None:
         self.es_host = es_host.rstrip("/")
+        self._session = requests.Session()
 
     # ── internal helpers ────────────────────────────────────────────────────
 
@@ -155,7 +154,7 @@ class TopicService:
         if sort:
             payload["sort"] = sort
         try:
-            resp = requests.post(
+            resp = self._session.post(
                 f"{self.es_host}/{ES_TOPICS_INDEX}/_search",
                 json=payload,
                 timeout=3,
@@ -168,16 +167,9 @@ class TopicService:
             logger.warning("ES topics search failed, using simulated data: %s", exc)
             return []
 
-    def _index_exists(self) -> bool:
-        try:
-            resp = requests.head(f"{self.es_host}/{ES_TOPICS_INDEX}", timeout=2)
-            return resp.status_code == 200
-        except Exception:
-            return False
-
     # ── public API ──────────────────────────────────────────────────────────
 
-    def query_topic_distribution(self, platform: str | None = None) -> list[dict]:
+    def query_topic_distribution(self, platform: str | None = None) -> dict:
         """Per-topic post count + keywords + UMAP position."""
         filters: list[dict] = [{"term": {"view": "topic_distribution"}}]
         if platform:
@@ -185,12 +177,14 @@ class TopicService:
 
         results = self._search({"bool": {"filter": filters}}, size=100)
         if results:
-            return results
+            return {"data": results, "simulated": False}
 
-        logger.info("topic_distribution: using simulated data")
-        return _simulated_topic_distribution(platform)
+        if ENABLE_DEMO_FALLBACK:
+            logger.info("topic_distribution: using demo fallback data")
+            return {"data": _simulated_topic_distribution(platform), "simulated": True}
+        return {"data": [], "simulated": False}
 
-    def query_topic_trend(self, platform: str | None = None, weeks: int = 8) -> list[dict]:
+    def query_topic_trend(self, platform: str | None = None, weeks: int = 8) -> dict:
         """Weekly post count per topic."""
         filters: list[dict] = [{"term": {"view": "topic_trend"}}]
         if platform:
@@ -199,12 +193,14 @@ class TopicService:
         sort = [{"event_week": {"order": "asc"}}]
         results = self._search({"bool": {"filter": filters}}, size=1000, sort=sort)
         if results:
-            return results
+            return {"data": results, "simulated": False}
 
-        logger.info("topic_trend: using simulated data")
-        return _simulated_topic_trend(platform, weeks)
+        if ENABLE_DEMO_FALLBACK:
+            logger.info("topic_trend: using demo fallback data")
+            return {"data": _simulated_topic_trend(platform, weeks), "simulated": True}
+        return {"data": [], "simulated": False}
 
-    def query_sentiment_heatmap(self, platform: str | None = None) -> list[dict]:
+    def query_sentiment_heatmap(self, platform: str | None = None) -> dict:
         """Avg sentiment per topic × platform."""
         filters: list[dict] = [{"term": {"view": "topic_sentiment_heatmap"}}]
         if platform:
@@ -212,10 +208,12 @@ class TopicService:
 
         results = self._search({"bool": {"filter": filters}}, size=200)
         if results:
-            return results
+            return {"data": results, "simulated": False}
 
-        logger.info("topic_sentiment_heatmap: using simulated data")
-        return _simulated_sentiment_heatmap(platform)
+        if ENABLE_DEMO_FALLBACK:
+            logger.info("topic_sentiment_heatmap: using demo fallback data")
+            return {"data": _simulated_sentiment_heatmap(platform), "simulated": True}
+        return {"data": [], "simulated": False}
 
     def query_topic_network(self, platform: str | None = None) -> dict:
         """Topic co-occurrence network (nodes + edges)."""
@@ -228,10 +226,14 @@ class TopicService:
             # Expect results to contain serialised nodes/edges lists
             nodes = [r for r in results if r.get("record_type") == "node"]
             edges = [r for r in results if r.get("record_type") == "edge"]
-            return {"nodes": nodes, "edges": edges}
+            return {"nodes": nodes, "edges": edges, "simulated": False}
 
-        logger.info("topic_network: using simulated data")
-        return _simulated_topic_network(platform)
+        if ENABLE_DEMO_FALLBACK:
+            logger.info("topic_network: using demo fallback data")
+            result = _simulated_topic_network(platform)
+            result["simulated"] = True
+            return result
+        return {"nodes": [], "edges": [], "simulated": False}
 
 
 def _simulated_topic_network(platform: str | None) -> dict:

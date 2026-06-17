@@ -12,6 +12,7 @@ from collections import Counter
 from datetime import datetime, timezone
 
 from config.settings import NLP_MODEL_NAME, SENTIMENT_ARTIFACTS_DIR
+from shared.sentiment import lexicon_sentiment
 
 logger = logging.getLogger(__name__)
 MODEL_VERSION = NLP_MODEL_NAME
@@ -70,50 +71,7 @@ if pipeline:
     except Exception as exc:
         logger.warning("Transformer sentiment unavailable, using fallback: %s", exc)
 
-def _normalize_text(text: str) -> str:
-    replacements = {
-        "áàảãạăắằẳẵặâấầẩẫậ": "a",
-        "éèẻẽẹêếềểễệ": "e",
-        "íìỉĩị": "i",
-        "óòỏõọôốồổỗộơớờởỡợ": "o",
-        "úùủũụưứừửữự": "u",
-        "ýỳỷỹỵ": "y",
-        "đ": "d",
-    }
-    output = text.lower()
-    for chars, replacement in replacements.items():
-        for char in chars:
-            output = output.replace(char, replacement)
-    return re.sub(r"\s+", " ", output)
 
-
-POSITIVE = {
-    "amazing", "awesome", "beautiful", "benefit", "best", "better", "bullish", "calm",
-    "clear", "confident", "constructive", "cute", "enjoy", "excellent", "gain", "gains",
-    "good", "great", "growth", "happy", "hope", "hopeful", "improve", "improved",
-    "like", "love", "positive", "profit", "profits", "recover", "recovery", "safe",
-    "strong", "support", "useful", "win", "winner",
-    "ổn", "tốt", "hay", "vui", "thích", "yêu", "đẹp", "xinh", "đỉnh", "tuyệt",
-    "tuyệt vời", "hạnh phúc", "ủng hộ", "lãi", "tăng", "mạnh", "khỏe", "an toàn",
-}
-NEGATIVE = {
-    "angry", "awful", "bad", "bearish", "beware", "catastrophic", "concern", "crack",
-    "crash", "crisis", "cut", "cuts", "decline", "debt", "drop", "fall", "falling",
-    "fear", "fraud", "gap", "hate", "inflation", "loss", "losses", "losing", "miss",
-    "negative", "poor", "problem", "risk", "sad", "scam", "terrible", "weak", "worse",
-    "worst", "worried",
-    "buồn", "tệ", "xấu", "ghét", "chán", "khóc", "giận", "lo", "rủi ro", "lỗ",
-    "giảm", "sập", "khủng hoảng", "thất vọng", "đau", "kém",
-}
-POSITIVE_EMOJI = {"😀", "😃", "😄", "😁", "😊", "😍", "🥰", "❤️", "❤", "👍", "🔥", "✨"}
-NEGATIVE_EMOJI = {"😢", "😭", "😡", "😠", "💔", "👎", "😞", "😔", "😟", "😨"}
-
-# Pre-normalized lists for speed-streaming performance
-NORMALIZED_POSITIVE_WORDS = {re.sub(r"[^a-z0-9_]+", "", _normalize_text(word)) for word in POSITIVE if " " not in word}
-NORMALIZED_NEGATIVE_WORDS = {re.sub(r"[^a-z0-9_]+", "", _normalize_text(word)) for word in NEGATIVE if " " not in word}
-
-NORMALIZED_POSITIVE_PHRASES = [re.sub(r"[^a-z0-9_]+", " ", _normalize_text(phrase)).strip() for phrase in POSITIVE if " " in phrase]
-NORMALIZED_NEGATIVE_PHRASES = [re.sub(r"[^a-z0-9_]+", " ", _normalize_text(phrase)).strip() for phrase in NEGATIVE if " " in phrase]
 
 
 def analyze_sentiment(text: str) -> dict:
@@ -138,32 +96,8 @@ def analyze_sentiment(text: str) -> dict:
 
 
 def _lexicon_sentiment(text: str) -> float:
-    normalized = _normalize_text(text)
-    tokens = re.findall(r"[a-z0-9_]+", normalized)
-    token_count = max(len(tokens), 1)
-    token_set = set(tokens)
-    
-    positive = len(token_set & NORMALIZED_POSITIVE_WORDS)
-    negative = len(token_set & NORMALIZED_NEGATIVE_WORDS)
-
-    normalized_clean = f" {re.sub(r'[^a-z0-9_]+', ' ', normalized)} "
-    for norm_phrase in NORMALIZED_POSITIVE_PHRASES:
-        if f" {norm_phrase} " in normalized_clean:
-            positive += 1
-    for norm_phrase in NORMALIZED_NEGATIVE_PHRASES:
-        if f" {norm_phrase} " in normalized_clean:
-            negative += 1
-
-    positive += sum(text.count(item) for item in POSITIVE_EMOJI)
-    negative += sum(text.count(item) for item in NEGATIVE_EMOJI)
-
-    exclamation_boost = min(text.count("!"), 3) * 0.03
-    raw = (positive - negative) / max(token_count**0.5, 1)
-    if raw > 0:
-        raw += exclamation_boost
-    elif raw < 0:
-        raw -= exclamation_boost
-    return max(-1.0, min(1.0, raw))
+    """Lexicon-based sentiment — delegates to shared module for consistency."""
+    return lexicon_sentiment(text)
 
 
 def extract_keywords(text: str, top_n: int = 10) -> list[str]:

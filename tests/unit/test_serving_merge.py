@@ -92,7 +92,7 @@ def test_query_hashtag_weeks(monkeypatch):
         called_payload.append(json)
         return FakeResponse()
 
-    monkeypatch.setattr("requests.post", fake_post)
+    monkeypatch.setattr(service._session, "post", fake_post)
     
     weeks = service.query_hashtag_weeks("reddit")
     assert weeks == ["2026-05-18T00:00:00Z", "2026-05-11T00:00:00Z"]

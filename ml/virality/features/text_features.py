@@ -34,11 +34,12 @@ import logging
 import os
 import pickle
 import re
-from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import pandas as pd
+
+from ml.virality.safe_artifacts import safe_pickle_path
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ def _content_hash(text: str) -> str:
 
 def _load_cache(cache_path: str) -> dict:
     if cache_path and os.path.exists(cache_path):
-        with open(cache_path, "rb") as f:
+        with open(safe_pickle_path(cache_path), "rb") as f:
             data = pickle.load(f)
         logger.info("Loaded PhoBERT cache with %d entries from %s", len(data), cache_path)
         return data
@@ -110,8 +111,9 @@ def _load_cache(cache_path: str) -> dict:
 
 
 def _save_cache(cache: dict, cache_path: str) -> None:
-    Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
-    with open(cache_path, "wb") as f:
+    path = safe_pickle_path(cache_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as f:
         pickle.dump(cache, f)
     logger.info("Saved PhoBERT cache with %d entries → %s", len(cache), cache_path)
 

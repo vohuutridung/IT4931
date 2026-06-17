@@ -32,7 +32,7 @@ class ElasticsearchIndexer:
         response.raise_for_status()
 
     def ensure_indices(self) -> None:
-        mapping = {
+        common_mapping = {
             "mappings": {
                 "properties": {
                     "view": {"type": "keyword"},
@@ -53,12 +53,6 @@ class ElasticsearchIndexer:
                 }
             }
         }
-        for index in (ES_BATCH_INDEX, ES_REALTIME_INDEX):
-            response = requests.head(f"{self.host}/{index}", timeout=5)
-            if response.status_code == 404:
-                self.put_json(index, mapping)
-                logger.info("Created ES index %s", index)
-
         try:
             self.put_json(
                 "_ilm/policy/social_realtime_24h",
@@ -66,6 +60,17 @@ class ElasticsearchIndexer:
             )
         except Exception as exc:
             logger.warning("Could not create realtime ILM policy: %s", exc)
+        for index in (ES_BATCH_INDEX, ES_REALTIME_INDEX):
+            response = requests.head(f"{self.host}/{index}", timeout=5)
+            if response.status_code == 404:
+                mapping = dict(common_mapping)
+                if index == ES_REALTIME_INDEX:
+                    mapping = {
+                        **common_mapping,
+                        "settings": {"index.lifecycle.name": "social_realtime_24h"},
+                    }
+                self.put_json(index, mapping)
+                logger.info("Created ES index %s", index)
         self.post_json("_aliases", {"actions": [{"add": {"index": ES_BATCH_INDEX, "alias": ES_BATCH_ALIAS}}]})
 
     @staticmethod

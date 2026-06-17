@@ -10,29 +10,15 @@ from datetime import datetime, timezone
 from config.settings import (
     ES_HOST,
     ES_REALTIME_INDEX,
+    REALTIME_WINDOW_HOURS,
     REDIS_HOST,
     REDIS_PORT,
 )
 
 logger = logging.getLogger(__name__)
 
-
-def _normalize_ts(ts: str | None, fallback: str) -> str:
-    """Convert ISO 8601 timestamp to ClickHouse DateTime format (YYYY-MM-DD HH:MM:SS UTC)."""
-    if not ts:
-        return fallback
-    try:
-        s = str(ts).strip()
-        # Replace trailing Z with +00:00 for fromisoformat compatibility
-        if s.endswith("Z"):
-            s = s[:-1] + "+00:00"
-        dt = datetime.fromisoformat(s)
-        # Convert to UTC if timezone-aware, strip timezone for CH DateTime
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
-        return fallback
+# TTL = 2x realtime window to ensure data is available for the full query range
+_REDIS_TTL_SECONDS = REALTIME_WINDOW_HOURS * 3600 * 2
 
 
 def _created_at_to_dt(ts: str | None) -> datetime:
@@ -125,7 +111,7 @@ class RealtimeViewWriter:
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
-            pipe.expire(key, 7200)
+            pipe.expire(key, _REDIS_TTL_SECONDS)
 
         for (platform, window_start), counts in hashtag_counts.items():
             key = f"rt:hashtags:{platform}:{window_start}"
@@ -134,7 +120,7 @@ class RealtimeViewWriter:
                 for tag, count in counts.items():
                     pipe.zincrby(key, count, tag)
                 pipe.zrem(key, "__init__")
-                pipe.expire(key, 3600)
+                pipe.expire(key, _REDIS_TTL_SECONDS)
         pipe.execute()
 
     def _write_elasticsearch(self, posts: list[dict]) -> None:
@@ -167,4 +153,3 @@ class RealtimeViewWriter:
                 }
             )
         self.es.bulk_index(ES_REALTIME_INDEX, docs)
-

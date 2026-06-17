@@ -21,13 +21,14 @@ from __future__ import annotations
 import logging
 import os
 import pickle
-from pathlib import Path
 from typing import Optional
 
 import lightgbm as lgb
 import numpy as np
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.utils.class_weight import compute_sample_weight
+
+from ml.virality.safe_artifacts import safe_pickle_path
 
 logger = logging.getLogger(__name__)
 
@@ -280,14 +281,15 @@ def evaluate(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def save_model(model: lgb.LGBMClassifier, path: str) -> None:
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "wb") as f:
+    safe_path = safe_pickle_path(path)
+    safe_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(safe_path, "wb") as f:
         pickle.dump(model, f)
     logger.info("Saved LightGBM model → %s", path)
 
 
 def load_model(path: str) -> lgb.LGBMClassifier:
-    with open(path, "rb") as f:
+    with open(safe_pickle_path(path), "rb") as f:
         return pickle.load(f)
 
 

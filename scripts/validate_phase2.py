@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SOP Phase 2 validation for simulator Kafka, DLQ, and metrics behavior."""
+"""SOP Phase 2 validation for simulator Kafka and DLQ behavior."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
-import requests
 from confluent_kafka import Consumer
 
 from config.settings import KAFKA_SOURCE_TOPICS, KAFKA_TOPIC_DLQ
@@ -77,7 +76,6 @@ def main() -> None:
     _write_jsonl(good_path, good)
     _write_jsonl(bad_path, bad)
 
-    simulator.start_http_server(9101)
     simulator.replay(good_path, "reddit", 100, False, KAFKA_BOOTSTRAP)
     simulator.replay(bad_path, "reddit", 100, False, KAFKA_BOOTSTRAP)
 
@@ -115,16 +113,11 @@ def main() -> None:
     assert dlq["platform"] == "reddit", dlq
     assert "Missing post_id" in dlq["error"], dlq
 
-    metrics = requests.get("http://localhost:9101/metrics", timeout=5).text
-    assert 'records_published_total{platform="reddit"} 1.0' in metrics, metrics
-    assert 'publish_errors_total{platform="reddit"} 1.0' in metrics, metrics
-
     print(
         json.dumps(
             {
                 "source": source,
                 "dlq_error": dlq["error"],
-                "metrics_ok": True,
             },
             sort_keys=True,
         )

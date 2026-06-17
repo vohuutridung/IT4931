@@ -149,6 +149,25 @@ def test_to_sop_schema_requires_event_time():
         )
 
 
+def test_to_sop_schema_uses_optional_event_time_bounds(monkeypatch):
+    monkeypatch.setattr(simulator, "EVENT_TIME_MIN", "2026-01-01")
+    monkeypatch.setattr(simulator, "EVENT_TIME_MAX", "2026-04-30")
+    with pytest.raises(simulator.OutOfRangeError):
+        to_sop_schema(
+            "reddit",
+            {"post_id": "p1", "author": "alice", "subreddit": "datascience"},
+            {
+                "post_id": "p1",
+                "event_time": 1_779_000_000,
+                "ingest_time": 1_779_000_001,
+                "author_id": "alice",
+                "content": "outside range",
+                "hashtags": [],
+                "engagement": {},
+            },
+        )
+
+
 def test_validate_sop_post_rejects_bad_metrics():
     with pytest.raises(ValueError, match="metrics"):
         validate_sop_post(

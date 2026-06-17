@@ -28,10 +28,11 @@ from __future__ import annotations
 import json
 import logging
 import pickle
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from ml.virality.safe_artifacts import safe_pickle_path
 
 logger = logging.getLogger(__name__)
 
@@ -203,15 +204,16 @@ def save_page_stats(df: pd.DataFrame, path: str) -> None:
         )
     stats["target_encoding_map"] = target_map
 
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "wb") as f:
+    safe_path = safe_pickle_path(path)
+    safe_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(safe_path, "wb") as f:
         pickle.dump(stats, f)
     logger.info("Saved page stats for %d pages → %s", len(target_map), path)
 
 
 def load_page_stats(path: str) -> dict:
     """Load page stats artifact."""
-    with open(path, "rb") as f:
+    with open(safe_pickle_path(path), "rb") as f:
         return pickle.load(f)
 
 

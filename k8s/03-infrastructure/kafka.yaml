@@ -97,10 +97,13 @@ spec:
                 sleep 3
               done
               echo "Creating Kafka topics..."
-              kafka-topics.sh --bootstrap-server kafka-service:9092 --create --if-not-exists --topic social.reddit.posts --partitions 3 --replication-factor 1
-              kafka-topics.sh --bootstrap-server kafka-service:9092 --create --if-not-exists --topic social.facebook.posts --partitions 3 --replication-factor 1
-              kafka-topics.sh --bootstrap-server kafka-service:9092 --create --if-not-exists --topic social.instagram.posts --partitions 3 --replication-factor 1
-              kafka-topics.sh --bootstrap-server kafka-service:9092 --create --if-not-exists --topic social.enriched.posts --partitions 3 --replication-factor 1
-              kafka-topics.sh --bootstrap-server kafka-service:9092 --create --if-not-exists --topic social.dlq --partitions 1 --replication-factor 1
+              kafka-topics.sh --bootstrap-server kafka-service:9092 --create --if-not-exists --topic "${KAFKA_TOPIC_REDDIT:-social.reddit.posts}" --partitions 3 --replication-factor 1
+              kafka-topics.sh --bootstrap-server kafka-service:9092 --create --if-not-exists --topic "${KAFKA_TOPIC_FACEBOOK:-social.facebook.posts}" --partitions 3 --replication-factor 1
+              kafka-topics.sh --bootstrap-server kafka-service:9092 --create --if-not-exists --topic "${KAFKA_TOPIC_INSTAGRAM:-social.instagram.posts}" --partitions 3 --replication-factor 1
+              kafka-topics.sh --bootstrap-server kafka-service:9092 --create --if-not-exists --topic "${KAFKA_TOPIC_ENRICHED:-social.enriched.posts}" --partitions 3 --replication-factor 1
+              kafka-topics.sh --bootstrap-server kafka-service:9092 --create --if-not-exists --topic "${KAFKA_TOPIC_DLQ:-social.dlq}" --partitions 1 --replication-factor 1
               echo "Kafka topics initialization completed."
+          envFrom:
+            - configMapRef:
+                name: social-pipeline-config
       restartPolicy: OnFailure

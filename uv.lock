@@ -1592,15 +1592,6 @@ wheels = [
 ]
 
 [[package]]
-name = "prometheus-client"
-version = "0.20.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/3d/39/3be07741a33356127c4fe633768ee450422c1231c6d34b951fee1458308d/prometheus_client-0.20.0.tar.gz", hash = "sha256:287629d00b147a32dcb2be0b9df905da599b2d82f80377083ec8463309a4bb89", size = 78278, upload-time = "2024-02-14T15:55:14.761Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c7/98/745b810d822103adca2df8decd4c0bbe839ba7ad3511af3f0d09692fc0f0/prometheus_client-0.20.0-py3-none-any.whl", hash = "sha256:cde524a85bce83ca359cc837f28b8c0db5cac7aa653a588fd7e84ba061c329e7", size = 54474, upload-time = "2024-02-14T15:55:03.957Z" },
-]
-
-[[package]]
 name = "psutil"
 version = "7.2.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2359,7 +2350,6 @@ dependencies = [
     { name = "locust" },
     { name = "numpy" },
     { name = "pandas" },
-    { name = "prometheus-client" },
     { name = "pyarrow" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -2392,7 +2382,6 @@ requires-dist = [
     { name = "numpy", specifier = "<2" },
     { name = "optuna", marker = "extra == 'ml'", specifier = ">=3.6.0" },
     { name = "pandas", specifier = ">=2.1.0" },
-    { name = "prometheus-client", specifier = "==0.20.0" },
     { name = "pyarrow", specifier = "==14.0.1" },
     { name = "pytest", specifier = "==8.2.2" },
     { name = "pytest-cov", specifier = "==5.0.0" },

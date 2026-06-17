@@ -33,19 +33,6 @@ spec:
   resources:
     requests:
       storage: 2Gi
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: grafana-pvc
-  namespace: social-pipeline
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
----
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -81,4 +68,3 @@ spec:
   resources:
     requests:
       storage: 2Gi
-

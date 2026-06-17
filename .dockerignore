@@ -7,7 +7,11 @@
 venv
 env
 ENV
+.agents
+.codegraph
+.codex
 __pycache__
+**/__pycache__
 *.py[cod]
 *.pyo
 *.pyd
@@ -37,6 +41,7 @@ credentials.json
 
 # Runtime output
 logs
+tmp
 airflow/logs
 spark-warehouse
 metastore_db

@@ -1,7 +1,6 @@
 """Network Service - serves graph data from ES ``social_network`` index.
 
-Falls back to deterministic simulated data (identical seed to
-batch/network_analysis.py) when the index is empty or unreachable.
+Demo fallback data is returned only when ``ENABLE_DEMO_FALLBACK=true``.
 """
 
 from __future__ import annotations
@@ -11,8 +10,7 @@ import random
 from typing import Any
 
 import requests
-import redis
-from config.settings import ES_HOST, REDIS_HOST, REDIS_PORT
+from config.settings import ENABLE_DEMO_FALLBACK, ES_HOST, REDIS_HOST, REDIS_PORT
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +122,7 @@ def _simulated_top_influencers(platform: str | None, top_n: int) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 class NetworkService:
-    """Query user-interaction graph data from ES with simulated fallback."""
+    """Query user-interaction graph data from ES with optional demo fallback."""
 
     def __init__(
         self,
@@ -133,6 +131,7 @@ class NetworkService:
         redis_port: int = REDIS_PORT,
     ) -> None:
         self.es_host = es_host.rstrip("/")
+        self._session = requests.Session()
         self._redis = None
         try:
             import redis
@@ -142,7 +141,7 @@ class NetworkService:
 
     def _search(self, query: dict, size: int = 5000) -> list[dict]:
         try:
-            resp = requests.post(
+            resp = self._session.post(
                 f"{self.es_host}/{ES_NETWORK_INDEX}/_search",
                 json={"query": query, "size": size},
                 timeout=5,
@@ -174,26 +173,37 @@ class NetworkService:
                 for node in nodes:
                     cid = node.get("community_id", 0) or 0
                     node["color"] = _COMMUNITY_COLORS[int(cid) % len(_COMMUNITY_COLORS)]
-                return {"nodes": nodes, "edges": edges}
+                return {"nodes": nodes, "edges": edges, "simulated": False}
 
-        logger.info("network/graph: using simulated data")
-        return _simulated_graph(platform)
+        if ENABLE_DEMO_FALLBACK:
+            logger.info("network/graph: using demo fallback data")
+            result = _simulated_graph(platform)
+            result["simulated"] = True
+            return result
+        return {"nodes": [], "edges": [], "simulated": False}
 
     def query_community_sizes(self, platform: str | None = None) -> list[dict]:
         """Return community size distribution."""
         # Try Redis first
         if self._redis:
             try:
-                comm_key = f"network:communities:{platform or 'all'}"
-                raw = self._redis.hgetall(comm_key)
-                if raw:
-                    result = []
+                # When platform is specified, query that key directly.
+                # When platform is None, aggregate across all platform keys.
+                platforms_to_query = [platform] if platform else PLATFORMS
+                merged: dict[int, int] = {}
+                for p in platforms_to_query:
+                    comm_key = f"network:communities:{p}"
+                    raw = self._redis.hgetall(comm_key)
                     for k, v in raw.items():
                         try:
                             comm_id = int(k)
                             size = int(v)
                         except ValueError:
                             continue
+                        merged[comm_id] = merged.get(comm_id, 0) + size
+                if merged:
+                    result = []
+                    for comm_id, size in merged.items():
                         result.append({
                             "community_id":   comm_id,
                             "community_name": _COMMUNITY_NAMES[comm_id % len(_COMMUNITY_NAMES)],
@@ -201,25 +211,34 @@ class NetworkService:
                             "platform":       platform or "all",
                             "color":          _COMMUNITY_COLORS[comm_id % len(_COMMUNITY_COLORS)],
                         })
-                    if result:
-                        return sorted(result, key=lambda x: x["size"], reverse=True)
+                    return sorted(result, key=lambda x: x["size"], reverse=True)
             except Exception as exc:
                 logger.warning("Redis community query failed: %s", exc)
 
-        logger.info("network/communities: using simulated data")
-        return _simulated_community_sizes(platform)
+        if ENABLE_DEMO_FALLBACK:
+            logger.info("network/communities: using demo fallback data")
+            return _simulated_community_sizes(platform)
+        return []
 
     def query_top_influencers(self, platform: str | None = None, top_n: int = 20) -> list[dict]:
         """Return top-N nodes by PageRank score."""
         # Try Redis sorted set
         if self._redis:
             try:
-                pr_key = f"network:pagerank:{platform or 'all'}"
-                top = self._redis.zrevrange(pr_key, 0, top_n - 1, withscores=True)
-                if top:
+                # When platform is specified, query that key directly.
+                # When platform is None, aggregate across all platform keys.
+                platforms_to_query = [platform] if platform else PLATFORMS
+                merged: dict[str, float] = {}
+                for p in platforms_to_query:
+                    pr_key = f"network:pagerank:{p}"
+                    top = self._redis.zrevrange(pr_key, 0, top_n - 1, withscores=True)
+                    for node, score in (top or []):
+                        merged[node] = max(merged.get(node, 0.0), float(score))
+                if merged:
+                    sorted_nodes = sorted(merged.items(), key=lambda x: x[1], reverse=True)[:top_n]
                     return [
                         {"node_id": node, "pagerank": round(score, 6), "platform": platform or "all"}
-                        for node, score in top
+                        for node, score in sorted_nodes
                     ]
             except Exception as exc:
                 logger.warning("Redis pagerank query failed: %s", exc)
@@ -232,5 +251,7 @@ class NetworkService:
         if results:
             return results
 
-        logger.info("network/pagerank: using simulated data")
-        return _simulated_top_influencers(platform, top_n)
+        if ENABLE_DEMO_FALLBACK:
+            logger.info("network/pagerank: using demo fallback data")
+            return _simulated_top_influencers(platform, top_n)
+        return []

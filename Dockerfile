@@ -45,6 +45,7 @@ COPY api/        api/
 COPY ml/         ml/
 COPY speed/      speed/
 COPY warehouse/  warehouse/
+COPY shared/     shared/
 
 # Tạo __init__.py cho package root nếu cần import tuyệt đối
 RUN touch __init__.py \

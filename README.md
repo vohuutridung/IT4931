@@ -54,7 +54,7 @@ flowchart LR
 
     subgraph serving["🔗 Serving Layer"]
         MERGE["merge_service"]:::serving
-        CH[("ClickHouse<br/>social.merged_posts")]:::serving
+        CH[("ClickHouse<br/>batch fact tables")]:::serving
         API["FastAPI :8000"]:::serving
         DASH["Dashboard :8084"]:::visualize
     end
@@ -84,7 +84,7 @@ flowchart LR
 | Dashboard | UI tĩnh | http://localhost:8084 |
 | Airflow | Orchestration | http://localhost:8085 |
 
-MinIO mặc định: `minioadmin` / `minioadmin`
+MinIO dùng credential từ `.env` khi chạy local hoặc Secret `social-pipeline-secrets` khi chạy Kubernetes.
 
 ---
 
@@ -117,13 +117,18 @@ eval $(minikube docker-env)
 make build-core                            # Build các core image
 make build-airflow                         # Build Airflow image (Tùy chọn)
 
-# 4. Triển khai tài nguyên lên Kubernetes
+# 4. Tạo Kubernetes Secret local-only rồi điền giá trị thật
+cp k8s/01-config/secrets.yaml.example k8s/01-config/secrets.yaml
+
+# 5. Triển khai tài nguyên lên Kubernetes
 make delete                                # Dọn dẹp namespace cũ nếu có
 make apply                                 # Deploy toàn bộ manifests lên k8s
 
-# 5. Mở port-forward ra host (chạy ngầm hoặc giữ terminal này)
+# 6. Mở port-forward ra host (chạy ngầm hoặc giữ terminal này)
 make forward
 ```
+
+`k8s/01-config/secrets.yaml` là file local-only và bị ignore khỏi Git. Chỉ commit `k8s/01-config/secrets.yaml.example`.
 
 **🚀 Chạy pipeline tự động bằng Airflow (Khuyến nghị):**
 
@@ -184,6 +189,8 @@ make build-airflow             # (Tùy chọn) Build Airflow image (~5–10 phú
 ### 4. Deploy lên Kubernetes
 
 ```bash
+cp k8s/01-config/secrets.yaml.example k8s/01-config/secrets.yaml
+# Sửa k8s/01-config/secrets.yaml bằng secret thật trước khi deploy.
 make apply
 ```
 
@@ -283,7 +290,7 @@ make reset-data
 
 Lệnh này tự động thực hiện:
 - Tạm dừng `speed-streaming` và `object-store-writer`.
-- `TRUNCATE` tất cả các bảng ClickHouse (`dim_*`, `fact_*`, `merged_posts`).
+- `TRUNCATE` tất cả các bảng ClickHouse (`dim_*`, `fact_*`).
 - Xóa toàn bộ indices Elasticsearch (`social_batch_views`, `social_realtime_views`, `social_network`, `social_topics`).
 - Flush toàn bộ dữ liệu Redis (`FLUSHALL`).
 - Xóa raw data, batch views và streaming checkpoints trong MinIO.
@@ -299,7 +306,7 @@ make replay
 ### Bước 4 — Kích hoạt Airflow DAG
 
 **Cách 1 — Qua Web UI (khuyến nghị):**
-1. Truy cập http://localhost:8085 (Tài khoản: `admin` / `admin`).
+1. Truy cập http://localhost:8085 bằng tài khoản khai báo trong Secret `AIRFLOW_ADMIN_USERNAME` / `AIRFLOW_ADMIN_PASSWORD`.
 2. Tìm DAG `social_lambda_batch_pipeline` → bật công tắc **Active**.
 3. Nhấn nút **Trigger DAG** (▶) để chạy ngay lập tức.
 
@@ -431,7 +438,6 @@ Dữ liệu từ MinIO (Batch) và Kafka (Speed) được tập trung lưu trữ
 | `fact_author_activity` | Batch | Tần suất hoạt động và điểm tích cực của tác giả |
 | `fact_sentiment_time_series` | Batch | Biến thiên trung bình sentiment theo giờ |
 | `fact_top_posts` | Batch | Danh sách 1000 bài viết nổi bật nhất |
-| `merged_posts` | Serving | Bài viết sau khi gộp (merged) được ghi nhận bất đồng bộ sau bước ServeQuery |
 
 ### Elasticsearch Indices
 
@@ -439,7 +445,7 @@ Dữ liệu từ MinIO (Batch) và Kafka (Speed) được tập trung lưu trữ
 |---|---|---|
 | `social_batch_views` | Batch | Kết quả batch views để full-text search |
 | `social_realtime_views` | Speed | Bài viết realtime enriched cho near-realtime query |
-| `social_topics` | Batch | Phân phối topic, sentiment heatmap, topic network |
+| `social_topics` | Optional | Phân phối topic/sentiment/topic network nếu có job topic modeling ghi index này |
 | `social_network` | Batch | Đồ thị mạng lưới tác giả (nodes, edges) |
 
 ### Redis Keys
@@ -448,8 +454,8 @@ Dữ liệu từ MinIO (Batch) và Kafka (Speed) được tập trung lưu trữ
 |---|---|
 | `rt:stats:<platform>` | Thống kê realtime theo platform (post count, avg sentiment) |
 | `rt:hashtags:<platform>` | Sorted set top hashtags realtime |
-| `rt:network:communities` | Community membership từ batch network analysis |
-| `rt:network:pagerank` | PageRank scores của các tác giả |
+| `network:communities:<platform>` | Community membership từ batch network analysis |
+| `network:pagerank:<platform>` | PageRank scores của các tác giả |
 
 ---
 
@@ -461,16 +467,25 @@ Khai báo trong [k8s/01-config/configmap.yaml](k8s/01-config/configmap.yaml):
 |---|---|---|
 | `STREAM_STARTING_OFFSETS` | `latest` | Offset bắt đầu streaming |
 | `STREAM_TRIGGER_SECS` | `5` | Trigger interval Spark Streaming (giây) |
+| `STREAM_CHECKPOINT_BASE` | `s3a://social-lake/checkpoints/speed` | Base path cho Spark Structured Streaming checkpoints |
 | `SPEED_WRITE_BATCH_SIZE` | `500` | Số record ghi mỗi micro-batch |
 | `CONSUMER_FLUSH_SIZE` | `500` | Số record flush raw Parquet |
-| `CONSUMER_FLUSH_INTERVAL` | `30` | Flush interval raw writer (giây) |
+| `CONSUMER_FLUSH_INTERVAL` | `60` | Flush interval raw writer (giây) |
 | `REALTIME_WINDOW_HOURS` | `24` | Window realtime khi serving merge |
-| `NLP_MODEL_NAME` | `distilbert-base-uncased-finetuned-sst-2-english` | Model sentiment |
+| `EVENT_TIME_MIN` / `EVENT_TIME_MAX` | rỗng | Khoảng thời gian optional để lọc dữ liệu replay/batch; rỗng nghĩa là không lọc |
+| `ENABLE_DEMO_FALLBACK` | `false` | Bật dữ liệu demo cho topic/network khi backend chưa có dữ liệu |
+| `API_ADMIN_TOKEN` | Secret | Token bắt buộc cho endpoint train/retrain/log qua header `X-Admin-Token` |
+| `API_CORS_ALLOW_ORIGINS` | `http://localhost:8084,http://127.0.0.1:8084` | Danh sách origin được phép gọi API |
+| `API_ALLOW_ENV_WRITES` | `false` | Cho phép API schedule endpoint ghi `.env` khi bật rõ ràng |
+| `ML_ARTIFACT_ROOTS` | `/app/ml,/tmp` | Các thư mục được phép chứa pickle artifact/cache của model |
+| `NLP_MODEL_NAME` | `vinai/phobert-base` | Model sentiment |
 | `ES_HOST` | `http://elasticsearch-service:9200` | Elasticsearch endpoint |
 | `ES_BATCH_INDEX` | `social_batch_views` | Index ES cho batch views |
 | `ES_REALTIME_INDEX` | `social_realtime_views` | Index ES cho realtime views |
 | `REDIS_HOST` | `redis-service` | Redis hostname |
 | `REDIS_PORT` | `6379` | Redis port |
+
+> K8s local hiện override `REALTIME_WINDOW_HOURS=3000` để dữ liệu mẫu Jan-Apr 2026 vẫn xuất hiện trong realtime dashboard. Với dữ liệu live, đặt lại 24 hoặc một window vận hành phù hợp.
 
 ---
 
@@ -495,7 +510,7 @@ Checkpoint cũ lưu offset của partitions không còn tồn tại. Xóa checkp
 
 ```bash
 kubectl exec -n social-pipeline deployment/minio -- \
-  bash -c "mc alias set l http://localhost:9000 minioadmin minioadmin 2>/dev/null && \
+  bash -c "mc alias set l http://localhost:9000 \"\$MINIO_ROOT_USER\" \"\$MINIO_ROOT_PASSWORD\" 2>/dev/null && \
            mc rm -r --force l/social-lake/checkpoints/speed/"
 kubectl rollout restart deployment/speed-streaming -n social-pipeline
 ```
