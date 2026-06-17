@@ -266,6 +266,22 @@ Dùng khi cần xóa toàn bộ dữ liệu cũ và chạy lại pipeline từ �
 > 2. **Xóa namespace cũ và deploy lại**:
 >    ```bash
 >    make delete
+
+> kubectl apply -f - <<EOF
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: clickhouse-pvc
+    namespace: social-pipeline
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 2Gi
+    storageClassName: standard
+  EOF
+>
 >    make apply
 >    ```
 > 3. **Mở lại Port Forwarding** (giữ terminal chạy):
