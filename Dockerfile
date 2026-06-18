@@ -58,4 +58,4 @@ ENV PYTHONUNBUFFERED=1
 USER appuser
 
 # [FIX] Thêm CMD mặc định để tránh lỗi khi chạy standalone
-CMD ["python", "-c", "print('social-python image ok — specify command in docker-compose')"]
+CMD ["python", "-c", "print('social-python image ok - specify a Kubernetes command or run a module explicitly')"]

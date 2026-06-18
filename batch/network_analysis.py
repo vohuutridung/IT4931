@@ -64,10 +64,13 @@ class DirectedGraph:
         # adjacency: src -> {tgt: weight}
         self._adj: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
         self._nodes: set[str] = set()
+        self._edge_count = 0
 
     def add_edge(self, src: str, tgt: str, weight: float = 1.0) -> None:
         self._nodes.add(src)
         self._nodes.add(tgt)
+        if tgt not in self._adj[src]:
+            self._edge_count += 1
         self._adj[src][tgt] += weight
 
     @property
@@ -90,6 +93,10 @@ class DirectedGraph:
             for tgt, w in targets.items():
                 result.append((src, tgt, w))
         return result
+
+    @property
+    def edge_count(self) -> int:
+        return self._edge_count
 
     def __len__(self) -> int:
         return len(self._nodes)
@@ -232,6 +239,35 @@ def louvain_communities(graph: DirectedGraph) -> dict[str, int]:
     old_labels = sorted(set(community.values()))
     relabel = {old: new for new, old in enumerate(old_labels)}
     return {node: relabel[c] for node, c in community.items()}
+
+
+def connected_component_communities(graph: DirectedGraph) -> dict[str, int]:
+    """Fast undirected connected-component communities for large local graphs."""
+    nodes = graph.nodes
+    if not nodes:
+        return {}
+
+    adj: dict[str, set[str]] = defaultdict(set)
+    for src, tgt, _ in graph.edges():
+        adj[src].add(tgt)
+        adj[tgt].add(src)
+
+    community: dict[str, int] = {}
+    comm_id = 0
+    for node in nodes:
+        if node in community:
+            continue
+        stack = [node]
+        community[node] = comm_id
+        while stack:
+            current = stack.pop()
+            for nb in adj.get(current, set()):
+                if nb not in community:
+                    community[nb] = comm_id
+                    stack.append(nb)
+        comm_id += 1
+
+    return community
 
 
 # ---------------------------------------------------------------------------
@@ -384,15 +420,28 @@ def run_platform(
         graph = build_simulated_graph(platform)
 
     nodes = graph.nodes
-    logger.info("Graph: %d nodes, %d edges", len(nodes), len(graph.edges()))
+    logger.info("Graph: %d nodes, %d edges", len(nodes), graph.edge_count)
 
     # ── 2. PageRank ─────────────────────────────────────────────────────────
     logger.info("Computing PageRank …")
     pagerank = compute_pagerank(graph)
 
     # ── 3. Louvain ──────────────────────────────────────────────────────────
-    logger.info("Computing Louvain communities …")
-    community_map: dict[str, int] = louvain_communities(graph)
+    max_louvain_nodes = int(os.getenv("NETWORK_GRAPH_MAX_LOUVAIN_NODES", "5000"))
+    max_louvain_edges = int(os.getenv("NETWORK_GRAPH_MAX_LOUVAIN_EDGES", "15000"))
+    if len(nodes) > max_louvain_nodes or graph.edge_count > max_louvain_edges:
+        logger.warning(
+            "Graph too large for local Louvain (%d nodes, %d edges; limits %d/%d). "
+            "Using connected-component communities.",
+            len(nodes),
+            graph.edge_count,
+            max_louvain_nodes,
+            max_louvain_edges,
+        )
+        community_map = connected_component_communities(graph)
+    else:
+        logger.info("Computing Louvain communities …")
+        community_map = louvain_communities(graph)
 
     # Community sizes
     comm_sizes: dict[int, int] = defaultdict(int)
@@ -452,7 +501,7 @@ def run_platform(
     summary = {
         "platform":        platform,
         "nodes":           len(nodes),
-        "edges":           len(graph.edges()),
+        "edges":           graph.edge_count,
         "communities":     num_communities,
         "top_influencers": sorted(pagerank.items(), key=lambda x: x[1], reverse=True)[:5],
     }
@@ -522,13 +571,22 @@ def _fetch_comment_graph_from_raw(platform: str) -> DirectedGraph | None:
             logger.warning("Raw parquet path not found for network graph: %s", path)
             return None
 
-        df = spark.read.option("basePath", path).parquet(path)
+        max_raw_files = int(os.getenv("NETWORK_GRAPH_MAX_RAW_FILES", "200"))
+        raw_files = _limited_raw_parquet_files(spark, path, max_raw_files)
+        if not raw_files:
+            logger.warning("No raw parquet files found for network graph: %s", path)
+            return None
+
+        logger.info("Reading %d raw parquet files for %s network graph", len(raw_files), platform)
+        df = spark.read.option("basePath", path).parquet(*raw_files)
         required = {"author_id", "comments_json"}
         if not required.issubset(set(df.columns)):
             logger.warning("Raw parquet missing columns for network graph: required=%s columns=%s", sorted(required), df.columns)
             return None
 
-        max_posts = int(os.getenv("NETWORK_GRAPH_MAX_POSTS", "20000"))
+        max_posts = int(os.getenv("NETWORK_GRAPH_MAX_POSTS", "2000"))
+        max_nodes = int(os.getenv("NETWORK_GRAPH_MAX_NODES", "10000"))
+        max_edges = int(os.getenv("NETWORK_GRAPH_MAX_EDGES", "20000"))
         graph = DirectedGraph()
         rows = df.select("post_id", "author_id", "comments_json").limit(max_posts).toLocalIterator()
         for row in rows:
@@ -538,9 +596,17 @@ def _fetch_comment_graph_from_raw(platform: str) -> DirectedGraph | None:
             if not post_author or not comments:
                 continue
 
-            _add_comment_edges(graph, post_author, comments)
+            _add_comment_edges(graph, post_author, comments, max_nodes=max_nodes, max_edges=max_edges)
+            if _graph_limit_reached(graph, max_nodes=max_nodes, max_edges=max_edges):
+                logger.warning(
+                    "Reached raw graph limit for %s: %d nodes, %d edges",
+                    platform,
+                    len(graph),
+                    graph.edge_count,
+                )
+                break
 
-        logger.info("Raw comment graph for %s: %d nodes, %d edges", platform, len(graph), len(graph.edges()))
+        logger.info("Raw comment graph for %s: %d nodes, %d edges", platform, len(graph), graph.edge_count)
         return graph if len(graph) >= 10 else None
     except Exception as exc:
         logger.warning("Could not build raw comment graph for %s: %s", platform, exc)
@@ -582,6 +648,37 @@ def _spark_path_exists(spark: Any, path: str) -> bool:
         return False
 
 
+def _limited_raw_parquet_files(spark: Any, path: str, max_files: int) -> list[str]:
+    """Return up to max_files parquet object paths without forcing Spark to scan the full raw tree."""
+    try:
+        hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+        root = spark._jvm.org.apache.hadoop.fs.Path(path)
+        fs = root.getFileSystem(hadoop_conf)
+        if not fs.exists(root):
+            return []
+
+        files: list[str] = []
+        stack = [root]
+        while stack and len(files) < max_files:
+            current = stack.pop()
+            statuses = list(fs.listStatus(current))
+            dirs = []
+            for status in statuses:
+                status_path = status.getPath()
+                status_path_str = str(status_path)
+                if status.isDirectory():
+                    dirs.append(status_path)
+                elif status_path_str.endswith(".parquet"):
+                    files.append(status_path_str)
+                    if len(files) >= max_files:
+                        break
+            stack.extend(reversed(dirs))
+        return files
+    except Exception as exc:
+        logger.warning("Could not list limited raw parquet files for %s: %s", path, exc)
+        return []
+
+
 def _parse_comments_json(value: Any) -> list[dict]:
     if isinstance(value, list):
         return [item for item in value if isinstance(item, dict)]
@@ -601,7 +698,13 @@ def _valid_author(value: Any) -> str | None:
     return author if author and author.lower() != "unknown" else None
 
 
-def _add_comment_edges(graph: DirectedGraph, post_author: str, comments: list[dict]) -> None:
+def _add_comment_edges(
+    graph: DirectedGraph,
+    post_author: str,
+    comments: list[dict],
+    max_nodes: int | None = None,
+    max_edges: int | None = None,
+) -> None:
     comment_authors: dict[str, str] = {}
     for comment in comments:
         comment_id = str(comment.get("comment_id") or "").strip()
@@ -617,6 +720,19 @@ def _add_comment_edges(graph: DirectedGraph, post_author: str, comments: list[di
         target = parent_author or post_author
         if target and target != author:
             graph.add_edge(author, target)
+            if _graph_limit_reached(graph, max_nodes=max_nodes, max_edges=max_edges):
+                return
+
+
+def _graph_limit_reached(
+    graph: DirectedGraph,
+    max_nodes: int | None = None,
+    max_edges: int | None = None,
+) -> bool:
+    return bool(
+        (max_nodes is not None and len(graph) >= max_nodes)
+        or (max_edges is not None and graph.edge_count >= max_edges)
+    )
 
 
 def _parent_comment_author(parent_id: Any, comment_authors: dict[str, str]) -> str | None:

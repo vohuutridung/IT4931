@@ -1669,13 +1669,13 @@
               <div class="vrl-field">
                 <label class="vrl-label">Data Source</label>
                 <select id="vrlTrainLocal" class="vrl-input vrl-select">
-                  <option value="local">Local (data/facebook_data/raw_data)</option>
+                  <option value="local">Local (data/facebook_data/sample_data)</option>
                   <option value="minio">MinIO (production)</option>
                 </select>
               </div>
               <div class="vrl-field" id="vrlDataDirField">
                 <label class="vrl-label">Data Directory (local only)</label>
-                <input id="vrlDataDir" class="vrl-input" type="text" value="data/facebook_data/raw_data">
+                <input id="vrlDataDir" class="vrl-input" type="text" value="data/facebook_data/sample_data">
               </div>
               <div style="display:flex;gap:20px;margin-bottom:16px;">
                 <label style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;cursor:pointer;">
@@ -1841,12 +1841,12 @@
                   <label class="vrl-label">Data Source</label>
                   <select id="sntTrainLocal" class="vrl-input vrl-select">
                     <option value="minio">MinIO (production)</option>
-                    <option value="local">Local (data/facebook_data/raw_data)</option>
+                    <option value="local">Local (data/facebook_data/sample_data)</option>
                   </select>
                 </div>
                 <div class="vrl-field" id="sntDataDirField" style="display:none;">
                   <label class="vrl-label">Data Directory (local only)</label>
-                  <input id="sntDataDir" class="vrl-input" type="text" value="data/facebook_data/raw_data">
+                  <input id="sntDataDir" class="vrl-input" type="text" value="data/facebook_data/sample_data">
                 </div>
               </div>
               <div class="vrl-grid">
@@ -3830,7 +3830,7 @@
         if (btn) btn.disabled = true;
 
         const isLocal   = document.getElementById('vrlTrainLocal')?.value === 'local';
-        const dataDir   = document.getElementById('vrlDataDir')?.value?.trim() || 'data/facebook_data/raw_data';
+        const dataDir   = document.getElementById('vrlDataDir')?.value?.trim() || 'data/facebook_data/sample_data';
         const phobert   = document.getElementById('vrlUsePhobert')?.checked || false;
         const tune      = document.getElementById('vrlUseTune')?.checked || false;
 
@@ -4068,7 +4068,7 @@
         if (btn) btn.disabled = true;
 
         const isLocal   = document.getElementById('sntTrainLocal')?.value === 'local';
-        const dataDir   = document.getElementById('sntDataDir')?.value?.trim() || 'data/facebook_data/raw_data';
+        const dataDir   = document.getElementById('sntDataDir')?.value?.trim() || 'data/facebook_data/sample_data';
         const epochs    = parseInt(document.getElementById('sntTrainEpochs')?.value || '3');
         const batchSize = parseInt(document.getElementById('sntTrainBatchSize')?.value || '8');
         const smoke     = document.getElementById('sntSmokeTest')?.checked || false;

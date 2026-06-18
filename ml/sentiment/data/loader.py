@@ -246,6 +246,6 @@ def load(
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    df = load(use_local=True, local_data_dir="data/facebook_data/raw_data")
+    df = load(use_local=True, local_data_dir="data/facebook_data/sample_data")
     print(df.head())
     print(df["source_type"].value_counts())

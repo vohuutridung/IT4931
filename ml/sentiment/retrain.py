@@ -185,7 +185,7 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Retrain the PhoBERT Sentiment Classifier model.")
     p.add_argument("--output-dir", default=SENTIMENT_ARTIFACTS_DIR)
     p.add_argument("--local", action="store_true")
-    p.add_argument("--data-dir", default="data/facebook_data/raw_data")
+    p.add_argument("--data-dir", default="data/facebook_data/sample_data")
     p.add_argument("--epochs", type=int, default=3)
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--no-cuda", action="store_true")

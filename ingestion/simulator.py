@@ -405,6 +405,7 @@ def replay(
         while True:
             emitted = 0
             skipped_duplicates = 0
+            skipped_out_of_range = 0
             seen_post_ids: set[str] = set()
             for file_path in files:
                 for raw in read_records(file_path):
@@ -422,6 +423,7 @@ def replay(
                         emitted += 1
                         total += 1
                     except OutOfRangeError:
+                        skipped_out_of_range += 1
                         continue
                     except Exception as exc:
                         logger.warning("Routing malformed record to DLQ: %s | source=%s", exc, file_path)
@@ -430,12 +432,13 @@ def replay(
                     break
             producer.flush()
             logger.info(
-                "Replay pass complete | platform=%s source=%s files=%d emitted=%d duplicates=%d total=%d",
+                "Replay pass complete | platform=%s source=%s files=%d emitted=%d duplicates=%d out_of_range=%d total=%d",
                 platform,
                 source,
                 len(files),
                 emitted,
                 skipped_duplicates,
+                skipped_out_of_range,
                 total,
             )
             if not loop or (max_records is not None and total >= max_records):

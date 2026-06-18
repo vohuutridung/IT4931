@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SOP Phase 2 validation for simulator Kafka and DLQ behavior."""
+"""Validate simulator Kafka and DLQ behavior."""
 
 from __future__ import annotations
 

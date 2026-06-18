@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Validate SOP Phase 3 Spark batch view idempotency."""
+"""Validate Spark batch view idempotency."""
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 from pyspark.sql import SparkSession
 
 from batch import spark_batch_job
-from config.settings import SPARK_MASTER, STORAGE_BATCH_VIEWS_BASE
+from config.settings import EVENT_TIME_MIN, SPARK_MASTER, STORAGE_BATCH_VIEWS_BASE
 from config.spark import configure_s3a
 
 
@@ -46,7 +47,8 @@ def _signature() -> dict[str, list[str]]:
 
 def main() -> None:
     before = _signature()
-    sys.argv = ["spark_batch_job.py", "--date", "2023-11-14"]
+    validation_date = os.getenv("VALIDATION_BATCH_DATE", EVENT_TIME_MIN or "2026-03-04")
+    sys.argv = ["spark_batch_job.py", "--date", validation_date]
     spark_batch_job.main()
     after = _signature()
     if before != after:

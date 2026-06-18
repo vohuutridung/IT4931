@@ -221,7 +221,7 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Retrain the Virality Prediction model.")
     p.add_argument("--output-dir", default=ARTIFACTS_DIR)
     p.add_argument("--local", action="store_true")
-    p.add_argument("--data-dir", default="data/facebook_data/raw_data")
+    p.add_argument("--data-dir", default="data/facebook_data/sample_data")
     p.add_argument("--tune", action="store_true", help="Run Optuna during retrain")
     p.add_argument("--no-phobert", action="store_true")
     p.add_argument("--log-level", default="INFO",

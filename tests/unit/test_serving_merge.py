@@ -32,7 +32,15 @@ class DummyRedis:
         self.zsets = {
             "rt:hashtags:reddit:2026-05-22T03:00:00+00:00": [("ai", 3.0)],
             "rt:hashtags:reddit:2026-05-20T03:00:00+00:00": [("old", 10.0)],
-            "rt:hashtags:facebook:2026-05-22T03:00:00+00:00": [("fb", 5.0)],
+            "rt:hashtags:facebook:2026-05-22T03:00:00+00:00": [("40095", 9.0), ("fb", 5.0)],
+        }
+        self.hashes = {
+            "rt:stats:facebook:2026-05-22T03:00:00+00:00": {
+                "post_count": "2",
+                "sentiment_sum": "0",
+                "sentiment_count": "2",
+                "top_hashtag": "40095",
+            }
         }
 
     def keys(self, pattern):
@@ -41,7 +49,10 @@ class DummyRedis:
 
     def scan_iter(self, pattern):
         prefix = pattern.removesuffix("*")
-        return iter([key for key in self.zsets if key.startswith(prefix)])
+        return iter([key for key in [*self.zsets, *self.hashes] if key.startswith(prefix)])
+
+    def hgetall(self, key):
+        return self.hashes[key]
 
     def zrevrange(self, key, start, end, withscores=False):
         values = self.zsets[key][start:end + 1]
@@ -68,6 +79,37 @@ def test_top_hashtags_filters_platform_and_window(monkeypatch):
     monkeypatch.setattr("serving.merge_service.datetime", FixedDatetime)
 
     assert service.query_top_hashtags("reddit", 6, 10) == [{"hashtag": "ai", "frequency": 3.0, "week": "realtime"}]
+
+
+def test_top_hashtags_skip_numeric_only_tags(monkeypatch):
+    service = ServeQuery()
+    service._redis = DummyRedis()
+
+    class FixedDatetime:
+        @classmethod
+        def now(cls, tz=None):
+            from datetime import datetime
+
+            return datetime(2026, 5, 22, 4, 0, tzinfo=tz)
+
+        @classmethod
+        def fromisoformat(cls, value):
+            from datetime import datetime
+
+            return datetime.fromisoformat(value)
+
+    monkeypatch.setattr("serving.merge_service.datetime", FixedDatetime)
+
+    assert service.query_top_hashtags("facebook", 6, 10) == [{"hashtag": "fb", "frequency": 5.0, "week": "realtime"}]
+
+
+def test_realtime_stats_cleans_numeric_top_hashtag():
+    service = ServeQuery()
+    service._redis = DummyRedis()
+
+    rows = service.query_realtime_stats("facebook")["stats"]
+
+    assert rows[0]["top_hashtag"] == ""
 
 
 def test_query_hashtag_weeks(monkeypatch):

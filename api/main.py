@@ -370,7 +370,7 @@ def virality_predict(body: ViralityPredictBody) -> dict:
 
 class ViralityTrainBody(BaseModel):
     local:       bool = True
-    data_dir:    str  = Field("data/facebook_data/raw_data", max_length=500)
+    data_dir:    str  = Field("data/facebook_data/sample_data", max_length=500)
     tune:        bool = False
     use_phobert: bool = False
 
@@ -490,6 +490,18 @@ def _read_sentiment_metadata() -> dict:
         return {}
 
 
+def _sentiment_artifact_is_servable(meta: dict | None = None) -> bool:
+    meta = meta if meta is not None else _read_sentiment_metadata()
+    if not meta or meta.get("smoke_test", False):
+        return False
+    metrics = meta.get("test_metrics") or {}
+    weighted_f1 = float(metrics.get("weighted_f1") or 0.0)
+    accuracy = float(metrics.get("accuracy") or 0.0)
+    min_f1 = float(_os.getenv("SENTIMENT_MIN_WEIGHTED_F1", "0.80"))
+    min_accuracy = float(_os.getenv("SENTIMENT_MIN_ACCURACY", "0.60"))
+    return weighted_f1 >= min_f1 and accuracy >= min_accuracy
+
+
 def _read_sentiment_retrain_history(n: int = 10) -> list:
     path = _os.path.join(_SENTIMENT_ARTIFACTS_DIR, "retrain_history.jsonl")
     if not _os.path.exists(path):
@@ -508,8 +520,10 @@ def sentiment_model_status() -> dict:
     history = _read_sentiment_retrain_history(5)
     cron = _os.getenv("SENTIMENT_RETRAIN_CRON", "0 3 * * 1")
     artifacts_exist = _os.path.exists(_os.path.join(_SENTIMENT_ARTIFACTS_DIR, "fine_tuned_phobert", "config.json"))
+    model_ready = artifacts_exist and _sentiment_artifact_is_servable(meta)
     return {
-        "model_ready":         artifacts_exist,
+        "model_ready":         model_ready,
+        "artifact_found":      artifacts_exist,
         "training_running":    _sentiment_train_state["running"],
         "training_pid":        _sentiment_train_state.get("pid"),
         "training_started_at": _sentiment_train_state.get("started_at"),
@@ -527,7 +541,10 @@ class SentimentPredictBody(BaseModel):
 def sentiment_predict(body: SentimentPredictBody) -> dict:
     """Real-time sentiment prediction using the custom fine-tuned model (or fallback)."""
     model_path = _os.path.join(_SENTIMENT_ARTIFACTS_DIR, "fine_tuned_phobert")
-    if _os.path.exists(_os.path.join(model_path, "config.json")):
+    if (
+        _os.path.exists(_os.path.join(model_path, "config.json"))
+        and _sentiment_artifact_is_servable()
+    ):
         try:
             predictor = _get_sentiment_predictor()
             result = predictor.predict(body.content)
@@ -557,7 +574,7 @@ def sentiment_predict(body: SentimentPredictBody) -> dict:
 
 class SentimentTrainBody(BaseModel):
     local:      bool = True
-    data_dir:   str  = Field("data/facebook_data/raw_data", max_length=500)
+    data_dir:   str  = Field("data/facebook_data/sample_data", max_length=500)
     epochs:     int  = Field(3, ge=1, le=20)
     batch_size: int  = Field(8, ge=1, le=128)
     smoke_test: bool = False

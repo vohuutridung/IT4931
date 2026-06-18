@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 import re
+import os
+import json
 from collections import Counter
 from datetime import datetime, timezone
 
@@ -35,6 +37,35 @@ except Exception:  # pragma: no cover
 _nlp = None
 _sentiment = None
 
+
+def _artifact_is_usable(meta_path: str) -> bool:
+    """Return whether a local sentiment artifact is good enough for serving."""
+    min_f1 = float(os.getenv("SENTIMENT_MIN_WEIGHTED_F1", "0.80"))
+    min_accuracy = float(os.getenv("SENTIMENT_MIN_ACCURACY", "0.60"))
+    if not os.path.exists(meta_path):
+        return True
+    try:
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+    except Exception as exc:
+        logger.warning("Could not read sentiment metadata, using fallback: %s", exc)
+        return False
+    if meta.get("smoke_test", False):
+        logger.info("Sentiment artifact is marked smoke_test; using lexicon fallback.")
+        return False
+    metrics = meta.get("test_metrics") or {}
+    weighted_f1 = float(metrics.get("weighted_f1") or 0.0)
+    accuracy = float(metrics.get("accuracy") or 0.0)
+    if weighted_f1 < min_f1 or accuracy < min_accuracy:
+        logger.warning(
+            "Sentiment artifact below serving threshold "
+            "(weighted_f1=%.4f, accuracy=%.4f); using lexicon fallback.",
+            weighted_f1,
+            accuracy,
+        )
+        return False
+    return True
+
 if spacy:
     try:
         _nlp = spacy.load("en_core_web_sm")
@@ -43,20 +74,16 @@ if spacy:
 
 if pipeline:
     try:
-        import os
-        import json
         model_path = os.path.join(SENTIMENT_ARTIFACTS_DIR, "fine_tuned_phobert")
         meta_path  = os.path.join(SENTIMENT_ARTIFACTS_DIR, "training_metadata.json")
 
-        is_smoke_test = os.getenv("SPEED_LIGHTWEIGHT", "false").lower() in ("1", "true", "yes", "y")
-        if not is_smoke_test and os.path.exists(meta_path):
-            try:
-                with open(meta_path, encoding="utf-8") as f:
-                    is_smoke_test = json.load(f).get("smoke_test", False)
-            except Exception:
-                pass
+        force_lightweight = os.getenv("SPEED_LIGHTWEIGHT", "false").lower() in ("1", "true", "yes", "y")
 
-        if os.path.exists(os.path.join(model_path, "config.json")) and not is_smoke_test:
+        if (
+            os.path.exists(os.path.join(model_path, "config.json"))
+            and not force_lightweight
+            and _artifact_is_usable(meta_path)
+        ):
             logger.info("Loading fine-tuned PhoBERT sentiment model from %s", model_path)
             _sentiment = pipeline("sentiment-analysis", model=model_path, tokenizer=model_path)
             MODEL_VERSION = "local-fine-tuned-phobert"

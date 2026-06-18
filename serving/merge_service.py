@@ -18,6 +18,13 @@ from config.settings import (
 logger = logging.getLogger(__name__)
 
 
+def _clean_hashtag(tag: object) -> str:
+    cleaned = str(tag or "").strip().lstrip("#").lower()
+    if not cleaned or not any(ch.isalpha() for ch in cleaned):
+        return ""
+    return cleaned
+
+
 class ServeQuery:
     def __init__(self, es_host: str = ES_HOST, redis_host: str = REDIS_HOST, redis_port: int = REDIS_PORT) -> None:
         self.es_host = es_host.rstrip("/")
@@ -303,6 +310,9 @@ class ServeQuery:
             counts: dict[str, float] = {}
             for key in keys:
                 for tag, score in self._redis.zrevrange(key, 0, top_n - 1, withscores=True):
+                    tag = _clean_hashtag(tag)
+                    if not tag:
+                        continue
                     counts[tag] = counts.get(tag, 0.0) + float(score)
             if counts:
                 return [
@@ -328,7 +338,7 @@ class ServeQuery:
             
             counts: dict[str, int] = {}
             for row in raw_results:
-                tag = row.get("hashtag")
+                tag = _clean_hashtag(row.get("hashtag"))
                 if tag:
                     counts[tag] = counts.get(tag, 0) + int(row.get("frequency") or 0)
             return [
@@ -339,17 +349,82 @@ class ServeQuery:
         return []
 
     def query_realtime_stats(self, platform: str | None = None) -> dict:
-        if not self._redis:
-            return {"platform": platform, "stats": []}
-        pattern = f"rt:stats:{platform}:*" if platform else "rt:stats:*"
         stats = []
-        for key in self._redis.scan_iter(pattern):
-            row = self._redis.hgetall(key)
-            try:
-                sentiment_sum = float(row.get("sentiment_sum") or 0.0)
-                sentiment_count = int(float(row.get("sentiment_count") or 0))
-                row["avg_sentiment"] = sentiment_sum / sentiment_count if sentiment_count else 0.0
-            except (TypeError, ValueError):
-                row["avg_sentiment"] = 0.0
-            stats.append(row | {"key": key})
+        if not self._redis:
+            return {"platform": platform, "stats": self._query_realtime_stats_from_es(platform)}
+
+        try:
+            pattern = f"rt:stats:{platform}:*" if platform else "rt:stats:*"
+            for key in self._redis.scan_iter(pattern):
+                row = self._redis.hgetall(key)
+                row["top_hashtag"] = _clean_hashtag(row.get("top_hashtag"))
+                try:
+                    sentiment_sum = float(row.get("sentiment_sum") or 0.0)
+                    sentiment_count = int(float(row.get("sentiment_count") or 0))
+                    row["avg_sentiment"] = sentiment_sum / sentiment_count if sentiment_count else 0.0
+                except (TypeError, ValueError):
+                    row["avg_sentiment"] = 0.0
+                stats.append(row | {"key": key})
+        except Exception as exc:
+            logger.warning("Redis realtime stats query failed: %s", exc)
+
+        if not stats:
+            stats = self._query_realtime_stats_from_es(platform)
         return {"platform": platform, "stats": stats}
+
+    def _query_realtime_stats_from_es(self, platform: str | None = None) -> list[dict]:
+        filters: list[dict[str, Any]] = [{"term": {"view": "recent_posts"}}]
+        if platform:
+            filters.append({"term": {"platform": platform}})
+
+        posts = self._search(
+            "social_realtime_views",
+            {"bool": {"filter": filters}},
+            size=1000,
+            sort=[{"event_ts": {"order": "desc", "missing": "_last"}}],
+        )
+
+        buckets: dict[str, dict[str, Any]] = {}
+        for post in posts:
+            ts = self._parse_time_bucket(post.get("event_ts"))
+            if ts is None:
+                continue
+            bucket_ts = ts.replace(minute=0, second=0, microsecond=0).isoformat()
+            source = str(platform or post.get("platform") or post.get("source") or "all").lower()
+            key = f"rt:stats:{source}:{bucket_ts}"
+            bucket = buckets.setdefault(
+                key,
+                {
+                    "post_count": 0,
+                    "sentiment_sum": 0.0,
+                    "sentiment_count": 0,
+                    "top_hashtags": {},
+                    "updated_at": post.get("processed_at") or post.get("indexed_at") or datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            bucket["post_count"] += 1
+            bucket["sentiment_sum"] += float(post.get("sentiment_score") or 0.0)
+            bucket["sentiment_count"] += 1
+            for tag in post.get("hashtags") or []:
+                tag = _clean_hashtag(tag)
+                if tag:
+                    bucket["top_hashtags"][tag] = bucket["top_hashtags"].get(tag, 0) + 1
+
+        rows = []
+        for key, bucket in buckets.items():
+            sentiment_count = int(bucket["sentiment_count"] or 0)
+            top_hashtags = bucket.pop("top_hashtags")
+            top_hashtag = ""
+            if top_hashtags:
+                top_hashtag = max(top_hashtags.items(), key=lambda item: item[1])[0]
+            rows.append({
+                "key": key,
+                "post_count": bucket["post_count"],
+                "sentiment_sum": bucket["sentiment_sum"],
+                "sentiment_count": sentiment_count,
+                "top_hashtag": top_hashtag,
+                "updated_at": bucket["updated_at"],
+                "avg_sentiment": bucket["sentiment_sum"] / sentiment_count if sentiment_count else 0.0,
+            })
+
+        return sorted(rows, key=lambda row: str(row["key"]), reverse=True)

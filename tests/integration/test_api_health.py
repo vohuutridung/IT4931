@@ -4,7 +4,7 @@ import pytest
 import requests
 
 
-@pytest.mark.skipif(os.getenv("RUN_INTEGRATION") != "1", reason="requires running docker compose services")
+@pytest.mark.skipif(os.getenv("RUN_INTEGRATION") != "1", reason="requires running pipeline services")
 def test_api_health_endpoint():
     api_url = os.getenv("API_URL", "http://localhost:8000")
     if not api_url.endswith("/health"):

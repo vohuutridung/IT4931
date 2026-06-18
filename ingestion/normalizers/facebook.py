@@ -28,6 +28,11 @@ MAX_CONTENT_LEN   = 2_000
 MIN_CONTENT_CHARS = 4       # meaningful Unicode word-chars after stripping
 
 
+def _is_valid_hashtag(tag: str) -> bool:
+    tag = str(tag or "").strip().lstrip("#").lower()
+    return bool(tag) and any(ch.isalpha() for ch in tag)
+
+
 # =========================================================
 # Extra schema  (consistent cross-platform)
 # =========================================================
@@ -424,7 +429,7 @@ def normalize(raw: dict) -> Optional[Dict[str, Any]]:
 
     # ── Hashtags ──────────────────────────────────────────
     hashtags = re.findall(r"#([\wÀ-ỹ]+)", content or "")
-    hashtags = list(dict.fromkeys(h.lower() for h in hashtags))
+    hashtags = list(dict.fromkeys(h.lower() for h in hashtags if _is_valid_hashtag(h)))
 
     # ── Engagement ────────────────────────────────────────
     likes = _coalesce_int(raw.get("reactionsCount"), raw.get("likes"))

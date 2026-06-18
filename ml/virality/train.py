@@ -11,7 +11,7 @@ python -m ml.virality.train \
 # Development (local raw files):
 python -m ml.virality.train \
     --local \
-    --data-dir data/facebook_data/raw_data \
+    --data-dir data/facebook_data/sample_data \
     --output-dir ml/virality/artifacts
 
 # With Optuna hyperparameter tuning:
@@ -354,7 +354,7 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--data-dir",
-        default="data/facebook_data/raw_data",
+        default="data/facebook_data/sample_data",
         help="Local data directory (used with --local)",
     )
     p.add_argument(

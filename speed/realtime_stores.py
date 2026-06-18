@@ -36,6 +36,13 @@ def _created_at_to_dt(ts: str | None) -> datetime:
         return datetime.now(timezone.utc)
 
 
+def _clean_hashtag(tag: object) -> str:
+    cleaned = str(tag or "").strip().lstrip("#").lower()
+    if not cleaned or not any(ch.isalpha() for ch in cleaned):
+        return ""
+    return cleaned
+
+
 class RealtimeViewWriter:
     """Writes enriched realtime posts to Redis and Elasticsearch."""
 
@@ -89,7 +96,7 @@ class RealtimeViewWriter:
             window_start = created.replace(minute=0, second=0, microsecond=0).isoformat()
             enrichment = post.get("enrichment") or {}
             stats[(platform, window_start)].append(float(enrichment.get("sentiment_score") or 0.0))
-            tags = [tag.lower() for tag in post.get("hashtags") or []]
+            tags = [tag for tag in (_clean_hashtag(tag) for tag in post.get("hashtags") or []) if tag]
             stats_hashtags[(platform, window_start)].update(tags)
             hashtag_counts[(platform, window_start)].update(tags)
             hashtag_counts[("__all__", window_start)].update(tags)

@@ -35,9 +35,13 @@ spec:
               memory: 256Mi
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "airflow"]
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
             initialDelaySeconds: 10
             periodSeconds: 5
+            timeoutSeconds: 5
       volumes:
         - name: postgres-storage
           persistentVolumeClaim:

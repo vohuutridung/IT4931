@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 ES_NETWORK_INDEX = "social_network"
 PLATFORMS = ["reddit", "facebook", "instagram"]
+MAX_GRAPH_NODES = 300
+MAX_GRAPH_EDGES = 600
+MAX_COMMUNITIES = 50
 
 _COMMUNITY_NAMES = [
     "AI Researchers", "Crypto Traders", "Political Commentators",
@@ -139,11 +142,14 @@ class NetworkService:
         except Exception as exc:
             logger.warning("Redis client unavailable for NetworkService: %s", exc)
 
-    def _search(self, query: dict, size: int = 5000) -> list[dict]:
+    def _search(self, query: dict, size: int = 5000, sort: list[dict] | None = None) -> list[dict]:
         try:
+            payload: dict[str, Any] = {"query": query, "size": size}
+            if sort:
+                payload["sort"] = sort
             resp = self._session.post(
                 f"{self.es_host}/{ES_NETWORK_INDEX}/_search",
-                json={"query": query, "size": size},
+                json=payload,
                 timeout=5,
             )
             if resp.status_code == 404:
@@ -162,18 +168,34 @@ class NetworkService:
         if platform:
             filters.append({"term": {"platform": platform}})
 
-        query: dict = {"match_all": {}} if not filters else {"bool": {"filter": filters}}
-        results = self._search(query, size=3000)
+        node_filters = [*filters, {"term": {"record_type": "node"}}]
+        edge_filters = [*filters, {"term": {"record_type": "edge"}}]
 
-        if results:
-            nodes = [r for r in results if r.get("record_type") == "node"]
-            edges = [r for r in results if r.get("record_type") == "edge"]
-            if nodes:
-                # Attach community colour
-                for node in nodes:
-                    cid = node.get("community_id", 0) or 0
-                    node["color"] = _COMMUNITY_COLORS[int(cid) % len(_COMMUNITY_COLORS)]
-                return {"nodes": nodes, "edges": edges, "simulated": False}
+        nodes = self._search(
+            {"bool": {"filter": node_filters}},
+            size=MAX_GRAPH_NODES,
+            sort=[{"pagerank": {"order": "desc", "missing": "_last"}}],
+        )
+        edges = self._search(
+            {"bool": {"filter": edge_filters}},
+            size=MAX_GRAPH_EDGES,
+            sort=[{"weight": {"order": "desc", "missing": "_last"}}],
+        )
+
+        if nodes:
+            for node in nodes:
+                cid = node.get("community_id", 0) or 0
+                node["color"] = _COMMUNITY_COLORS[int(cid) % len(_COMMUNITY_COLORS)]
+            return {
+                "nodes": nodes,
+                "edges": edges,
+                "simulated": False,
+                "meta": {
+                    "max_nodes": MAX_GRAPH_NODES,
+                    "max_edges": MAX_GRAPH_EDGES,
+                    "truncated": len(nodes) == MAX_GRAPH_NODES or len(edges) == MAX_GRAPH_EDGES,
+                },
+            }
 
         if ENABLE_DEMO_FALLBACK:
             logger.info("network/graph: using demo fallback data")
@@ -211,7 +233,7 @@ class NetworkService:
                             "platform":       platform or "all",
                             "color":          _COMMUNITY_COLORS[comm_id % len(_COMMUNITY_COLORS)],
                         })
-                    return sorted(result, key=lambda x: x["size"], reverse=True)
+                    return sorted(result, key=lambda x: x["size"], reverse=True)[:MAX_COMMUNITIES]
             except Exception as exc:
                 logger.warning("Redis community query failed: %s", exc)
 

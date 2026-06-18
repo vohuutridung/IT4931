@@ -214,7 +214,7 @@ def load_from_minio(
 # ── Fallback: load from local raw JSON files (for dev without MinIO) ───────────
 def load_from_local(raw_data_dir: str) -> pd.DataFrame:
     """
-    Fallback loader: read from local data/facebook_data/raw_data/{page}/{snapshot}/post.json.
+    Fallback loader: read from a local Facebook data directory containing post.json files.
 
     Useful during local development when MinIO is not running.
     Each post.json contains a single post object (as seen from the Facebook scraper).
@@ -280,7 +280,7 @@ def load(
 
     Args:
         use_local: If True, use local raw JSON files instead of MinIO.
-        local_data_dir: Path to data/facebook_data/raw_data (required when use_local=True).
+        local_data_dir: Path to local Facebook post data (required when use_local=True).
         start_date: Filter posts on/after this UTC datetime.
         end_date:   Filter posts on/before this UTC datetime.
 
@@ -300,7 +300,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Virality data loader smoke-test")
     parser.add_argument("--local", action="store_true", help="Use local raw JSON files")
-    parser.add_argument("--data-dir", default="data/facebook_data/raw_data", help="Local data dir")
+    parser.add_argument("--data-dir", default="data/facebook_data/sample_data", help="Local data dir")
     args = parser.parse_args()
 
     df = load(use_local=args.local, local_data_dir=args.data_dir)

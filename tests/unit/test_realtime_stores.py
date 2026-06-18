@@ -54,3 +54,23 @@ def test_write_redis_realtime_views():
     assert "hincrby" in command_names
     assert "hincrbyfloat" in command_names
     assert "hset" in command_names
+
+
+def test_write_redis_skips_numeric_only_hashtags():
+    writer = object.__new__(RealtimeViewWriter)
+    writer.redis = DummyRedis()
+    writer._write_redis(
+        [
+            {
+                "post_id": "p1",
+                "platform": "facebook",
+                "created_at": "2023-11-14T22:13:20Z",
+                "hashtags": ["40095", "#beatvn"],
+                "enrichment": {"sentiment_score": 0.5},
+            }
+        ]
+    )
+
+    zset_updates = [cmd for cmd in writer.redis.commands if cmd[0] == "zincrby"]
+    assert not any(cmd[1][2] == "40095" for cmd in zset_updates)
+    assert any(cmd[1][2] == "beatvn" for cmd in zset_updates)
